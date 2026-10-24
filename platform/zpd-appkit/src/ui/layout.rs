@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use crate::actor::ActorRef;
 use zpd_objc::Strong;
 
-use super::{ViewError, ViewRef};
+use super::{UiError, ViewRef};
 
 #[derive(Clone, Copy)]
 #[repr(i64)]
@@ -45,9 +45,9 @@ impl<'view> XAxisAnchor<'view> {
         self,
         other: Self,
         constant: f64,
-    ) -> Result<LayoutConstraint<'view>, ViewError> {
+    ) -> Result<LayoutConstraint<'view>, UiError> {
         if !self.view.actor().same_tree(other.view.actor()) {
-            return Err(ViewError::InvalidHierarchy);
+            return Err(UiError::InvalidHierarchy);
         }
         LayoutConstraint::between(
             self.view,
@@ -63,9 +63,9 @@ impl<'view> XAxisAnchor<'view> {
         self,
         other: Self,
         constant: f64,
-    ) -> Result<LayoutConstraint<'view>, ViewError> {
+    ) -> Result<LayoutConstraint<'view>, UiError> {
         if !self.view.actor().same_tree(other.view.actor()) {
-            return Err(ViewError::InvalidHierarchy);
+            return Err(UiError::InvalidHierarchy);
         }
         LayoutConstraint::between(
             self.view,
@@ -81,9 +81,9 @@ impl<'view> XAxisAnchor<'view> {
         self,
         other: Self,
         constant: f64,
-    ) -> Result<LayoutConstraint<'view>, ViewError> {
+    ) -> Result<LayoutConstraint<'view>, UiError> {
         if !self.view.actor().same_tree(other.view.actor()) {
-            return Err(ViewError::InvalidHierarchy);
+            return Err(UiError::InvalidHierarchy);
         }
         LayoutConstraint::between(
             self.view,
@@ -110,9 +110,9 @@ impl<'view> YAxisAnchor<'view> {
         self,
         other: Self,
         constant: f64,
-    ) -> Result<LayoutConstraint<'view>, ViewError> {
+    ) -> Result<LayoutConstraint<'view>, UiError> {
         if !self.view.actor().same_tree(other.view.actor()) {
-            return Err(ViewError::InvalidHierarchy);
+            return Err(UiError::InvalidHierarchy);
         }
         LayoutConstraint::between(
             self.view,
@@ -128,9 +128,9 @@ impl<'view> YAxisAnchor<'view> {
         self,
         other: Self,
         constant: f64,
-    ) -> Result<LayoutConstraint<'view>, ViewError> {
+    ) -> Result<LayoutConstraint<'view>, UiError> {
         if !self.view.actor().same_tree(other.view.actor()) {
-            return Err(ViewError::InvalidHierarchy);
+            return Err(UiError::InvalidHierarchy);
         }
         LayoutConstraint::between(
             self.view,
@@ -146,9 +146,9 @@ impl<'view> YAxisAnchor<'view> {
         self,
         other: Self,
         constant: f64,
-    ) -> Result<LayoutConstraint<'view>, ViewError> {
+    ) -> Result<LayoutConstraint<'view>, UiError> {
         if !self.view.actor().same_tree(other.view.actor()) {
-            return Err(ViewError::InvalidHierarchy);
+            return Err(UiError::InvalidHierarchy);
         }
         LayoutConstraint::between(
             self.view,
@@ -176,9 +176,9 @@ impl<'view> Dimension<'view> {
         other: Self,
         multiplier: f64,
         constant: f64,
-    ) -> Result<LayoutConstraint<'view>, ViewError> {
+    ) -> Result<LayoutConstraint<'view>, UiError> {
         if !self.view.actor().same_tree(other.view.actor()) {
-            return Err(ViewError::InvalidHierarchy);
+            return Err(UiError::InvalidHierarchy);
         }
         LayoutConstraint::between(
             self.view,
@@ -193,13 +193,13 @@ impl<'view> Dimension<'view> {
     pub fn constraint_equal_to_constant(
         self,
         constant: f64,
-    ) -> Result<LayoutConstraint<'view>, ViewError> {
+    ) -> Result<LayoutConstraint<'view>, UiError> {
         LayoutConstraint::constant(self.view, self.attribute, LayoutRelation::Equal, constant)
     }
     pub fn constraint_greater_than_or_equal_to_constant(
         self,
         constant: f64,
-    ) -> Result<LayoutConstraint<'view>, ViewError> {
+    ) -> Result<LayoutConstraint<'view>, UiError> {
         LayoutConstraint::constant(
             self.view,
             self.attribute,
@@ -210,7 +210,7 @@ impl<'view> Dimension<'view> {
     pub fn constraint_less_than_or_equal_to_constant(
         self,
         constant: f64,
-    ) -> Result<LayoutConstraint<'view>, ViewError> {
+    ) -> Result<LayoutConstraint<'view>, UiError> {
         LayoutConstraint::constant(
             self.view,
             self.attribute,
@@ -234,7 +234,7 @@ impl<'view> LayoutConstraint<'view> {
         second_attribute: LayoutAttribute,
         multiplier: f64,
         constant: f64,
-    ) -> Result<Self, ViewError> {
+    ) -> Result<Self, UiError> {
         let native = first.with(|first_native| {
             second.with(|second_native| unsafe {
                 zpd_objc::msg_send!(zpd_objc::class!("NSLayoutConstraint"), zpd_objc::sel!("constraintWithItem:attribute:relatedBy:toItem:attribute:multiplier:constant:"), ((first_native): zpd_objc::Id, (first_attribute as i64): i64, (relation as i64): i64, (second_native): zpd_objc::Id, (second_attribute as i64): i64, (multiplier): f64, (constant): f64) => zpd_objc::Id)
@@ -247,7 +247,7 @@ impl<'view> LayoutConstraint<'view> {
         first_attribute: LayoutAttribute,
         relation: LayoutRelation,
         constant: f64,
-    ) -> Result<Self, ViewError> {
+    ) -> Result<Self, UiError> {
         let native = first.with(|first_native| unsafe {
             zpd_objc::msg_send!(zpd_objc::class!("NSLayoutConstraint"), zpd_objc::sel!("constraintWithItem:attribute:relatedBy:toItem:attribute:multiplier:constant:"), ((first_native): zpd_objc::Id, (first_attribute as i64): i64, (relation as i64): i64, (zpd_objc::NIL): zpd_objc::Id, (LayoutAttribute::NotAnAttribute as i64): i64, (1.0): f64, (constant): f64) => zpd_objc::Id)
         })?;
@@ -257,64 +257,64 @@ impl<'view> LayoutConstraint<'view> {
         first: ViewRef<'view>,
         second: Option<ViewRef<'view>>,
         native_id: zpd_objc::Id,
-    ) -> Result<Self, ViewError> {
+    ) -> Result<Self, UiError> {
         // SAFETY: NSLayoutConstraint factory methods return an autoreleased live object.
-        let native = unsafe { Strong::retain(native_id) }.ok_or(ViewError::NativeCreationFailed)?;
-        let tree = first.actor().tree_handle().ok_or(ViewError::Closed)?;
+        let native = unsafe { Strong::retain(native_id) }.ok_or(UiError::NativeCreationFailed)?;
+        let tree = first.actor().tree_handle().ok_or(UiError::Closed)?;
         let actor = tree
             .insert_child(first.actor(), native)
-            .map_err(ViewError::from)?;
+            .map_err(UiError::from)?;
         tree.add_dependency(&actor, first.actor())
-            .map_err(ViewError::from)?;
+            .map_err(UiError::from)?;
         let mut endpoints = vec![first.actor().clone()];
         if let Some(second) = second {
             tree.add_dependency(&actor, second.actor())
-                .map_err(ViewError::from)?;
+                .map_err(UiError::from)?;
             endpoints.push(second.actor().clone());
         }
         tree.add_teardown(&actor, |constraint| unsafe {
             zpd_objc::msg_send!(constraint, zpd_objc::sel!("setActive:"), ((false): bool) => ())
         })
-        .map_err(ViewError::from)?;
+        .map_err(UiError::from)?;
         Ok(Self {
             actor,
             endpoints,
             _view: PhantomData,
         })
     }
-    pub fn activate(constraints: &[Self]) -> Result<(), ViewError> {
+    pub fn activate(constraints: &[Self]) -> Result<(), UiError> {
         for value in constraints {
             value.set_active(true)?;
         }
         Ok(())
     }
-    pub fn deactivate(constraints: &[Self]) -> Result<(), ViewError> {
+    pub fn deactivate(constraints: &[Self]) -> Result<(), UiError> {
         for value in constraints {
             value.set_active(false)?;
         }
         Ok(())
     }
-    pub fn set_active(&self, active: bool) -> Result<(), ViewError> {
+    pub fn set_active(&self, active: bool) -> Result<(), UiError> {
         self.ensure_endpoints()?;
         self.actor
             .with(|constraint| unsafe {
                 zpd_objc::msg_send!(constraint, zpd_objc::sel!("setActive:"), ((active): bool) => ())
             })
-            .map_err(ViewError::from)
+            .map_err(UiError::from)
     }
-    pub fn set_priority(&self, priority: f32) -> Result<(), ViewError> {
+    pub fn set_priority(&self, priority: f32) -> Result<(), UiError> {
         self.ensure_endpoints()?;
         self.actor
             .with(|constraint| unsafe {
                 zpd_objc::msg_send!(constraint, zpd_objc::sel!("setPriority:"), ((priority): f32) => ())
             })
-            .map_err(ViewError::from)
+            .map_err(UiError::from)
     }
-    fn ensure_endpoints(&self) -> Result<(), ViewError> {
+    fn ensure_endpoints(&self) -> Result<(), UiError> {
         if self.endpoints.iter().all(ActorRef::is_alive) {
             Ok(())
         } else {
-            Err(ViewError::Closed)
+            Err(UiError::Closed)
         }
     }
 }

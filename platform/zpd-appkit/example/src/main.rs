@@ -8,7 +8,7 @@ use zpd_appkit::ui::{
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let application = Application::new(())?;
+    let application = Application::new()?;
     application.set_commands(&commands(), |command_id| {
         if command_id == "example.hello" {
             println!("Hello from zpd-appkit!");
@@ -29,32 +29,34 @@ fn main() -> Result<(), Box<dyn Error>> {
     content.add_subview(&input)?;
     content.add_subview(&button)?;
 
-    label.set_translates_autoresizing_mask_into_constraints(false)?;
-    input.set_translates_autoresizing_mask_into_constraints(false)?;
-    button.set_translates_autoresizing_mask_into_constraints(false)?;
+    let (label_view, input_view, button_view) =
+        (label.as_view(), input.as_view(), button.as_view());
+    label_view.set_translates_autoresizing_mask_into_constraints(false)?;
+    input_view.set_translates_autoresizing_mask_into_constraints(false)?;
+    button_view.set_translates_autoresizing_mask_into_constraints(false)?;
 
     let constraints = [
-        label
+        label_view
             .leading_anchor()
             .constraint_equal_to(content.leading_anchor(), 20.0)?,
-        label
+        label_view
             .center_y_anchor()
-            .constraint_equal_to(input.center_y_anchor(), 0.0)?,
-        input
+            .constraint_equal_to(input_view.center_y_anchor(), 0.0)?,
+        input_view
             .leading_anchor()
-            .constraint_equal_to(label.trailing_anchor(), 8.0)?,
-        input
+            .constraint_equal_to(label_view.trailing_anchor(), 8.0)?,
+        input_view
             .trailing_anchor()
             .constraint_equal_to(content.trailing_anchor(), -20.0)?,
-        input
+        input_view
             .top_anchor()
             .constraint_equal_to(content.top_anchor(), 20.0)?,
-        button
+        button_view
             .top_anchor()
-            .constraint_equal_to(input.bottom_anchor(), 12.0)?,
-        button
+            .constraint_equal_to(input_view.bottom_anchor(), 12.0)?,
+        button_view
             .trailing_anchor()
-            .constraint_equal_to(input.trailing_anchor(), 0.0)?,
+            .constraint_equal_to(input_view.trailing_anchor(), 0.0)?,
     ];
     LayoutConstraint::activate(&constraints)?;
     drop(constraints);

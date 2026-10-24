@@ -1,73 +1,51 @@
 use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 use std::sync::OnceLock;
 
-use crate::actor::{ActorError, ActorRef};
+use crate::actor::ActorRef;
 use crate::geometry::Rect;
 use crate::native;
-use crate::runloop::{Application, ApplicationDelegate};
-use zpd_objc::Strong;
+use crate::runloop::Application;
+use zpd_objc::{RcIvar, Strong};
 
+use super::UiError;
 use super::layout::{Dimension, LayoutAttribute, XAxisAnchor, YAxisAnchor};
 
-struct LayoutCallback {
-    invoke: RefCell<Box<dyn FnMut(Rect)>>,
-}
+type LayoutCallback = RefCell<Box<dyn FnMut(Rect)>>;
 
-unsafe fn layout_callback(object: zpd_objc::Id) -> *mut LayoutCallback {
-    unsafe { zpd_objc::get_pointer_ivar(object, c"_zpdLayoutCallback".as_ptr()) }
-}
+static LAYOUT_CALLBACK: RcIvar<LayoutCallback> = RcIvar::new(c"_zpdLayoutCallback");
 
 unsafe extern "C" fn layout(object: zpd_objc::Id, _: zpd_objc::Sel) {
     unsafe {
         zpd_objc::msg_send_super!(object, zpd_objc::class!("NSView"), zpd_objc::sel!("layout"), () => ())
     };
-    let callback = unsafe { layout_callback(object).as_ref() };
-    let Some(callback) = callback else { return };
+    // SAFETY: This method is installed only on views with a `_zpdLayoutCallback` ivar.
+    let Some(callback) = (unsafe { LAYOUT_CALLBACK.get(object) }) else {
+        return;
+    };
     let bounds =
         unsafe { zpd_objc::msg_send!(object, zpd_objc::sel!("bounds"), () => native::Rect) };
-    let bounds = Rect::new(
-        bounds.origin.x,
-        bounds.origin.y,
-        bounds.size.width,
-        bounds.size.height,
-    );
-    if catch_unwind(AssertUnwindSafe(|| {
-        let Ok(mut invoke) = callback.invoke.try_borrow_mut() else {
+    zpd_objc::abort_on_unwind(|| {
+        let Ok(mut invoke) = callback.try_borrow_mut() else {
             std::process::abort()
         };
-        invoke(bounds);
-    }))
-    .is_err()
-    {
-        std::process::abort()
-    }
+        invoke(bounds.into());
+    });
 }
 
 unsafe extern "C" fn layout_view_dealloc(object: zpd_objc::Id, _: zpd_objc::Sel) {
+    // SAFETY: The receiver is a layout view created by `new_layout_view`.
     unsafe { release_layout_callback(object) };
+    // SAFETY: NSView's dealloc completes destruction after Rust state is released.
     unsafe {
         zpd_objc::msg_send_super!(object, zpd_objc::class!("NSView"), zpd_objc::sel!("dealloc"), () => ())
     };
 }
 
 pub(crate) unsafe fn release_layout_callback(object: zpd_objc::Id) {
-    let callback = unsafe { layout_callback(object) };
-    if callback.is_null() {
-        return;
-    }
-    // SAFETY: Clearing the ivar transfers the sole callback allocation back to Rust.
-    unsafe {
-        zpd_objc::set_pointer_ivar(
-            object,
-            c"_zpdLayoutCallback".as_ptr(),
-            std::ptr::null_mut::<LayoutCallback>(),
-        )
-    };
-    // SAFETY: The layout view owns exactly one callback allocation.
-    unsafe { drop(Box::from_raw(callback)) };
+    // SAFETY: The caller passes a view created by `new_layout_view`.
+    drop(unsafe { LAYOUT_CALLBACK.take(object) });
 }
 
 fn layout_view_class() -> zpd_objc::Class {
@@ -83,55 +61,23 @@ fn layout_view_class() -> zpd_objc::Class {
     }) as zpd_objc::Class
 }
 
-pub(crate) fn new_layout_view(frame: Rect) -> Result<Strong, ViewError> {
+pub(crate) fn new_layout_view(frame: Rect) -> Result<Strong, UiError> {
     // SAFETY: The registered NSView subclass uses NSView's designated frame initializer.
     unsafe {
-        Strong::from_retained(zpd_objc::msg_send!(zpd_objc::msg_send!(layout_view_class(), zpd_objc::sel!("alloc"), () => zpd_objc::Id), zpd_objc::sel!("initWithFrame:"), ((native_rect(frame)): native::Rect) => zpd_objc::Id))
+        Strong::from_retained(zpd_objc::msg_send!(zpd_objc::msg_send!(layout_view_class(), zpd_objc::sel!("alloc"), () => zpd_objc::Id), zpd_objc::sel!("initWithFrame:"), ((native::Rect::from(frame)): native::Rect) => zpd_objc::Id))
     }
-    .ok_or(ViewError::NativeCreationFailed)
+    .ok_or(UiError::NativeCreationFailed)
 }
 
 pub(crate) fn set_layout_callback(
     view: ViewRef<'_>,
     callback: impl FnMut(Rect) + 'static,
-) -> Result<(), ViewError> {
-    view.with(|object| unsafe {
-        release_layout_callback(object);
-        zpd_objc::set_pointer_ivar(
-            object,
-            c"_zpdLayoutCallback".as_ptr(),
-            Box::into_raw(Box::new(LayoutCallback {
-                invoke: RefCell::new(Box::new(callback)),
-            })),
-        );
+) -> Result<(), UiError> {
+    let callback: Box<dyn FnMut(Rect)> = Box::new(callback);
+    view.with(|object| {
+        // SAFETY: Layout callbacks are installed only on `new_layout_view` instances.
+        unsafe { LAYOUT_CALLBACK.set(object, Rc::new(RefCell::new(callback))) }
     })
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ViewError {
-    NativeCreationFailed,
-    Closed,
-    InvalidHierarchy,
-}
-impl std::fmt::Display for ViewError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::NativeCreationFailed => "AppKit failed to create a native view",
-            Self::Closed => "the native view is closed",
-            Self::InvalidHierarchy => "the requested native view hierarchy is invalid",
-        })
-    }
-}
-impl std::error::Error for ViewError {}
-impl From<ActorError> for ViewError {
-    fn from(value: ActorError) -> Self {
-        match value {
-            ActorError::InvalidHierarchy => Self::InvalidHierarchy,
-            ActorError::Dropped | ActorError::NativeReleased | ActorError::NotActive => {
-                Self::Closed
-            }
-        }
-    }
 }
 
 pub(crate) struct ViewActor {
@@ -139,10 +85,7 @@ pub(crate) struct ViewActor {
     _main_thread: PhantomData<Rc<()>>,
 }
 impl ViewActor {
-    pub(crate) fn new<D: ApplicationDelegate>(
-        application: &Application<D>,
-        native: Strong,
-    ) -> Self {
+    pub(crate) fn new(application: &Application, native: Strong) -> Self {
         let actor = application.tree().insert_root(native);
         application
             .tree()
@@ -186,16 +129,13 @@ pub struct View {
     inner: ViewActor,
 }
 impl View {
-    pub fn new<D: ApplicationDelegate>(
-        application: &Application<D>,
-        frame: Rect,
-    ) -> Result<Self, ViewError> {
+    pub fn new(application: &Application, frame: Rect) -> Result<Self, UiError> {
         // SAFETY: NSView's designated frame initializer returns a retained object.
         let native = unsafe {
             let object = zpd_objc::msg_send!(zpd_objc::class!("NSView"), zpd_objc::sel!("alloc"), () => zpd_objc::Id);
-            Strong::from_retained(zpd_objc::msg_send!(object, zpd_objc::sel!("initWithFrame:"), ((native_rect(frame)): native::Rect) => zpd_objc::Id))
+            Strong::from_retained(zpd_objc::msg_send!(object, zpd_objc::sel!("initWithFrame:"), ((native::Rect::from(frame)): native::Rect) => zpd_objc::Id))
         }
-        .ok_or(ViewError::NativeCreationFailed)?;
+        .ok_or(UiError::NativeCreationFailed)?;
         Ok(Self {
             inner: ViewActor::new(application, native),
         })
@@ -215,7 +155,7 @@ impl<'view> ViewRef<'view> {
     pub(crate) fn from_actor(actor: &'view ActorRef) -> Self {
         Self { actor }
     }
-    pub(crate) fn with<R>(self, operation: impl FnOnce(zpd_objc::Id) -> R) -> Result<R, ViewError> {
+    pub(crate) fn with<R>(self, operation: impl FnOnce(zpd_objc::Id) -> R) -> Result<R, UiError> {
         self.actor.with(operation).map_err(Into::into)
     }
     pub(crate) fn actor(self) -> &'view ActorRef {
@@ -225,14 +165,14 @@ impl<'view> ViewRef<'view> {
     pub fn actor_ref(self) -> ActorRef {
         self.actor.clone()
     }
-    pub fn add_subview(self, child: &impl AsView) -> Result<(), ViewError> {
+    pub fn add_subview(self, child: &impl AsView) -> Result<(), UiError> {
         let child = child.as_view();
         if !self.actor.same_tree(child.actor) {
-            return Err(ViewError::InvalidHierarchy);
+            return Err(UiError::InvalidHierarchy);
         }
-        let tree = self.actor.tree_handle().ok_or(ViewError::Closed)?;
+        let tree = self.actor.tree_handle().ok_or(UiError::Closed)?;
         tree.validate_reparent(child.actor, self.actor)
-            .map_err(ViewError::from)?;
+            .map_err(UiError::from)?;
         self.with(|parent| {
             child.with(|native_child| {
                 // SAFETY: Both actors are retained for this synchronous hierarchy update.
@@ -242,43 +182,38 @@ impl<'view> ViewRef<'view> {
             })
         })??;
         tree.reparent(child.actor, self.actor)
-            .map_err(ViewError::from)
+            .map_err(UiError::from)
     }
-    pub fn remove_from_superview(self) -> Result<(), ViewError> {
+    pub fn remove_from_superview(self) -> Result<(), UiError> {
         self.with(|view| unsafe {
             zpd_objc::msg_send!(view, zpd_objc::sel!("removeFromSuperview"), () => ())
         })?;
         self.actor.move_to_root().map_err(Into::into)
     }
-    pub fn set_frame(self, frame: Rect) -> Result<(), ViewError> {
+    pub fn set_frame(self, frame: Rect) -> Result<(), UiError> {
         self.with(|view| unsafe {
-            zpd_objc::msg_send!(view, zpd_objc::sel!("setFrame:"), ((native_rect(frame)): native::Rect) => ())
+            zpd_objc::msg_send!(view, zpd_objc::sel!("setFrame:"), ((native::Rect::from(frame)): native::Rect) => ())
         })
     }
-    pub fn set_needs_layout(self, needs_layout: bool) -> Result<(), ViewError> {
+    pub fn set_needs_layout(self, needs_layout: bool) -> Result<(), UiError> {
         self.with(|view| unsafe {
             zpd_objc::msg_send!(view, zpd_objc::sel!("setNeedsLayout:"), ((needs_layout): bool) => ())
         })
     }
-    pub fn layout_subtree_if_needed(self) -> Result<(), ViewError> {
+    pub fn layout_subtree_if_needed(self) -> Result<(), UiError> {
         self.with(|view| unsafe {
             zpd_objc::msg_send!(view, zpd_objc::sel!("layoutSubtreeIfNeeded"), () => ())
         })
     }
     /// Returns this view's current bounds in logical points.
-    pub fn bounds(self) -> Result<Rect, ViewError> {
+    pub fn bounds(self) -> Result<Rect, UiError> {
         let bounds = self.with(|view| {
             // SAFETY: NSView's bounds getter returns an NSRect for a live view.
             unsafe { zpd_objc::msg_send!(view, zpd_objc::sel!("bounds"), () => native::Rect) }
         })?;
-        Ok(Rect::new(
-            bounds.origin.x,
-            bounds.origin.y,
-            bounds.size.width,
-            bounds.size.height,
-        ))
+        Ok(bounds.into())
     }
-    pub fn set_identifier(self, identifier: Option<&str>) -> Result<(), ViewError> {
+    pub fn set_identifier(self, identifier: Option<&str>) -> Result<(), UiError> {
         let identifier = identifier.map(native::nsstring);
         self.with(|view| unsafe {
             zpd_objc::msg_send!(view, zpd_objc::sel!("setAccessibilityIdentifier:"), ((identifier.as_ref().map_or(zpd_objc::NIL, Strong::as_ptr)): zpd_objc::Id) => ());
@@ -287,7 +222,7 @@ impl<'view> ViewRef<'view> {
     pub fn set_translates_autoresizing_mask_into_constraints(
         self,
         enabled: bool,
-    ) -> Result<(), ViewError> {
+    ) -> Result<(), UiError> {
         self.with(|view| unsafe {
             zpd_objc::msg_send!(view, zpd_objc::sel!("setTranslatesAutoresizingMaskIntoConstraints:"), ((enabled): bool) => ())
         })
@@ -330,89 +265,13 @@ impl<'view> ViewRef<'view> {
     }
 }
 
+/// Exposes a native view handle; view operations live on [`ViewRef`].
 pub trait AsView {
     fn as_view(&self) -> ViewRef<'_>;
-    fn add_subview(&self, child: &impl AsView) -> Result<(), ViewError> {
-        self.as_view().add_subview(child)
-    }
-    fn remove_from_superview(&self) -> Result<(), ViewError> {
-        self.as_view().remove_from_superview()
-    }
-    fn set_frame(&self, frame: Rect) -> Result<(), ViewError> {
-        self.as_view().set_frame(frame)
-    }
-    fn set_needs_layout(&self, needs_layout: bool) -> Result<(), ViewError> {
-        self.as_view().set_needs_layout(needs_layout)
-    }
-    fn layout_subtree_if_needed(&self) -> Result<(), ViewError> {
-        self.as_view().layout_subtree_if_needed()
-    }
-    fn bounds(&self) -> Result<Rect, ViewError> {
-        self.as_view().bounds()
-    }
-    fn set_identifier(&self, identifier: Option<&str>) -> Result<(), ViewError> {
-        self.as_view().set_identifier(identifier)
-    }
-    fn set_translates_autoresizing_mask_into_constraints(
-        &self,
-        enabled: bool,
-    ) -> Result<(), ViewError> {
-        self.as_view()
-            .set_translates_autoresizing_mask_into_constraints(enabled)
-    }
-    fn leading_anchor(&self) -> XAxisAnchor<'_> {
-        self.as_view().leading_anchor()
-    }
-    fn trailing_anchor(&self) -> XAxisAnchor<'_> {
-        self.as_view().trailing_anchor()
-    }
-    fn left_anchor(&self) -> XAxisAnchor<'_> {
-        self.as_view().left_anchor()
-    }
-    fn right_anchor(&self) -> XAxisAnchor<'_> {
-        self.as_view().right_anchor()
-    }
-    fn center_x_anchor(&self) -> XAxisAnchor<'_> {
-        self.as_view().center_x_anchor()
-    }
-    fn top_anchor(&self) -> YAxisAnchor<'_> {
-        self.as_view().top_anchor()
-    }
-    fn bottom_anchor(&self) -> YAxisAnchor<'_> {
-        self.as_view().bottom_anchor()
-    }
-    fn center_y_anchor(&self) -> YAxisAnchor<'_> {
-        self.as_view().center_y_anchor()
-    }
-    fn first_baseline_anchor(&self) -> YAxisAnchor<'_> {
-        self.as_view().first_baseline_anchor()
-    }
-    fn last_baseline_anchor(&self) -> YAxisAnchor<'_> {
-        self.as_view().last_baseline_anchor()
-    }
-    fn width_anchor(&self) -> Dimension<'_> {
-        self.as_view().width_anchor()
-    }
-    fn height_anchor(&self) -> Dimension<'_> {
-        self.as_view().height_anchor()
-    }
 }
 
 impl AsView for ViewRef<'_> {
     fn as_view(&self) -> ViewRef<'_> {
         *self
-    }
-}
-
-pub(crate) fn native_rect(rect: Rect) -> native::Rect {
-    native::Rect {
-        origin: native::Point {
-            x: rect.x,
-            y: rect.y,
-        },
-        size: native::Size {
-            width: rect.width,
-            height: rect.height,
-        },
     }
 }

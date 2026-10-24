@@ -1,37 +1,28 @@
 use crate::actor::WindowEventKind;
 use crate::native;
-use crate::runloop::{Application, ApplicationDelegate};
+use crate::runloop::Application;
 use zpd_objc::Strong;
 
+use super::UiError;
 use super::callback;
-use super::view::{AsView, ViewActor, ViewError, ViewRef};
+use super::view::{AsView, ViewActor, ViewRef};
 
 pub struct TextField {
     view: ViewActor,
 }
 impl TextField {
-    pub fn with_string<D: ApplicationDelegate>(
-        application: &Application<D>,
-        value: &str,
-    ) -> Result<Self, ViewError> {
+    pub fn with_string(application: &Application, value: &str) -> Result<Self, UiError> {
         Self::create(application, value, false)
     }
-    pub fn label_with_string<D: ApplicationDelegate>(
-        application: &Application<D>,
-        value: &str,
-    ) -> Result<Self, ViewError> {
+    pub fn label_with_string(application: &Application, value: &str) -> Result<Self, UiError> {
         Self::create(application, value, true)
     }
-    fn create<D: ApplicationDelegate>(
-        application: &Application<D>,
-        value: &str,
-        label: bool,
-    ) -> Result<Self, ViewError> {
+    fn create(application: &Application, value: &str, label: bool) -> Result<Self, UiError> {
         let value = native::nsstring(value);
         // SAFETY: NSTextField alloc/init produces a retained object.
         let native = unsafe {
             let object = zpd_objc::msg_send!(zpd_objc::msg_send!(zpd_objc::class!("NSTextField"), zpd_objc::sel!("alloc"), () => zpd_objc::Id), zpd_objc::sel!("init"), () => zpd_objc::Id);
-            let object = Strong::from_retained(object).ok_or(ViewError::NativeCreationFailed)?;
+            let object = Strong::from_retained(object).ok_or(UiError::NativeCreationFailed)?;
             zpd_objc::msg_send!(object.as_ptr(), zpd_objc::sel!("setStringValue:"), ((value.as_ptr()): zpd_objc::Id) => ());
             if label {
                 zpd_objc::msg_send!(object.as_ptr(), zpd_objc::sel!("setEditable:"), ((false): bool) => ());
@@ -47,7 +38,7 @@ impl TextField {
             .add_teardown(view.actor(), |field| unsafe {
                 zpd_objc::msg_send!(field, zpd_objc::sel!("setDelegate:"), ((zpd_objc::NIL): zpd_objc::Id) => ())
             })
-            .map_err(ViewError::from)?;
+            .map_err(UiError::from)?;
         if !label {
             let actor = view.actor().clone();
             let target = callback::target(move |notification| unsafe {
@@ -60,12 +51,12 @@ impl TextField {
                     tree.emit(&actor, WindowEventKind::TextChanged { value });
                 }
             });
-            let tree = view.actor().tree_handle().ok_or(ViewError::Closed)?;
+            let tree = view.actor().tree_handle().ok_or(UiError::Closed)?;
             let target = tree
                 .replace_owned(view.actor(), "delegate", target)
-                .map_err(ViewError::from)?;
+                .map_err(UiError::from)?;
             tree.add_teardown(&target, |target| unsafe { callback::release(target) })
-                .map_err(ViewError::from)?;
+                .map_err(UiError::from)?;
             view.as_view().with(|field| {
                 target.with(|target| unsafe {
                     zpd_objc::msg_send!(field, zpd_objc::sel!("setDelegate:"), ((target): zpd_objc::Id) => ())
@@ -74,46 +65,46 @@ impl TextField {
         }
         Ok(Self { view })
     }
-    pub fn set_string_value(&self, value: &str) -> Result<(), ViewError> {
+    pub fn set_string_value(&self, value: &str) -> Result<(), UiError> {
         let value = native::nsstring(value);
         self.view.as_view().with(|field| unsafe {
             zpd_objc::msg_send!(field, zpd_objc::sel!("setStringValue:"), ((value.as_ptr()): zpd_objc::Id) => ())
         })
     }
-    pub fn string_value(&self) -> Result<String, ViewError> {
+    pub fn string_value(&self) -> Result<String, UiError> {
         self.view.as_view().with(|field| unsafe {
             native::rust_string(
                 zpd_objc::msg_send!(field, zpd_objc::sel!("stringValue"), () => zpd_objc::Id),
             )
         })
     }
-    pub fn set_placeholder_string(&self, value: Option<&str>) -> Result<(), ViewError> {
+    pub fn set_placeholder_string(&self, value: Option<&str>) -> Result<(), UiError> {
         let value = value.map(native::nsstring);
         self.view.as_view().with(|field| unsafe {
             zpd_objc::msg_send!(field, zpd_objc::sel!("setPlaceholderString:"), ((value.as_ref().map_or(zpd_objc::NIL, Strong::as_ptr)): zpd_objc::Id) => ());
         })
     }
-    pub fn set_editable(&self, editable: bool) -> Result<(), ViewError> {
+    pub fn set_editable(&self, editable: bool) -> Result<(), UiError> {
         self.view.as_view().with(|field| unsafe {
             zpd_objc::msg_send!(field, zpd_objc::sel!("setEditable:"), ((editable): bool) => ())
         })
     }
-    pub fn set_selectable(&self, selectable: bool) -> Result<(), ViewError> {
+    pub fn set_selectable(&self, selectable: bool) -> Result<(), UiError> {
         self.view.as_view().with(|field| unsafe {
             zpd_objc::msg_send!(field, zpd_objc::sel!("setSelectable:"), ((selectable): bool) => ())
         })
     }
-    pub fn set_bordered(&self, bordered: bool) -> Result<(), ViewError> {
+    pub fn set_bordered(&self, bordered: bool) -> Result<(), UiError> {
         self.view.as_view().with(|field| unsafe {
             zpd_objc::msg_send!(field, zpd_objc::sel!("setBordered:"), ((bordered): bool) => ())
         })
     }
-    pub fn set_draws_background(&self, draws_background: bool) -> Result<(), ViewError> {
+    pub fn set_draws_background(&self, draws_background: bool) -> Result<(), UiError> {
         self.view.as_view().with(|field| unsafe {
             zpd_objc::msg_send!(field, zpd_objc::sel!("setDrawsBackground:"), ((draws_background): bool) => ())
         })
     }
-    pub fn set_multiline(&self, multiline: bool) -> Result<(), ViewError> {
+    pub fn set_multiline(&self, multiline: bool) -> Result<(), UiError> {
         self.view.as_view().with(|field| {
             // SAFETY: The live view is an NSTextField whose cell accepts text layout selectors.
             unsafe {

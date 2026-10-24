@@ -1,4 +1,4 @@
-use super::{SidebarError, WindowError};
+use super::UiError;
 use crate::actor::ActorRef;
 use crate::native;
 use zpd_objc::Strong;
@@ -16,7 +16,7 @@ pub(crate) struct SidebarToolbar {
 }
 
 impl SidebarToolbar {
-    pub(crate) fn install(window: &ActorRef) -> Result<Self, SidebarError> {
+    pub(crate) fn install(window: &ActorRef) -> Result<Self, UiError> {
         window
             .with(|window| {
                 // SAFETY: The window is live; AppKit toolbar selectors use the declared ABI.
@@ -29,7 +29,7 @@ impl SidebarToolbar {
                     } else {
                         Strong::retain(existing)
                     }
-                    .ok_or(SidebarError::NativeCreationFailed)?;
+                    .ok_or(UiError::NativeCreationFailed)?;
                     let inserted = Self::toggle_index(&toolbar).is_none();
                     if created {
                         zpd_objc::msg_send!(toolbar.as_ptr(), zpd_objc::sel!("setDisplayMode:"), ((native::NS_TOOLBAR_DISPLAY_MODE_ICON_ONLY): u64) => ());
@@ -51,7 +51,7 @@ impl SidebarToolbar {
                     })
                 }
             })
-            .map_err(|_| SidebarError::Closed)?
+            .map_err(UiError::from)?
     }
 
     fn toggle_index(toolbar: &Strong) -> Option<i64> {
@@ -68,7 +68,7 @@ impl SidebarToolbar {
         }
     }
 
-    pub(crate) fn clear(self, window: &ActorRef) -> Result<(), WindowError> {
+    pub(crate) fn clear(self, window: &ActorRef) -> Result<(), UiError> {
         window
             .with(|window| {
                 // SAFETY: The retained toolbar and live window remain valid during removal.
@@ -86,6 +86,6 @@ impl SidebarToolbar {
                     }
                 }
             })
-            .map_err(WindowError::from)
+            .map_err(UiError::from)
     }
 }

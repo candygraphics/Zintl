@@ -29,7 +29,7 @@ final class HStackLayoutTests: ZintlUITestCase {
     let resizeHandle = window.coordinate(
       withNormalizedOffset: CGVector(dx: 0.98, dy: 0.98)
     )
-    resizeHandle.press(
+    resizeHandle.click(
       forDuration: 0.2,
       thenDragTo: resizeHandle.withOffset(CGVector(dx: 160, dy: 100))
     )
@@ -66,13 +66,16 @@ final class HStackLayoutTests: ZintlUITestCase {
     let initialTrailingInset = window.frame.maxX - spaceTrailing.frame.maxX
     XCTAssertEqual(equalLeading.frame.width, equalTrailing.frame.width, accuracy: 1)
 
+    let initialWindowSize = window.frame.size
     let resizeHandle = window.coordinate(
       withNormalizedOffset: CGVector(dx: 0.98, dy: 0.98)
     )
-    resizeHandle.press(
+    resizeHandle.click(
       forDuration: 0.2,
       thenDragTo: resizeHandle.withOffset(CGVector(dx: 160, dy: 100))
     )
+    // Guard against the inset checks passing on a window that never resized.
+    XCTAssertNotEqual(window.frame.size, initialWindowSize)
 
     XCTAssertEqual(
       spaceLeading.frame.minX - window.frame.minX,

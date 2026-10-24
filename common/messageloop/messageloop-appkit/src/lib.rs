@@ -13,10 +13,8 @@ use zpd_appkit::actor::{
     ActorError, ActorId, ActorRef, ApplicationMessage, EventRouteToken, WindowEvent,
     WindowEventKind,
 };
-use zpd_appkit::runloop::{
-    Application, ApplicationDelegate, ApplicationError, WindowEventRegistration,
-};
-use zpd_appkit::ui::{Window, WindowError};
+use zpd_appkit::runloop::{Application, ApplicationError, WindowEventRegistration};
+use zpd_appkit::ui::{UiError, Window};
 use zpd_corefoundation::{ContextRunLoopSource, RunLoopSourceError, RunLoopSourceSignaler};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -168,7 +166,7 @@ impl<'application, M: Send + 'static> Context<'_, 'application, M> {
     }
 
     /// Creates a Window owned by this message loop and returns its Actor ID.
-    pub fn create_window(&self) -> Result<ActorId, WindowError> {
+    pub fn create_window(&self) -> Result<ActorId, UiError> {
         self.create_window_with_event_route(None)
     }
 
@@ -177,7 +175,7 @@ impl<'application, M: Send + 'static> Context<'_, 'application, M> {
     pub fn create_window_with_event_route(
         &self,
         event_route: Option<EventRouteToken>,
-    ) -> Result<ActorId, WindowError> {
+    ) -> Result<ActorId, UiError> {
         self.windows.create(event_route)
     }
 
@@ -218,13 +216,13 @@ pub use MessageLoopHandler as MessageHandler;
 
 struct WindowRegistry<'application> {
     create_window: Box<
-        dyn Fn(Option<EventRouteToken>) -> Result<Window<'application>, WindowError> + 'application,
+        dyn Fn(Option<EventRouteToken>) -> Result<Window<'application>, UiError> + 'application,
     >,
     windows: RefCell<HashMap<ActorId, Window<'application>>>,
 }
 
 impl WindowRegistry<'_> {
-    fn create(&self, event_route: Option<EventRouteToken>) -> Result<ActorId, WindowError> {
+    fn create(&self, event_route: Option<EventRouteToken>) -> Result<ActorId, UiError> {
         let window = (self.create_window)(event_route)?;
         let id = window.actor_ref().actor_id();
         self.windows.borrow_mut().insert(id, window);
@@ -364,13 +362,13 @@ where
     /// # Errors
     /// Returns an error when called off that run loop, native source creation
     /// fails, or the Application already has a Window event callback.
-    pub fn new<D: ApplicationDelegate>(
-        application: &'application Application<D>,
+    pub fn new(
+        application: &'application Application,
         handler: H,
     ) -> Result<Self, MessageLoopError> {
         let application_actor = application.actor_ref();
         if !application_actor.is_alive() {
-            return Err(MessageLoopError::Application(ActorError::NotActive));
+            return Err(MessageLoopError::Application(ActorError::Dropped));
         }
         let shared = Arc::new(SharedState::new());
         let callback = Rc::new(CallbackState {

@@ -74,7 +74,7 @@ fn main() {
     // zpd-appkit's safe run-loop source rather than a Rust test worker.
     let values = Arc::new(Mutex::new(Vec::new()));
     let window_events = Arc::new(Mutex::new(Vec::new()));
-    let application = Application::new(()).unwrap();
+    let application = Application::new().unwrap();
     assert!(application.run_loop().is_current());
     let message_loop = MessageLoopAppkit::new(
         &application,

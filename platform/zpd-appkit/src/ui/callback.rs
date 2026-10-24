@@ -1,53 +1,38 @@
 use std::cell::RefCell;
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::rc::Rc;
 use std::sync::OnceLock;
 
-use zpd_objc::{Id, Strong};
+use zpd_objc::{Id, RcIvar, Strong};
 
-struct Callback {
-    invoke: RefCell<Box<dyn FnMut(Id)>>,
-}
+type Callback = RefCell<Box<dyn FnMut(Id)>>;
 
-unsafe fn callback(object: Id) -> *mut Callback {
-    unsafe { zpd_objc::get_pointer_ivar(object, c"_zpdCallback".as_ptr()) }
-}
+static CALLBACK: RcIvar<Callback> = RcIvar::new(c"_zpdCallback");
 
 unsafe extern "C" fn invoke(object: Id, _: zpd_objc::Sel, sender: Id) {
-    let callback = unsafe { callback(object).as_ref() };
-    let Some(callback) = callback else { return };
-    if catch_unwind(AssertUnwindSafe(|| {
-        let Ok(mut invoke) = callback.invoke.try_borrow_mut() else {
+    // SAFETY: This method is installed only on targets with a `_zpdCallback` ivar.
+    let Some(callback) = (unsafe { CALLBACK.get(object) }) else {
+        return;
+    };
+    zpd_objc::abort_on_unwind(|| {
+        let Ok(mut invoke) = callback.try_borrow_mut() else {
             std::process::abort()
         };
         invoke(sender);
-    }))
-    .is_err()
-    {
-        std::process::abort()
-    }
+    });
 }
 
 unsafe extern "C" fn dealloc(object: Id, _: zpd_objc::Sel) {
+    // SAFETY: The receiver is a target created by `target`.
     unsafe { release(object) };
+    // SAFETY: NSObject's dealloc completes destruction after Rust state is released.
     unsafe {
         zpd_objc::msg_send_super!(object, zpd_objc::class!("NSObject"), zpd_objc::sel!("dealloc"), () => ())
     };
 }
 
 pub(crate) unsafe fn release(object: Id) {
-    let callback = unsafe { callback(object) };
-    if !callback.is_null() {
-        // SAFETY: Clearing the ivar transfers the sole allocation back to Rust.
-        unsafe {
-            zpd_objc::set_pointer_ivar(
-                object,
-                c"_zpdCallback".as_ptr(),
-                std::ptr::null_mut::<Callback>(),
-            )
-        };
-        // SAFETY: The target owns exactly one callback allocation.
-        unsafe { drop(Box::from_raw(callback)) };
-    }
+    // SAFETY: The caller passes a target created by `target`.
+    drop(unsafe { CALLBACK.take(object) });
 }
 
 fn target_class() -> zpd_objc::Class {
@@ -65,19 +50,15 @@ fn target_class() -> zpd_objc::Class {
 }
 
 pub(crate) fn target(callback: impl FnMut(Id) + 'static) -> Strong {
-    let class = target_class();
-    // SAFETY: The registered target class owns the installed callback pointer.
+    let target = crate::native::alloc_init(target_class());
+    // SAFETY: The registered target class declares the `_zpdCallback` ivar.
     unsafe {
-        let object = zpd_objc::msg_send!(zpd_objc::msg_send!(class, zpd_objc::sel!("alloc"), () => zpd_objc::Id), zpd_objc::sel!("init"), () => zpd_objc::Id);
-        zpd_objc::set_pointer_ivar(
-            object,
-            c"_zpdCallback".as_ptr(),
-            Box::into_raw(Box::new(Callback {
-                invoke: RefCell::new(Box::new(callback)),
-            })),
+        CALLBACK.set(
+            target.as_ptr(),
+            Rc::new(RefCell::new(Box::new(callback) as Box<dyn FnMut(Id)>)),
         );
-        Strong::from_retained(object).expect("callback target allocation failed")
     }
+    target
 }
 
 #[cfg(test)]

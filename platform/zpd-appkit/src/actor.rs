@@ -3,16 +3,19 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::rc::{Rc, Weak};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use zpd_objc::{Id, Strong};
 
-/// Opaque identity of an Actor node within one Application session.
+static NEXT_TREE_ID: AtomicU64 = AtomicU64::new(0);
+
+/// Opaque identity of an Actor node within one Actor tree.
 ///
 /// IDs remain distinct when an Actor slot is reused or a new Application
-/// session starts. They do not retain the native object or its Actor.
+/// creates a new tree. They do not retain the native object or its Actor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ActorId {
-    session: u64,
+    tree: u64,
     index: usize,
     generation: u32,
 }
@@ -65,7 +68,6 @@ pub enum WindowEventKind {
 pub enum ActorError {
     Dropped,
     NativeReleased,
-    NotActive,
     InvalidHierarchy,
 }
 
@@ -128,7 +130,7 @@ pub struct ActorRef {
     inner: Weak<ActorInner>,
     tree: Weak<RefCell<TreeInner>>,
     id: NodeKey,
-    session: u64,
+    tree_id: u64,
     _main_thread: PhantomData<Rc<()>>,
 }
 
@@ -136,7 +138,7 @@ impl ActorRef {
     /// Returns this Actor's non-retaining identity.
     pub fn actor_id(&self) -> ActorId {
         ActorId {
-            session: self.session,
+            tree: self.tree_id,
             index: self.id.index,
             generation: self.id.generation,
         }
@@ -145,9 +147,6 @@ impl ActorRef {
     /// Replaces the opaque event route associated with this Actor.
     pub fn set_event_route(&self, route: Option<EventRouteToken>) -> Result<(), ActorError> {
         let tree = self.tree.upgrade().ok_or(ActorError::Dropped)?;
-        if tree.borrow().active_session != Some(self.session) {
-            return Err(ActorError::NotActive);
-        }
         tree.borrow_mut()
             .node_mut(self.id)
             .ok_or(ActorError::Dropped)?
@@ -156,10 +155,8 @@ impl ActorRef {
     }
 
     pub(crate) fn with<R>(&self, operation: impl FnOnce(Id) -> R) -> Result<R, ActorError> {
-        let tree = self.tree.upgrade().ok_or(ActorError::Dropped)?;
-        if tree.borrow().active_session != Some(self.session) {
-            return Err(ActorError::NotActive);
-        }
+        // A dropped tree means its Application has ended.
+        self.tree.upgrade().ok_or(ActorError::Dropped)?;
         let inner = self.inner.upgrade().ok_or(ActorError::Dropped)?;
         if !inner.alive.get() {
             return Err(ActorError::Dropped);
@@ -169,9 +166,7 @@ impl ActorRef {
     }
 
     pub fn is_alive(&self) -> bool {
-        self.tree
-            .upgrade()
-            .is_some_and(|tree| tree.borrow().active_session == Some(self.session))
+        self.tree.strong_count() > 0
             && self
                 .inner
                 .upgrade()
@@ -181,7 +176,7 @@ impl ActorRef {
     /// Creates a non-retaining handle that can observe native deallocation.
     ///
     /// # Errors
-    /// Returns an error when this Actor or its Application session is no longer active.
+    /// Returns an error when this Actor or its Application is no longer alive.
     pub fn downgrade_native(&self) -> Result<NativeWeakRef, ActorError> {
         self.with(|native| NativeWeakRef {
             native: WeakSlot::new(native),
@@ -198,7 +193,7 @@ impl ActorRef {
     }
 
     pub(crate) fn same_tree(&self, other: &Self) -> bool {
-        self.session == other.session && Weak::ptr_eq(&self.tree, &other.tree)
+        Weak::ptr_eq(&self.tree, &other.tree)
     }
 
     pub(crate) fn remove(&self) {
@@ -208,19 +203,33 @@ impl ActorRef {
     }
 
     pub(crate) fn move_to_root(&self) -> Result<(), ActorError> {
-        let tree = self.tree.upgrade().ok_or(ActorError::Dropped)?;
-        ActorTree {
-            inner: tree,
-            session: self.session,
-        }
-        .move_to_root(self)
+        let inner = self.tree.upgrade().ok_or(ActorError::Dropped)?;
+        ActorTree { inner }.move_to_root(self)
     }
 
     pub(crate) fn tree_handle(&self) -> Option<ActorTree> {
-        self.tree.upgrade().map(|inner| ActorTree {
-            inner,
-            session: self.session,
-        })
+        self.tree.upgrade().map(|inner| ActorTree { inner })
+    }
+}
+
+/// Removes a partially built Actor subtree unless construction completes.
+pub(crate) struct ActorRollback(Option<ActorRef>);
+
+impl ActorRollback {
+    pub(crate) fn new(actor: ActorRef) -> Self {
+        Self(Some(actor))
+    }
+
+    pub(crate) fn disarm(&mut self) {
+        self.0.take();
+    }
+}
+
+impl Drop for ActorRollback {
+    fn drop(&mut self) {
+        if let Some(actor) = self.0.take() {
+            actor.remove();
+        }
     }
 }
 
@@ -229,7 +238,6 @@ impl std::fmt::Display for ActorError {
         formatter.write_str(match self {
             Self::Dropped => "the actor was dropped",
             Self::NativeReleased => "the native object was released",
-            Self::NotActive => "the actor session is not active",
             Self::InvalidHierarchy => "the actor hierarchy is invalid",
         })
     }
@@ -264,19 +272,18 @@ struct EventHandler {
 }
 
 struct TreeInner {
+    id: u64,
     nodes: Vec<Option<Node>>,
     generations: Vec<u32>,
     root: NodeKey,
-    active_session: Option<u64>,
-    next_session: u64,
     event_handler: Option<EventHandler>,
     next_event_handler: u64,
 }
 
+/// Owns every Actor of one Application. Dropping it invalidates all `ActorRef`s.
 #[derive(Clone)]
 pub(crate) struct ActorTree {
     inner: Rc<RefCell<TreeInner>>,
-    session: u64,
 }
 
 impl ActorTree {
@@ -291,6 +298,7 @@ impl ActorTree {
         };
         Self {
             inner: Rc::new(RefCell::new(TreeInner {
+                id: NEXT_TREE_ID.fetch_add(1, Ordering::Relaxed),
                 nodes: vec![Some(Node {
                     generation: 0,
                     parent: None,
@@ -307,36 +315,9 @@ impl ActorTree {
                 })],
                 generations: vec![0],
                 root: root_id,
-                active_session: Some(0),
-                next_session: 1,
                 event_handler: None,
                 next_event_handler: 0,
             })),
-            session: 0,
-        }
-    }
-
-    pub(crate) fn begin_session(&self) -> Self {
-        self.clear();
-        let session = {
-            let mut tree = self.inner.borrow_mut();
-            let session = tree.next_session;
-            tree.next_session = tree.next_session.wrapping_add(1);
-            tree.active_session = Some(session);
-            session
-        };
-        Self {
-            inner: self.inner.clone(),
-            session,
-        }
-    }
-
-    pub(crate) fn end_session(&self) {
-        self.clear();
-        let mut tree = self.inner.borrow_mut();
-        if tree.active_session == Some(self.session) {
-            tree.active_session = None;
-            tree.event_handler = None;
         }
     }
 
@@ -368,7 +349,7 @@ impl ActorTree {
         if !Weak::ptr_eq(&parent.tree, &Rc::downgrade(&self.inner)) {
             return Err(ActorError::InvalidHierarchy);
         }
-        if parent.session != self.session || !parent.is_alive() {
+        if !parent.is_alive() {
             return Err(ActorError::Dropped);
         }
         Ok(self.insert(parent.id, native))
@@ -415,7 +396,7 @@ impl ActorTree {
             inner: Rc::downgrade(&actor),
             tree: Rc::downgrade(&self.inner),
             id,
-            session: self.session,
+            tree_id: tree.id,
             _main_thread: PhantomData,
         }
     }
@@ -427,13 +408,13 @@ impl ActorTree {
             inner: Rc::downgrade(&node.actor),
             tree: Rc::downgrade(&self.inner),
             id,
-            session: self.session,
+            tree_id: tree.id,
             _main_thread: PhantomData,
         })
     }
 
     pub(crate) fn emit(&self, target: &ActorRef, kind: WindowEventKind) {
-        if target.session != self.session || !target.is_alive() {
+        if !Weak::ptr_eq(&target.tree, &Rc::downgrade(&self.inner)) || !target.is_alive() {
             return;
         }
         let event = {
@@ -450,7 +431,7 @@ impl ActorTree {
             }
             let Some(window) = window else { return };
             WindowEvent {
-                window: self.public_id(window),
+                window: tree.public_id(window),
                 target: target.actor_id(),
                 route: tree.node(target.id).and_then(|node| node.event_route),
                 kind,
@@ -474,9 +455,6 @@ impl ActorTree {
         callback: impl FnMut(WindowEvent) + 'static,
     ) -> Result<u64, ActorError> {
         let mut tree = self.inner.borrow_mut();
-        if tree.active_session != Some(self.session) {
-            return Err(ActorError::NotActive);
-        }
         if tree.event_handler.is_some() {
             return Err(ActorError::InvalidHierarchy);
         }
@@ -497,14 +475,6 @@ impl ActorTree {
             .is_some_and(|handler| handler.id == id)
         {
             tree.event_handler = None;
-        }
-    }
-
-    fn public_id(&self, id: NodeKey) -> ActorId {
-        ActorId {
-            session: self.session,
-            index: id.index,
-            generation: id.generation,
         }
     }
 
@@ -646,6 +616,14 @@ impl ActorTree {
 }
 
 impl TreeInner {
+    fn public_id(&self, id: NodeKey) -> ActorId {
+        ActorId {
+            tree: self.id,
+            index: id.index,
+            generation: id.generation,
+        }
+    }
+
     fn node(&self, id: NodeKey) -> Option<&Node> {
         self.nodes
             .get(id.index)?
@@ -744,7 +722,7 @@ mod tests {
     }
 
     #[test]
-    fn public_ids_distinguish_reused_slots_and_sessions() {
+    fn public_ids_distinguish_reused_slots_and_trees() {
         // Verifies public IDs cannot alias after Actor slot reuse or Application restart.
         let tree = ActorTree::new(native::alloc_init(zpd_objc::class!("NSObject")));
         let first = tree.insert_root(native::alloc_init(zpd_objc::class!("NSObject")));
@@ -753,8 +731,8 @@ mod tests {
         let second = tree.insert_root(native::alloc_init(zpd_objc::class!("NSObject")));
         assert_ne!(first_id, second.actor_id());
 
-        let next_session = tree.begin_session();
-        let third = next_session.insert_root(native::alloc_init(zpd_objc::class!("NSObject")));
+        let next_tree = ActorTree::new(native::alloc_init(zpd_objc::class!("NSObject")));
+        let third = next_tree.insert_root(native::alloc_init(zpd_objc::class!("NSObject")));
         assert_ne!(second.actor_id(), third.actor_id());
     }
 
@@ -873,17 +851,17 @@ mod tests {
     }
 
     #[test]
-    fn application_session_actor_does_not_revive() {
-        // Verifies an NSApp-style root ActorRef stays invalid after a later session begins.
-        let tree = ActorTree::new(native::alloc_init(zpd_objc::class!("NSObject")));
-        let first = tree.begin_session();
+    fn dropped_tree_actor_does_not_revive() {
+        // Verifies an NSApp-style root ActorRef stays invalid after a later tree reuses NSApp.
+        let app = native::alloc_init(zpd_objc::class!("NSObject"));
+        let first = ActorTree::new(app.clone());
         let stale = first.root();
-        first.end_session();
-        assert_eq!(stale.with(|_| ()), Err(ActorError::NotActive));
+        drop(first);
+        assert_eq!(stale.with(|_| ()), Err(ActorError::Dropped));
 
-        let second = tree.begin_session();
+        let second = ActorTree::new(app);
         assert!(second.root().is_alive());
-        assert_eq!(stale.with(|_| ()), Err(ActorError::NotActive));
+        assert_eq!(stale.with(|_| ()), Err(ActorError::Dropped));
     }
 
     #[test]

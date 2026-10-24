@@ -96,9 +96,8 @@ mod backend {
     use zpd_appkit::geometry::Rect as NativeRect;
     use zpd_appkit::runloop::{Application, ApplicationError};
     use zpd_appkit::ui::{
-        AsView, Button as NativeButton, CommandError, CommandItem, CommandModifier, CommandRole,
-        CommandSet, TextField as NativeTextField, View as NativeView, ViewError, ViewRef,
-        WindowAppMenu, WindowError,
+        AsView, Button as NativeButton, CommandItem, CommandModifier, CommandRole, CommandSet,
+        TextField as NativeTextField, UiError, View as NativeView, ViewRef, WindowAppMenu,
     };
 
     use super::{AppKitRenderNode, MainTask, MainTaskSender, NodeId, NodeKind, Rect, ViewKind};
@@ -106,10 +105,7 @@ mod backend {
     #[derive(Debug)]
     pub enum AppError {
         Application(ApplicationError),
-        Command(CommandError),
-        Window(WindowError),
-        Sidebar(zpd_appkit::ui::SidebarError),
-        View(ViewError),
+        Ui(UiError),
         Layout(LayoutError),
         MessageLoop(MessageLoopError),
         NoWindow,
@@ -120,10 +116,7 @@ mod backend {
         fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
                 Self::Application(error) => error.fmt(formatter),
-                Self::Command(error) => error.fmt(formatter),
-                Self::Window(error) => error.fmt(formatter),
-                Self::Sidebar(error) => error.fmt(formatter),
-                Self::View(error) => error.fmt(formatter),
+                Self::Ui(error) => error.fmt(formatter),
                 Self::Layout(error) => error.fmt(formatter),
                 Self::MessageLoop(error) => error.fmt(formatter),
                 Self::NoWindow => {
@@ -138,10 +131,7 @@ mod backend {
         fn source(&self) -> Option<&(dyn Error + 'static)> {
             match self {
                 Self::Application(error) => Some(error),
-                Self::Command(error) => Some(error),
-                Self::Window(error) => Some(error),
-                Self::Sidebar(error) => Some(error),
-                Self::View(error) => Some(error),
+                Self::Ui(error) => Some(error),
                 Self::Layout(error) => Some(error),
                 Self::MessageLoop(error) => Some(error),
                 Self::NoWindow | Self::InvalidTree => None,
@@ -287,7 +277,7 @@ mod backend {
                 && let Some(native) = node.native.take()
                 && let Err(error) = native.as_view().remove_from_superview()
             {
-                self.record_error(AppError::View(error));
+                self.record_error(AppError::Ui(error));
             }
         }
 
@@ -306,7 +296,7 @@ mod backend {
 
         fn synchronize<'application, 'windows>(
             &mut self,
-            application: &'application Application<()>,
+            application: &'application Application,
             cx: &MessageContext<'_, 'windows, Message>,
         ) -> Result<(), AppError> {
             if let Some(error) = self.pending_error.borrow_mut().take() {
@@ -345,7 +335,7 @@ mod backend {
                     let route = self.node(window_id).event_route.map(route_token);
                     let native_id = cx
                         .create_window_with_event_route(route)
-                        .map_err(AppError::Window)?;
+                        .map_err(AppError::Ui)?;
                     let layout = Rc::new(RefCell::new(WindowLayout::default()));
                     let callback_layout = layout.clone();
                     let callback_error = self.pending_error.clone();
@@ -357,8 +347,8 @@ mod backend {
                             }
                         })
                     })
-                    .ok_or(AppError::Window(WindowError::Closed))?
-                    .map_err(AppError::Window)?;
+                    .ok_or(AppError::Ui(UiError::Closed))?
+                    .map_err(AppError::Ui)?;
                     let node = self.node_mut(window_id);
                     node.native_window = Some(native_id);
                     node.window_layout = Some(layout);
@@ -382,24 +372,22 @@ mod backend {
                     window
                         .actor_ref()
                         .set_event_route(event_route)
-                        .map_err(WindowError::from)
-                        .map_err(AppError::Window)?;
+                        .map_err(UiError::from)
+                        .map_err(AppError::Ui)?;
                     if apply_full_size_content_view {
                         window
                             .set_full_size_content_view(full_size_content_view)
-                            .map_err(AppError::Window)?;
+                            .map_err(AppError::Ui)?;
                     }
                     if apply_bounds {
                         window
                             .set_bounds(native_rect(bounds))
-                            .map_err(AppError::Window)?;
+                            .map_err(AppError::Ui)?;
                     }
-                    window.set_title(&title).map_err(AppError::Window)?;
-                    window
-                        .set_identifier(id.as_deref())
-                        .map_err(AppError::Window)
+                    window.set_title(&title).map_err(AppError::Ui)?;
+                    window.set_identifier(id.as_deref()).map_err(AppError::Ui)
                 })
-                .ok_or(AppError::Window(WindowError::Closed))??;
+                .ok_or(AppError::Ui(UiError::Closed))??;
                 if apply_bounds {
                     self.node_mut(window_id).applied_window_bounds = Some(bounds);
                 }
@@ -413,22 +401,22 @@ mod backend {
                         if let Some(sidebar) = &sidebar {
                             window
                                 .set_sidebar(&sidebar.native(), |_| {})
-                                .map_err(AppError::Sidebar)
+                                .map_err(AppError::Ui)
                         } else {
-                            window.clear_sidebar().map_err(AppError::Window)
+                            window.clear_sidebar().map_err(AppError::Ui)
                         }
                     })
-                    .ok_or(AppError::Window(WindowError::Closed))??;
+                    .ok_or(AppError::Ui(UiError::Closed))??;
                     self.node_mut(window_id).applied_sidebar = sidebar;
                 }
 
                 self.materialize_children(application, window_id)?;
                 if rebuild_structure {
                     cx.with_window(native_id, |window| -> Result<(), AppError> {
-                        let content = window.content_view().map_err(AppError::Window)?;
+                        let content = window.content_view().map_err(AppError::Ui)?;
                         self.attach_children(content, window_id)
                     })
-                    .ok_or(AppError::Window(WindowError::Closed))??;
+                    .ok_or(AppError::Ui(UiError::Closed))??;
                 }
                 let update_layout = self.layout_dirty || rebuild_structure || new_window;
                 if update_layout {
@@ -446,11 +434,11 @@ mod backend {
                         .expect("a synchronized window has layout state");
                     *state.borrow_mut() = snapshot;
                     cx.with_window(native_id, |window| -> Result<(), AppError> {
-                        let content = window.content_view().map_err(AppError::Window)?;
-                        content.set_needs_layout(true).map_err(AppError::View)?;
-                        content.layout_subtree_if_needed().map_err(AppError::View)
+                        let content = window.content_view().map_err(AppError::Ui)?;
+                        content.set_needs_layout(true).map_err(AppError::Ui)?;
+                        content.layout_subtree_if_needed().map_err(AppError::Ui)
                     })
-                    .ok_or(AppError::Window(WindowError::Closed))??;
+                    .ok_or(AppError::Ui(UiError::Closed))??;
                     if let Some(error) = self.pending_error.borrow_mut().take() {
                         return Err(error);
                     }
@@ -458,8 +446,8 @@ mod backend {
 
                 if new_window {
                     cx.with_window(native_id, |window| window.show())
-                        .ok_or(AppError::Window(WindowError::Closed))?
-                        .map_err(AppError::Window)?;
+                        .ok_or(AppError::Ui(UiError::Closed))?
+                        .map_err(AppError::Ui)?;
                 }
             }
             self.structure_dirty = false;
@@ -469,7 +457,7 @@ mod backend {
 
         fn materialize_children(
             &mut self,
-            application: &Application<()>,
+            application: &Application,
             parent: NodeId,
         ) -> Result<(), AppError> {
             let children = self.children(parent).to_vec();
@@ -489,7 +477,7 @@ mod backend {
 
         fn create_native(
             &mut self,
-            application: &Application<()>,
+            application: &Application,
             id: NodeId,
             description: &NodeKind,
         ) -> Result<Option<Rc<NativeNode>>, AppError> {
@@ -504,10 +492,10 @@ mod backend {
             let native = match kind {
                 ViewKind::Container => NativeNode::Container(
                     NativeView::new(application, NativeRect::new(0.0, 0.0, 0.0, 0.0))
-                        .map_err(AppError::View)?,
+                        .map_err(AppError::Ui)?,
                 ),
                 ViewKind::Button(title) => NativeNode::Button(
-                    NativeButton::with_title(application, title).map_err(AppError::View)?,
+                    NativeButton::with_title(application, title).map_err(AppError::Ui)?,
                 ),
                 ViewKind::TextField {
                     value,
@@ -519,30 +507,30 @@ mod backend {
                     multiline,
                 } => {
                     let field =
-                        NativeTextField::with_string(application, value).map_err(AppError::View)?;
+                        NativeTextField::with_string(application, value).map_err(AppError::Ui)?;
                     field
                         .set_placeholder_string(placeholder.as_deref())
-                        .map_err(AppError::View)?;
-                    field.set_editable(*editable).map_err(AppError::View)?;
-                    field.set_selectable(*selectable).map_err(AppError::View)?;
-                    field.set_bordered(*bordered).map_err(AppError::View)?;
+                        .map_err(AppError::Ui)?;
+                    field.set_editable(*editable).map_err(AppError::Ui)?;
+                    field.set_selectable(*selectable).map_err(AppError::Ui)?;
+                    field.set_bordered(*bordered).map_err(AppError::Ui)?;
                     field
                         .set_draws_background(*draws_background)
-                        .map_err(AppError::View)?;
-                    field.set_multiline(*multiline).map_err(AppError::View)?;
+                        .map_err(AppError::Ui)?;
+                    field.set_multiline(*multiline).map_err(AppError::Ui)?;
                     NativeNode::TextField(field)
                 }
             };
             native
                 .as_view()
                 .set_identifier(accessibility_id.as_deref())
-                .map_err(AppError::View)?;
+                .map_err(AppError::Ui)?;
             native
                 .as_view()
                 .actor_ref()
                 .set_event_route(self.node(id).event_route.map(route_token))
-                .map_err(ViewError::from)
-                .map_err(AppError::View)?;
+                .map_err(UiError::from)
+                .map_err(AppError::Ui)?;
             Ok(Some(Rc::new(native)))
         }
 
@@ -554,10 +542,10 @@ mod backend {
                 native
                     .as_view()
                     .remove_from_superview()
-                    .map_err(AppError::View)?;
+                    .map_err(AppError::Ui)?;
                 parent
                     .add_subview(&native.as_view())
-                    .map_err(AppError::View)?;
+                    .map_err(AppError::Ui)?;
                 self.attach_children(native.as_view(), *child)?;
             }
             Ok(())
@@ -606,7 +594,7 @@ mod backend {
                 native
                     .as_view()
                     .set_identifier(new_id.as_deref())
-                    .map_err(AppError::View)?;
+                    .map_err(AppError::Ui)?;
             }
             match (native.as_ref(), old, new) {
                 (
@@ -619,7 +607,7 @@ mod backend {
                         kind: ViewKind::Button(new),
                         ..
                     },
-                ) if old != new => button.set_title(new).map_err(AppError::View)?,
+                ) if old != new => button.set_title(new).map_err(AppError::Ui)?,
                 (
                     NativeNode::TextField(field),
                     NodeKind::View {
@@ -640,19 +628,19 @@ mod backend {
                         ..
                     },
                 ) => {
-                    if field.string_value().map_err(AppError::View)? != *value {
-                        field.set_string_value(value).map_err(AppError::View)?;
+                    if field.string_value().map_err(AppError::Ui)? != *value {
+                        field.set_string_value(value).map_err(AppError::Ui)?;
                     }
                     field
                         .set_placeholder_string(placeholder.as_deref())
-                        .map_err(AppError::View)?;
-                    field.set_editable(*editable).map_err(AppError::View)?;
-                    field.set_selectable(*selectable).map_err(AppError::View)?;
-                    field.set_bordered(*bordered).map_err(AppError::View)?;
+                        .map_err(AppError::Ui)?;
+                    field.set_editable(*editable).map_err(AppError::Ui)?;
+                    field.set_selectable(*selectable).map_err(AppError::Ui)?;
+                    field.set_bordered(*bordered).map_err(AppError::Ui)?;
                     field
                         .set_draws_background(*draws_background)
-                        .map_err(AppError::View)?;
-                    field.set_multiline(*multiline).map_err(AppError::View)?;
+                        .map_err(AppError::Ui)?;
+                    field.set_multiline(*multiline).map_err(AppError::Ui)?;
                 }
                 _ => {}
             }
@@ -712,7 +700,7 @@ mod backend {
                 Ok(())
             };
             if let Err(error) = result {
-                self.record_error(AppError::View(ViewError::from(error)));
+                self.record_error(AppError::Ui(UiError::from(error)));
             }
         }
 
@@ -810,7 +798,7 @@ mod backend {
             self.native
                 .as_view()
                 .set_frame(native_frame(frame, parent_height))
-                .map_err(AppError::View)?;
+                .map_err(AppError::Ui)?;
             for child in &self.children {
                 child.apply(layout, frame.height)?;
             }
@@ -860,7 +848,7 @@ mod backend {
     where
         R: AppKitRenderNode,
     {
-        application: &'application Application<()>,
+        application: &'application Application,
         composer: Composer<R, AppKitBackend<R>>,
         error: Rc<RefCell<Option<AppError>>>,
     }
@@ -921,10 +909,10 @@ mod backend {
     where
         R: AppKitRenderNode,
     {
-        let application = Application::new(()).map_err(AppError::Application)?;
+        let application = Application::new().map_err(AppError::Application)?;
         application
             .set_commands(&quit_commands(), |_| {})
-            .map_err(AppError::Command)?;
+            .map_err(AppError::Ui)?;
 
         let error = Rc::new(RefCell::new(None));
         let message_loop = MessageLoopAppkit::new(
