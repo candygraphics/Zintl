@@ -76,7 +76,7 @@ impl SidebarChecks {
 }
 
 fn main() {
-    let application = Application::new(()).unwrap();
+    let application = Application::new().unwrap();
     let window = application.create_window().unwrap();
     let content = window.content_view().unwrap();
     let events = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));

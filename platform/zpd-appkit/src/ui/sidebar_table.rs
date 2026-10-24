@@ -1,13 +1,12 @@
 use std::cell::{Cell, RefCell};
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 use std::sync::OnceLock;
 
 use super::layout::{LayoutAttribute, LayoutRelation};
-use super::{Sidebar, SidebarError};
+use super::{Sidebar, UiError};
 use crate::actor::ActorRef;
 use crate::native;
-use zpd_objc::{Id, Strong};
+use zpd_objc::{Id, RcIvar, Strong};
 
 struct Row {
     id: Option<String>,
@@ -20,18 +19,15 @@ struct TableState {
     callback: RefCell<Box<dyn FnMut(&str)>>,
 }
 
+static TABLE_STATE: RcIvar<TableState> = RcIvar::new(c"_sidebarState");
+
 impl TableState {
     fn with<R: Default>(object: Id, operation: impl FnOnce(&Self) -> R) -> R {
-        catch_unwind(AssertUnwindSafe(|| {
-            // SAFETY: Our registered delegate owns a boxed Rc until teardown clears its ivar.
-            let state = unsafe {
-                zpd_objc::get_pointer_ivar::<Rc<Self>>(object, c"_sidebarState".as_ptr())
-                    .as_ref()
-                    .cloned()
-            };
+        zpd_objc::abort_on_unwind(|| {
+            // SAFETY: Our registered delegate owns its state until teardown clears the ivar.
+            let state = unsafe { TABLE_STATE.get(object) };
             state.as_deref().map(operation).unwrap_or_default()
-        }))
-        .unwrap_or_else(|_| std::process::abort())
+        })
     }
 }
 
@@ -88,24 +84,12 @@ unsafe extern "C" fn selection_changed(object: Id, _: zpd_objc::Sel, notificatio
 }
 
 fn release(object: Id) {
-    // SAFETY: Clearing the ivar transfers the delegate's sole boxed Rc to Rust.
-    unsafe {
-        let state = zpd_objc::get_pointer_ivar::<Rc<TableState>>(object, c"_sidebarState".as_ptr());
-        zpd_objc::set_pointer_ivar(
-            object,
-            c"_sidebarState".as_ptr(),
-            std::ptr::null_mut::<Rc<TableState>>(),
-        );
-        if !state.is_null() {
-            drop(Box::from_raw(state));
-        }
-    }
+    // SAFETY: The caller passes a delegate created by `install`.
+    drop(unsafe { TABLE_STATE.take(object) });
 }
 
 unsafe extern "C" fn dealloc(object: Id, _: zpd_objc::Sel) {
-    if catch_unwind(AssertUnwindSafe(|| release(object))).is_err() {
-        std::process::abort();
-    }
+    zpd_objc::abort_on_unwind(|| release(object));
     // SAFETY: Our NSObject subclass has released its Rust state and now invokes superclass dealloc.
     unsafe {
         zpd_objc::msg_send_super!(object, zpd_objc::class!("NSObject"), zpd_objc::sel!("dealloc"), () => ());
@@ -235,16 +219,16 @@ pub(crate) fn install(
     controller: &ActorRef,
     sidebar: &Sidebar,
     callback: impl FnMut(&str) + 'static,
-) -> Result<(), SidebarError> {
-    let tree = controller.tree_handle().ok_or(SidebarError::Closed)?;
+) -> Result<(), UiError> {
+    let tree = controller.tree_handle().ok_or(UiError::Closed)?;
     let scroll = native::alloc_init(zpd_objc::class!("NSScrollView"));
     let scroll_actor = tree
         .insert_child(controller, scroll.clone())
-        .map_err(|_| SidebarError::Closed)?;
+        .map_err(UiError::from)?;
     let table = native::alloc_init(zpd_objc::class!("NSTableView"));
     let table_actor = tree
         .insert_child(&scroll_actor, table.clone())
-        .map_err(|_| SidebarError::Closed)?;
+        .map_err(UiError::from)?;
     let mut rows = Vec::new();
     for section in &sidebar.sections {
         if let Some(title) = &section.title {
@@ -268,22 +252,14 @@ pub(crate) fn install(
         ready: Cell::new(false),
         callback: RefCell::new(Box::new(callback)),
     });
-    // SAFETY: The registered NSObject subclass stores a boxed Rc with matching teardown.
-    let delegate = unsafe {
-        let delegate = Strong::from_retained(zpd_objc::msg_send!(zpd_objc::msg_send!(delegate_class(), zpd_objc::sel!("alloc"), () => zpd_objc::Id), zpd_objc::sel!("init"), () => zpd_objc::Id))
-        .ok_or(SidebarError::NativeCreationFailed)?;
-        zpd_objc::set_pointer_ivar(
-            delegate.as_ptr(),
-            c"_sidebarState".as_ptr(),
-            Box::into_raw(Box::new(state.clone())),
-        );
-        delegate
-    };
+    let delegate = native::alloc_init(delegate_class());
+    // SAFETY: The registered delegate class declares the `_sidebarState` ivar.
+    unsafe { TABLE_STATE.set(delegate.as_ptr(), state.clone()) };
     let delegate_actor = tree
         .insert_child(&table_actor, delegate.clone())
-        .map_err(|_| SidebarError::Closed)?;
+        .map_err(UiError::from)?;
     tree.add_teardown(&delegate_actor, release)
-        .map_err(|_| SidebarError::Closed)?;
+        .map_err(UiError::from)?;
     tree.add_teardown(&table_actor, |table| {
         // SAFETY: Disconnect non-owning AppKit delegates before their Rust state is released.
         unsafe {
@@ -291,14 +267,14 @@ pub(crate) fn install(
             zpd_objc::msg_send!(table, zpd_objc::sel!("setDataSource:"), ((zpd_objc::NIL): zpd_objc::Id) => ());
         }
     })
-    .map_err(|_| SidebarError::Closed)?;
+    .map_err(UiError::from)?;
     // SAFETY: The controller, scroll view, table, column and delegate are live on the main thread.
     unsafe {
         zpd_objc::msg_send!(scroll.as_ptr(), zpd_objc::sel!("setDrawsBackground:"), ((false): bool) => ());
         zpd_objc::msg_send!(scroll.as_ptr(), zpd_objc::sel!("setHasVerticalScroller:"), ((true): bool) => ());
         zpd_objc::msg_send!(scroll.as_ptr(), zpd_objc::sel!("setAutohidesScrollers:"), ((true): bool) => ());
         let column = Strong::from_retained(zpd_objc::msg_send!(zpd_objc::msg_send!(zpd_objc::class!("NSTableColumn"), zpd_objc::sel!("alloc"), () => zpd_objc::Id), zpd_objc::sel!("initWithIdentifier:"), ((native::nsstring("items").as_ptr()): zpd_objc::Id) => zpd_objc::Id))
-        .ok_or(SidebarError::NativeCreationFailed)?;
+        .ok_or(UiError::NativeCreationFailed)?;
         zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("setResizingMask:"), ((native::NS_TABLE_COLUMN_AUTORESIZING_MASK): u64) => ());
         zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("addTableColumn:"), ((column.as_ptr()): zpd_objc::Id) => ());
         zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setHeaderView:"), ((zpd_objc::NIL): zpd_objc::Id) => ());
@@ -324,7 +300,7 @@ pub(crate) fn install(
                 zpd_objc::msg_send!(controller, zpd_objc::sel!("setView:"), ((scroll.as_ptr()): zpd_objc::Id) => ());
             }
         })
-        .map_err(|_| SidebarError::Closed)?;
+        .map_err(UiError::from)?;
     state.ready.set(true);
     Ok(())
 }

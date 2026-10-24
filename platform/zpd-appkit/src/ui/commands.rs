@@ -3,9 +3,10 @@ use std::rc::Rc;
 
 use crate::actor::{ActorRef, ActorTree};
 use crate::native;
-use crate::runloop::{Application, ApplicationDelegate};
+use crate::runloop::Application;
 use zpd_objc::Strong;
 
+use super::UiError;
 use super::callback;
 
 #[derive(Clone, Debug, Default)]
@@ -44,28 +45,12 @@ pub enum CommandRole {
     Quit,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum CommandError {
-    NativeCreationFailed,
-    Closed,
-}
-impl std::fmt::Display for CommandError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::NativeCreationFailed => "AppKit failed to install commands",
-            Self::Closed => "the application is not active",
-        })
-    }
-}
-impl std::error::Error for CommandError {}
-
-pub(crate) fn install<D, F>(
-    application: &Application<D>,
+pub(crate) fn install<F>(
+    application: &Application,
     commands: &CommandSet,
     callback_fn: F,
-) -> Result<(), CommandError>
+) -> Result<(), UiError>
 where
-    D: ApplicationDelegate,
     F: FnMut(&str) + 'static,
 {
     let callback_fn = Rc::new(RefCell::new(callback_fn));
@@ -74,11 +59,11 @@ where
     app.with(|app| unsafe {
         zpd_objc::msg_send!(app, zpd_objc::sel!("setMainMenu:"), ((zpd_objc::NIL): zpd_objc::Id) => ())
     })
-    .map_err(|_| CommandError::Closed)?;
+    .map_err(UiError::from)?;
     let main_menu = native::alloc_init(zpd_objc::class!("NSMenu"));
     let main = tree
         .replace_owned(&app, "commands", main_menu)
-        .map_err(|_| CommandError::Closed)?;
+        .map_err(UiError::from)?;
     let build_result = (|| {
         if let Some(menu) = &commands.app_menu {
             add_menu(tree, &app, &main, "", &menu.items, &callback_fn)?;
@@ -86,7 +71,7 @@ where
         for menu in &commands.menus {
             add_menu(tree, &app, &main, &menu.title, &menu.items, &callback_fn)?;
         }
-        Ok::<(), CommandError>(())
+        Ok::<(), UiError>(())
     })();
     if let Err(error) = build_result {
         let _ = tree.clear_owned(&app, "commands");
@@ -102,7 +87,7 @@ where
         Ok(Ok(())) => {}
         Ok(Err(_)) | Err(_) => {
             let _ = tree.clear_owned(&app, "commands");
-            return Err(CommandError::Closed);
+            return Err(UiError::Closed);
         }
     }
     Ok(())
@@ -115,7 +100,7 @@ fn add_menu<F>(
     title: &str,
     items: &[CommandItem],
     callback_fn: &Rc<RefCell<F>>,
-) -> Result<(), CommandError>
+) -> Result<(), UiError>
 where
     F: FnMut(&str) + 'static,
 {
@@ -127,14 +112,10 @@ where
     let container = native::alloc_init(zpd_objc::class!("NSMenuItem"));
     unsafe {
         zpd_objc::msg_send!(container.as_ptr(), zpd_objc::sel!("setSubmenu:"), ((menu.as_ptr()): zpd_objc::Id) => ());
-        zpd_objc::msg_send!(main.with(|id| id).map_err(|_| CommandError::Closed)?, zpd_objc::sel!("addItem:"), ((container.as_ptr()): zpd_objc::Id) => ());
+        zpd_objc::msg_send!(main.with(|id| id).map_err(UiError::from)?, zpd_objc::sel!("addItem:"), ((container.as_ptr()): zpd_objc::Id) => ());
     }
-    let container = tree
-        .insert_child(main, container)
-        .map_err(|_| CommandError::Closed)?;
-    let menu = tree
-        .insert_child(&container, menu)
-        .map_err(|_| CommandError::Closed)?;
+    let container = tree.insert_child(main, container).map_err(UiError::from)?;
+    let menu = tree.insert_child(&container, menu).map_err(UiError::from)?;
     for item in items {
         let item_title = native::nsstring(&item.title);
         let key = native::nsstring(
@@ -148,7 +129,7 @@ where
         let native_item = unsafe {
             let allocated = zpd_objc::msg_send!(zpd_objc::class!("NSMenuItem"), zpd_objc::sel!("alloc"), () => zpd_objc::Id);
             let value = zpd_objc::msg_send!(allocated, zpd_objc::sel!("initWithTitle:action:keyEquivalent:"), ((item_title.as_ptr()): zpd_objc::Id, (zpd_objc::sel!("invoke:")): zpd_objc::Id, (key.as_ptr()): zpd_objc::Id) => zpd_objc::Id);
-            Strong::from_retained(value).ok_or(CommandError::NativeCreationFailed)?
+            Strong::from_retained(value).ok_or(UiError::NativeCreationFailed)?
         };
         let app = application.clone();
         let command_id = item.id.clone();
@@ -186,21 +167,19 @@ where
             zpd_objc::msg_send!(native_item.as_ptr(), zpd_objc::sel!("setTarget:"), ((target.as_ptr()): zpd_objc::Id) => ());
             zpd_objc::msg_send!(native_item.as_ptr(), zpd_objc::sel!("setKeyEquivalentModifierMask:"), ((modifiers): u64) => ());
             zpd_objc::msg_send!(native_item.as_ptr(), zpd_objc::sel!("setEnabled:"), ((item.enabled): bool) => ());
-            zpd_objc::msg_send!(menu.with(|id| id).map_err(|_| CommandError::Closed)?, zpd_objc::sel!("addItem:"), ((native_item.as_ptr()): zpd_objc::Id) => ());
+            zpd_objc::msg_send!(menu.with(|id| id).map_err(UiError::from)?, zpd_objc::sel!("addItem:"), ((native_item.as_ptr()): zpd_objc::Id) => ());
         }
         let item = tree
             .insert_child(&menu, native_item)
-            .map_err(|_| CommandError::Closed)?;
+            .map_err(UiError::from)?;
         tree.add_teardown(&item, |item| unsafe {
             zpd_objc::msg_send!(item, zpd_objc::sel!("setTarget:"), ((zpd_objc::NIL): zpd_objc::Id) => ());
             zpd_objc::msg_send!(item, zpd_objc::sel!("setAction:"), ((zpd_objc::NIL): zpd_objc::Id) => ());
         })
-        .map_err(|_| CommandError::Closed)?;
-        let target = tree
-            .insert_child(&item, target)
-            .map_err(|_| CommandError::Closed)?;
+        .map_err(UiError::from)?;
+        let target = tree.insert_child(&item, target).map_err(UiError::from)?;
         tree.add_teardown(&target, |target| unsafe { callback::release(target) })
-            .map_err(|_| CommandError::Closed)?;
+            .map_err(UiError::from)?;
     }
     Ok(())
 }

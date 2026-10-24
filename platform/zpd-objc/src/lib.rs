@@ -1,8 +1,10 @@
 pub mod ffi;
+mod ivar;
 mod obj;
 mod runtime;
 
 pub use ffi::{Class, Id, ObjcSuper, Sel};
+pub use ivar::{RcIvar, abort_on_unwind};
 pub use obj::*;
 pub use runtime::*;
 
