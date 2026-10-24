@@ -29,7 +29,7 @@ final class HStackLayoutTests: ZintlUITestCase {
     let resizeHandle = window.coordinate(
       withNormalizedOffset: CGVector(dx: 0.98, dy: 0.98)
     )
-    resizeHandle.press(
+    resizeHandle.click(
       forDuration: 0.2,
       thenDragTo: resizeHandle.withOffset(CGVector(dx: 160, dy: 100))
     )
