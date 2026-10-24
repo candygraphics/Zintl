@@ -219,6 +219,18 @@ impl<'view> ViewRef<'view> {
             zpd_objc::msg_send!(view, zpd_objc::sel!("setAccessibilityIdentifier:"), ((identifier.as_ref().map_or(zpd_objc::NIL, Strong::as_ptr)): zpd_objc::Id) => ());
         })
     }
+    /// Enables or disables a control; views without `setEnabled:` ignore it.
+    pub fn set_enabled(self, enabled: bool) -> Result<(), UiError> {
+        self.with(|view| {
+            // SAFETY: setEnabled: is sent only when the live view implements it.
+            unsafe {
+                if zpd_objc::msg_send!(view, zpd_objc::sel!("respondsToSelector:"), ((zpd_objc::sel!("setEnabled:")): zpd_objc::Sel) => bool)
+                {
+                    zpd_objc::msg_send!(view, zpd_objc::sel!("setEnabled:"), ((enabled): bool) => ());
+                }
+            }
+        })
+    }
     pub fn set_translates_autoresizing_mask_into_constraints(
         self,
         enabled: bool,

@@ -2,7 +2,7 @@ use zintl_ui::element::{IntoElement, ListFactory};
 use zintl_ui::view::View as ViewTrait;
 use zintl_ui_layout::LayoutStyle;
 
-use crate::{Context, Element, RenderNode};
+use crate::{Context, Element, NativeView, RenderNode};
 
 #[derive(Clone)]
 pub struct View {
@@ -26,14 +26,20 @@ impl View {
     }
 }
 
-impl ViewTrait for View {
-    type Output = RenderNode;
-
-    fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
+impl NativeView for View {
+    fn native_element(&self, _cx: &mut Context<'_>) -> Element<RenderNode> {
         Element::node(RenderNode::NSView {
             layout: self.layout,
             id: self.id.clone(),
         })
         .with_children([self.children.clone().into_element()])
+    }
+}
+
+impl ViewTrait for View {
+    type Output = RenderNode;
+
+    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
+        self.native_element(cx)
     }
 }

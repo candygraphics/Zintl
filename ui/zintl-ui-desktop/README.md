@@ -71,6 +71,111 @@ items are preserved. Collapse state survives reactive updates.
 Unknown selection events are ignored. Rebuilding a window without `.sidebar(...)`
 removes its sidebar. SF Symbol names are interpreted by AppKit.
 
+## Controls
+
+Controls bind to Stores with `bind` and report changes with `on_change`.
+Each renders a native AppKit control.
+
+```rust,ignore
+VStack::new(list![
+    Toggle::new("Notifications").bind(self.notifications),            // NSSwitch
+    Toggle::new("Agree").style(ToggleStyle::Checkbox).bind(self.agree),
+    Toggle::new("Bold").style(ToggleStyle::Button).bind(self.bold),   // push on/push off
+    Picker::new(["Small", "Medium"]).bind(self.size),                 // NSPopUpButton
+    Picker::new(["List", "Grid"]).style(PickerStyle::Segmented).bind(self.layout),
+    Picker::new(["Low", "High"]).style(PickerStyle::Radio).bind(self.priority),
+    ComboBox::new(["Apple", "Banana"]).placeholder("Fruit").bind(self.fruit),
+    Slider::new(0.0..=100.0).ticks(11).bind(self.volume),
+    NumberField::new().range(0.0..=99.0).step(1.0).bind(self.quantity),
+    ColorWell::new().bind(self.tint),
+    SearchField::new().placeholder("Search").bind(self.query),
+])
+```
+
+Buttons take a `ButtonStyle` (push, borderless, toolbar, help, …), a
+`ButtonRole` (`Default` answers Return, `Cancel` answers Escape, `Destructive`
+warns), and SF Symbols through `system_image`.
+
+`ScrollView::new(content)` and `TabView::new([Tab::new("General", page)])`
+fill their parent's width and the remaining space. Stacks accept `padding` and
+`grow`.
+
+## Context menus and popovers
+
+`context_menu` and `popover` attach to any built-in view through the `Attach`
+trait. Menu items without an action are disabled; standard items such as
+`StandardAction::Copy` use the responder chain, so AppKit enables them.
+
+```rust,ignore
+Text::new("Item").context_menu([
+    MenuItem::new("Rename").on_select(|cx| { /* … */ }),
+    MenuItem::separator(),
+    MenuItem::standard(StandardAction::Copy),
+]);
+
+Button::new("Info")
+    .on_click(move |cx| cx.update(info, |shown| *shown = true))
+    .popover(Popover::new(Text::new("Details")).bind(info));
+```
+
+## Windows, sheets, and panels
+
+Return several windows from the root view, for example with `list!`.
+`Window::panel` creates a floating utility panel. `bind_open` shows a window
+while its Store is `true`; closing it writes `false`. The app quits when its
+last normal window closes; panels do not keep it running.
+
+Alerts and file dialogs are window-modal sheets, and `ColorPanel` connects the
+shared color panel. Each is shown while its bound Store is `true` and writes
+`false` when AppKit dismisses it. A window shows one sheet at a time; a sheet
+requested while another is open appears after it ends.
+
+```rust,ignore
+Window::new(bounds, "Editor")
+    .alert(
+        Alert::new("Delete the item?")
+            .button(AlertButton::new("Delete").role(ButtonRole::Destructive).on_click(delete))
+            .button(AlertButton::new("Cancel").role(ButtonRole::Cancel))
+            .bind(self.confirm),
+    )
+    .file_dialog(FileDialog::open().multiple().bind(self.open).on_select(|cx, paths| { /* … */ }))
+    .color_panel(ColorPanel::new().bind_color(self.tint).bind(self.colors));
+
+Window::panel(bounds, "Inspector").bind_open(self.inspector)
+```
+
+Only one `ColorPanel` should be presented at a time because AppKit shares it.
+
+## Main menu (macOS)
+
+Declare a `MainMenu` at the root next to the windows. `MainMenu::standard()`
+builds the App, File, Edit, View, Window, and Help menus with conventional
+shortcuts and responder-chain actions; AppKit fills Services, the window list,
+and Help search. Without a declaration, the standard English menu is used.
+
+```rust,ignore
+list![
+    MainMenu::standard()
+        .app_name("Notes")
+        .settings(|cx| { /* … */ })
+        .extend(StandardMenu::File, [MenuItem::new("New Note").shortcut(Shortcut::command("n"))])
+        .menu(Menu::new("Format", [MenuItem::new("Bold").on_select(|cx| { /* … */ })])),
+    Window::new(bounds, "Notes"),
+]
+```
+
+Standard titles are resolved through a `MenuLocalizer`. Each `StandardText`
+has a stable catalog key (`StandardText::key`, such as `menu.edit.copy`).
+`EnglishMenuLocalizer` is the default and `JapaneseMenuLocalizer` is provided;
+implement the trait to supply other translations.
+
+## Sidebar search
+
+`Sidebar::searchable(query)` adds a search field above the items. Filter the
+sections from the same Store; updates keep the field focused.
+
+See `examples/gallery.rs` for every control, presentation, and menu.
+
 ## Crate responsibilities
 
 - `zintl-ui-desktop` owns the cross-platform builders and wraps platform views.

@@ -3,6 +3,13 @@
 pub struct Sidebar {
     pub sections: Vec<SidebarSection>,
     pub selected_id: Option<String>,
+    pub search: Option<SidebarSearch>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SidebarSearch {
+    pub value: String,
+    pub placeholder: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,6 +30,13 @@ impl Sidebar {
     pub(crate) fn native(&self) -> zpd_appkit::ui::Sidebar {
         zpd_appkit::ui::Sidebar {
             selected_id: self.selected_id.clone(),
+            search: self
+                .search
+                .as_ref()
+                .map(|search| zpd_appkit::ui::SidebarSearch {
+                    value: search.value.clone(),
+                    placeholder: search.placeholder.clone(),
+                }),
             sections: self
                 .sections
                 .iter()

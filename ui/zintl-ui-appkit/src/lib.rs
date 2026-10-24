@@ -1,21 +1,41 @@
 //! Declarative Zintl UI views that mirror AppKit widgets.
 
+mod attach;
 mod button;
+mod containers;
 mod context;
+mod controls;
 mod event;
+mod menu;
+mod presentation;
 mod render_node;
 mod sidebar;
 mod text_field;
+mod types;
 mod view;
 mod window;
 
+pub use attach::{Attach, Attached, NativeView};
 pub use button::Button;
+pub use containers::{ScrollView, TabView, TabViewItem};
 #[doc(hidden)]
 pub use context::AppKitContext;
+pub use controls::{
+    ColorWell, ComboBox, NumberField, PopUpButton, SearchField, SegmentedControl, Slider, Switch,
+};
 pub use event::{Event, EventKind};
-pub use render_node::{Rect, RenderNode};
-pub use sidebar::{Sidebar, SidebarItem, SidebarSection, SidebarState};
+pub use menu::{
+    EnglishMenuLocalizer, JapaneseMenuLocalizer, MainMenu, Menu, MenuItem, MenuItemState,
+    MenuLocalizer, MenuRole, MenuState, Modifier, Shortcut, StandardAction, StandardMenu,
+    StandardText,
+};
+pub use presentation::{Alert, AlertButton, ColorPanel, FileDialog, Popover};
+pub use render_node::{AlertState, FileDialogState, Rect, RenderNode};
+pub use sidebar::{Sidebar, SidebarItem, SidebarSearchState, SidebarSection, SidebarState};
 pub use text_field::TextField;
+pub use types::{
+    AlertStyle, BezelStyle, ButtonRole, ButtonType, Color, PopoverEdge, ScrollAxes, WindowStyle,
+};
 pub use view::View;
 pub use window::Window;
 pub use zintl_ui::element::{Element, IntoElement, ListFactory};
@@ -134,6 +154,13 @@ mod tests {
             },
             RenderNode::NSButton {
                 title: "Save".into(),
+                button_type: ButtonType::MomentaryPushIn,
+                bezel: Some(BezelStyle::Push),
+                on: false,
+                system_image: None,
+                key_equivalent: None,
+                destructive: false,
+                enabled: true,
                 layout: LayoutStyle::leaf(Size::new(80.0, 32.0)),
                 id: Some("save".into()),
             },
@@ -164,7 +191,7 @@ mod tests {
                 kind: zintl_ui_appkit_backend::ViewKind::Button(title),
                 id: Some(id),
                 ..
-            } if title == "Save" && id == "save"
+            } if title.title == "Save" && id == "save"
         ));
         assert!(matches!(
             nodes[2].appkit_node(),

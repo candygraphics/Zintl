@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::actor::{ActorRef, ActorTree, ApplicationMessage, EventRouteToken, WindowEvent};
 use crate::native;
-use crate::ui::{CommandSet, UiError, Window};
+use crate::ui::{CommandSet, UiError, Window, WindowStyle};
 use zpd_corefoundation::RunLoop;
 use zpd_objc::{Id, Strong};
 
@@ -109,7 +109,16 @@ impl Application {
         &self,
         route: Option<EventRouteToken>,
     ) -> Result<Window<'_>, UiError> {
-        Window::new(self, route)
+        Window::new(self, route, WindowStyle::Normal)
+    }
+
+    /// Creates a Window of `style` whose Actor carries an opaque event route.
+    pub fn create_styled_window(
+        &self,
+        route: Option<EventRouteToken>,
+        style: WindowStyle,
+    ) -> Result<Window<'_>, UiError> {
+        Window::new(self, route, style)
     }
     /// Registers the sole semantic Window event callback for this Application.
     ///

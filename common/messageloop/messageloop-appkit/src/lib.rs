@@ -14,7 +14,7 @@ use zpd_appkit::actor::{
     WindowEventKind,
 };
 use zpd_appkit::runloop::{Application, ApplicationError, WindowEventRegistration};
-use zpd_appkit::ui::{UiError, Window};
+use zpd_appkit::ui::{UiError, Window, WindowStyle};
 use zpd_corefoundation::{ContextRunLoopSource, RunLoopSourceError, RunLoopSourceSignaler};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -176,7 +176,16 @@ impl<'application, M: Send + 'static> Context<'_, 'application, M> {
         &self,
         event_route: Option<EventRouteToken>,
     ) -> Result<ActorId, UiError> {
-        self.windows.create(event_route)
+        self.windows.create(event_route, WindowStyle::Normal)
+    }
+
+    /// Creates an owned Window of `style` whose Actor carries `event_route`.
+    pub fn create_styled_window(
+        &self,
+        event_route: Option<EventRouteToken>,
+        style: WindowStyle,
+    ) -> Result<ActorId, UiError> {
+        self.windows.create(event_route, style)
     }
 
     #[must_use]
@@ -216,14 +225,19 @@ pub use MessageLoopHandler as MessageHandler;
 
 struct WindowRegistry<'application> {
     create_window: Box<
-        dyn Fn(Option<EventRouteToken>) -> Result<Window<'application>, UiError> + 'application,
+        dyn Fn(Option<EventRouteToken>, WindowStyle) -> Result<Window<'application>, UiError>
+            + 'application,
     >,
     windows: RefCell<HashMap<ActorId, Window<'application>>>,
 }
 
 impl WindowRegistry<'_> {
-    fn create(&self, event_route: Option<EventRouteToken>) -> Result<ActorId, UiError> {
-        let window = (self.create_window)(event_route)?;
+    fn create(
+        &self,
+        event_route: Option<EventRouteToken>,
+        style: WindowStyle,
+    ) -> Result<ActorId, UiError> {
+        let window = (self.create_window)(event_route, style)?;
         let id = window.actor_ref().actor_id();
         self.windows.borrow_mut().insert(id, window);
         Ok(id)
@@ -374,8 +388,8 @@ where
         let callback = Rc::new(CallbackState {
             shared: shared.clone(),
             windows: WindowRegistry {
-                create_window: Box::new(move |route| {
-                    application.create_window_with_event_route(route)
+                create_window: Box::new(move |route, style| {
+                    application.create_styled_window(route, style)
                 }),
                 windows: RefCell::new(HashMap::new()),
             },

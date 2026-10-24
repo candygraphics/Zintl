@@ -43,7 +43,7 @@ impl EventRouteToken {
 ///
 /// `window` identifies the containing Window and `target` identifies the Actor
 /// that emitted the event. For Window lifecycle events both IDs are equal.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct WindowEvent {
     pub window: ActorId,
     pub target: ActorId,
@@ -53,15 +53,50 @@ pub struct WindowEvent {
 }
 
 /// Semantic AppKit events supported by the Actor tree.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum WindowEventKind {
     Created,
     DidResize,
     WillClose,
     DidClose,
     ButtonClicked,
-    TextChanged { value: String },
-    SidebarSelectionChanged { id: String },
+    TextChanged {
+        value: String,
+    },
+    SidebarSelectionChanged {
+        id: String,
+    },
+    SidebarSearchChanged {
+        value: String,
+    },
+    /// A two-state control such as a switch, checkbox, or toggle button changed.
+    StateChanged {
+        on: bool,
+    },
+    /// A continuous control such as a slider or stepper changed.
+    ValueChanged {
+        value: f64,
+    },
+    /// A choice control such as a pop-up button, segmented control, or tab view changed.
+    SelectionChanged {
+        index: usize,
+    },
+    ColorChanged {
+        color: crate::ui::Color,
+    },
+    MenuItemSelected {
+        id: String,
+    },
+    PopoverClosed,
+    /// An alert ended; `button` is `None` when it was dismissed programmatically.
+    AlertResponse {
+        button: Option<usize>,
+    },
+    /// A file panel ended; `paths` is `None` when it was cancelled.
+    FileDialogCompleted {
+        paths: Option<Vec<String>>,
+    },
+    ColorPanelClosed,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

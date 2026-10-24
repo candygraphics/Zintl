@@ -4,6 +4,10 @@ use std::sync::OnceLock;
 
 use zpd_objc::{Id, RcIvar, Strong};
 
+use crate::actor::{ActorRef, WindowEventKind};
+
+use super::UiError;
+
 type Callback = RefCell<Box<dyn FnMut(Id)>>;
 
 static CALLBACK: RcIvar<Callback> = RcIvar::new(c"_zpdCallback");
@@ -19,6 +23,12 @@ unsafe extern "C" fn invoke(object: Id, _: zpd_objc::Sel, sender: Id) {
         };
         invoke(sender);
     });
+}
+
+/// Forwards two-argument delegate messages, such as `tabView:didSelectTabViewItem:`.
+unsafe extern "C" fn invoke_first(object: Id, selector: zpd_objc::Sel, first: Id, _: Id) {
+    // SAFETY: The receiver is a target created by `target`; only the first argument is used.
+    unsafe { invoke(object, selector, first) };
 }
 
 unsafe extern "C" fn dealloc(object: Id, _: zpd_objc::Sel) {
@@ -43,6 +53,10 @@ fn target_class() -> zpd_objc::Class {
             methods {
                 "invoke:": "v@:@" => invoke,
                 "controlTextDidChange:": "v@:@" => invoke,
+                "comboBoxSelectionDidChange:": "v@:@" => invoke,
+                "popoverDidClose:": "v@:@" => invoke,
+                "windowWillClose:": "v@:@" => invoke,
+                "tabView:didSelectTabViewItem:": "v@:@@" => invoke_first,
                 "dealloc": "v@:" => dealloc,
             }
         }) as usize
@@ -59,6 +73,76 @@ pub(crate) fn target(callback: impl FnMut(Id) + 'static) -> Strong {
         );
     }
     target
+}
+
+/// Routes a control's target-action messages to `handler` until its Actor is removed.
+pub(crate) fn install_action(
+    actor: &ActorRef,
+    handler: impl FnMut(Id) + 'static,
+) -> Result<(), UiError> {
+    let tree = actor.tree_handle().ok_or(UiError::Closed)?;
+    let target = tree
+        .replace_owned(actor, "action-target", target(handler))
+        .map_err(UiError::from)?;
+    // SAFETY: The owned Actor holds a target created by `target`.
+    tree.add_teardown(&target, |target| unsafe { release(target) })
+        .map_err(UiError::from)?;
+    actor.with(|control| {
+        target.with(|target| {
+            // SAFETY: The control is a live NSControl-like object that retains neither argument.
+            unsafe {
+                zpd_objc::msg_send!(control, zpd_objc::sel!("setTarget:"), ((target): Id) => ());
+                zpd_objc::msg_send!(control, zpd_objc::sel!("setAction:"), ((zpd_objc::sel!("invoke:")): zpd_objc::Sel) => ());
+            }
+        })
+    })??;
+    tree.add_teardown(actor, |control| {
+        // SAFETY: Detach the unretained target before the owned target is released.
+        unsafe {
+            zpd_objc::msg_send!(control, zpd_objc::sel!("setTarget:"), ((zpd_objc::NIL): Id) => ());
+            zpd_objc::msg_send!(control, zpd_objc::sel!("setAction:"), ((zpd_objc::NIL): Id) => ());
+        }
+    })
+    .map_err(UiError::from)
+}
+
+/// Installs a delegate whose supported notifications call `handler` with their argument.
+pub(crate) fn install_delegate(
+    actor: &ActorRef,
+    handler: impl FnMut(Id) + 'static,
+) -> Result<(), UiError> {
+    let tree = actor.tree_handle().ok_or(UiError::Closed)?;
+    let delegate = tree
+        .replace_owned(actor, "delegate", target(handler))
+        .map_err(UiError::from)?;
+    // SAFETY: The owned Actor holds a target created by `target`.
+    tree.add_teardown(&delegate, |delegate| unsafe { release(delegate) })
+        .map_err(UiError::from)?;
+    actor.with(|object| {
+        delegate.with(|delegate| {
+            // SAFETY: AppKit delegates are unretained; teardown clears this one first.
+            unsafe {
+                zpd_objc::msg_send!(object, zpd_objc::sel!("setDelegate:"), ((delegate): Id) => ())
+            }
+        })
+    })??;
+    tree.add_teardown(actor, |object| {
+        // SAFETY: Detach the unretained delegate before the owned delegate is released.
+        unsafe {
+            zpd_objc::msg_send!(object, zpd_objc::sel!("setDelegate:"), ((zpd_objc::NIL): Id) => ())
+        }
+    })
+    .map_err(UiError::from)
+}
+
+/// Returns a function that emits semantic events from `actor` while it is live.
+pub(crate) fn emitter(actor: &ActorRef) -> impl Fn(WindowEventKind) + 'static {
+    let actor = actor.clone();
+    move |kind| {
+        if let Some(tree) = actor.tree_handle() {
+            tree.emit(&actor, kind);
+        }
+    }
 }
 
 #[cfg(test)]

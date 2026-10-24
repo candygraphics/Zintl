@@ -86,6 +86,16 @@ fn window_delegate_class() -> zpd_objc::Class {
     }) as zpd_objc::Class
 }
 
+/// Selects the native window class and chrome.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WindowStyle {
+    /// A standard titled, resizable `NSWindow`.
+    #[default]
+    Normal,
+    /// A floating utility `NSPanel` that hides while the app is inactive.
+    Panel,
+}
+
 pub struct Window<'application> {
     actor: ActorRef,
     content: ActorRef,
@@ -99,6 +109,7 @@ impl<'application> Window<'application> {
     pub(crate) fn new(
         application: &'application Application,
         event_route: Option<EventRouteToken>,
+        style: WindowStyle,
     ) -> Result<Self, UiError> {
         let state = Rc::new(WindowState {
             actor: RefCell::new(None),
@@ -110,15 +121,34 @@ impl<'application> Window<'application> {
                 height: 300.0,
             },
         };
-        let style_mask = native::NS_WINDOW_STYLE_MASK_TITLED
-            | native::NS_WINDOW_STYLE_MASK_CLOSABLE
-            | native::NS_WINDOW_STYLE_MASK_MINIATURIZABLE
-            | native::NS_WINDOW_STYLE_MASK_RESIZABLE;
-        // SAFETY: This is NSWindow's arm64 designated initializer signature.
+        let (class, style_mask) = match style {
+            WindowStyle::Normal => (
+                zpd_objc::class!("NSWindow"),
+                native::NS_WINDOW_STYLE_MASK_TITLED
+                    | native::NS_WINDOW_STYLE_MASK_CLOSABLE
+                    | native::NS_WINDOW_STYLE_MASK_MINIATURIZABLE
+                    | native::NS_WINDOW_STYLE_MASK_RESIZABLE,
+            ),
+            WindowStyle::Panel => (
+                zpd_objc::class!("NSPanel"),
+                native::NS_WINDOW_STYLE_MASK_TITLED
+                    | native::NS_WINDOW_STYLE_MASK_CLOSABLE
+                    | native::NS_WINDOW_STYLE_MASK_RESIZABLE
+                    | native::NS_WINDOW_STYLE_MASK_UTILITY_WINDOW,
+            ),
+        };
+        // SAFETY: This is NSWindow's arm64 designated initializer signature, shared by NSPanel.
         let native_window = unsafe {
-            Strong::from_retained(zpd_objc::msg_send!(zpd_objc::msg_send!(zpd_objc::class!("NSWindow"), zpd_objc::sel!("alloc"), () => zpd_objc::Id), zpd_objc::sel!("initWithContentRect:styleMask:backing:defer:"), ((frame): native::Rect, (style_mask): u64, (native::NS_BACKING_STORE_BUFFERED): u64, (false): bool) => zpd_objc::Id))
+            Strong::from_retained(zpd_objc::msg_send!(zpd_objc::msg_send!(class, zpd_objc::sel!("alloc"), () => zpd_objc::Id), zpd_objc::sel!("initWithContentRect:styleMask:backing:defer:"), ((frame): native::Rect, (style_mask): u64, (native::NS_BACKING_STORE_BUFFERED): u64, (false): bool) => zpd_objc::Id))
         }
         .ok_or(UiError::NativeCreationFailed)?;
+        if style == WindowStyle::Panel {
+            // SAFETY: The retained object is an NSPanel.
+            unsafe {
+                zpd_objc::msg_send!(native_window.as_ptr(), zpd_objc::sel!("setFloatingPanel:"), ((true): bool) => ());
+                zpd_objc::msg_send!(native_window.as_ptr(), zpd_objc::sel!("setHidesOnDeactivate:"), ((true): bool) => ());
+            }
+        }
         unsafe {
             zpd_objc::msg_send!(native_window.as_ptr(), zpd_objc::sel!("setReleasedWhenClosed:"), ((false): bool) => ())
         };
@@ -224,6 +254,18 @@ impl<'application> Window<'application> {
                 zpd_objc::msg_send!(window, zpd_objc::sel!("makeKeyAndOrderFront:"), ((zpd_objc::NIL): zpd_objc::Id) => ())
             })
             .map_err(Into::into)
+    }
+    /// Returns whether a sheet is currently attached to this window.
+    pub fn has_attached_sheet(&self) -> bool {
+        self.actor
+            .with(|window| {
+                // SAFETY: The live actor is an NSWindow.
+                let sheet = unsafe {
+                    zpd_objc::msg_send!(window, zpd_objc::sel!("attachedSheet"), () => zpd_objc::Id)
+                };
+                !sheet.is_null()
+            })
+            .unwrap_or(false)
     }
     pub fn set_title(&self, title: &str) -> Result<(), UiError> {
         let title = native::nsstring(title);
@@ -350,6 +392,16 @@ impl<'application> Window<'application> {
             );
         }
         Ok(())
+    }
+    /// Applies `sidebar`, keeping native views when only items, selection, or search text change.
+    pub fn update_sidebar(&self, sidebar: &Sidebar) -> Result<(), UiError> {
+        self.ensure_open()?;
+        if let Some(native) = self.sidebar.borrow().as_ref()
+            && native.can_update(sidebar)
+        {
+            return native.update(sidebar);
+        }
+        self.set_sidebar(sidebar, |_| {})
     }
     pub fn clear_sidebar(&self) -> Result<(), UiError> {
         self.ensure_open()?;

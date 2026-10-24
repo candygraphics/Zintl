@@ -41,6 +41,7 @@ impl SidebarChecks {
                 ],
             }],
             selected_id: Some(selected.into()),
+            search: None,
         }
     }
 

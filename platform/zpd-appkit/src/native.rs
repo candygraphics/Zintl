@@ -33,6 +33,21 @@ pub const NS_TABLE_COLUMN_AUTORESIZING_MASK: u64 = 1 << 0;
 pub const NS_TABLE_VIEW_STYLE_SOURCE_LIST: Integer = 3;
 pub const NS_TABLE_VIEW_ROW_SIZE_STYLE_CUSTOM: Integer = 0;
 
+pub const NS_WINDOW_STYLE_MASK_UTILITY_WINDOW: u64 = 1 << 4;
+pub const NS_CONTROL_STATE_VALUE_ON: Integer = 1;
+pub const NS_SEGMENT_SWITCH_TRACKING_SELECT_ONE: u64 = 0;
+pub const NS_SEGMENT_DISTRIBUTION_FILL_EQUALLY: Integer = 2;
+pub const NS_NUMBER_FORMATTER_DECIMAL_STYLE: u64 = 1;
+pub const NS_VIEW_WIDTH_SIZABLE: u64 = 1 << 1;
+pub const NS_VIEW_HEIGHT_SIZABLE: u64 = 1 << 4;
+pub const NS_VIEW_MIN_X_MARGIN: u64 = 1 << 0;
+pub const NS_IMAGE_LEADING: u64 = 7;
+pub const NS_IMAGE_ONLY: u64 = 1;
+pub const NS_POPOVER_BEHAVIOR_TRANSIENT: Integer = 1;
+pub const NS_ALERT_FIRST_BUTTON_RETURN: Integer = 1000;
+pub const NS_MODAL_RESPONSE_OK: Integer = 1;
+pub const NS_MODAL_RESPONSE_ABORT: Integer = -1001;
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Point {
@@ -61,6 +76,8 @@ unsafe extern "C" {
 #[link(name = "Foundation", kind = "framework")]
 unsafe extern "C" {}
 #[link(name = "QuartzCore", kind = "framework")]
+unsafe extern "C" {}
+#[link(name = "UniformTypeIdentifiers", kind = "framework")]
 unsafe extern "C" {}
 unsafe extern "C" {
     pub fn pthread_main_np() -> c_int;
@@ -99,5 +116,28 @@ pub fn alloc_init(class: zpd_objc::Class) -> Strong {
         let value = msg_send!(class, zpd_objc::sel!("alloc"), () => Id);
         Strong::from_retained(msg_send!(value, zpd_objc::sel!("init"), () => Id))
             .expect("Objective-C allocation failed")
+    }
+}
+
+/// Builds an immutable-by-convention `NSMutableArray` of `NSString`s.
+pub fn nsstring_array<S: AsRef<str>>(values: &[S]) -> Strong {
+    let array = alloc_init(zpd_objc::class!("NSMutableArray"));
+    for value in values {
+        let value = nsstring(value.as_ref());
+        // SAFETY: NSMutableArray retains the live NSString it receives.
+        unsafe {
+            msg_send!(array.as_ptr(), zpd_objc::sel!("addObject:"), ((value.as_ptr()): Id) => ())
+        };
+    }
+    array
+}
+
+/// Returns an autoreleased SF Symbol image, or nil when the name is unknown.
+pub fn symbol_image(name: &str, description: &str) -> Id {
+    let name = nsstring(name);
+    let description = nsstring(description);
+    // SAFETY: The class factory accepts live NSString arguments and may return nil.
+    unsafe {
+        msg_send!(zpd_objc::class!("NSImage"), zpd_objc::sel!("imageWithSystemSymbolName:accessibilityDescription:"), ((name.as_ptr()): Id, (description.as_ptr()): Id) => Id)
     }
 }

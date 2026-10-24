@@ -3,7 +3,7 @@ use zintl_ui::store::Store;
 use zintl_ui::view::View;
 use zintl_ui_layout::{LayoutStyle, Size};
 
-use crate::{Context, Element, Event, EventKind, RenderNode};
+use crate::{Context, Element, Event, EventKind, NativeView, RenderNode};
 
 #[derive(Clone)]
 pub struct TextField {
@@ -92,6 +92,12 @@ impl View for TextField {
     type Output = RenderNode;
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
+        self.native_element(cx)
+    }
+}
+
+impl NativeView for TextField {
+    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let value = self
             .binding
             .map(|store| cx.get(store).clone())

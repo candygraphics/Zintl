@@ -19,3 +19,8 @@ harness = false
 name = "sidebar"
 path = "tests/sidebar.rs"
 harness = false
+
+[[test]]
+name = "controls"
+path = "tests/controls.rs"
+harness = false

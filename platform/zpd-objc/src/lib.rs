@@ -1,3 +1,4 @@
+pub mod block;
 pub mod ffi;
 mod ivar;
 mod obj;

@@ -1,17 +1,41 @@
+/// Implements `View` for wrappers through their native element.
+macro_rules! native_view {
+    ($($view:ident),* $(,)?) => {$(
+        impl View for $view {
+            type Output = RenderNode;
+
+            fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
+                self.native_element(cx)
+            }
+        }
+    )*};
+}
+
+mod controls;
+
+pub use controls::{
+    ColorWell, ComboBox, NumberField, Picker, PickerStyle, ScrollView, SearchField, Slider, Tab,
+    TabView, Toggle, ToggleStyle,
+};
 use zintl_ui::composer::Composer;
-pub use zintl_ui::element::{Element, IntoElement};
+pub use zintl_ui::element::{Element, ElementFactory, IntoElement};
 #[cfg(any(not(target_os = "macos"), test))]
 use zintl_ui::event::EventRouteId;
 use zintl_ui::renderer::RenderBackend;
 pub use zintl_ui::store::Store;
 pub use zintl_ui::view::View;
 pub use zintl_ui_appkit::{
-    Context, Event, EventKind, ListFactory, Rect, RenderNode, Sidebar, SidebarItem, SidebarSection,
-    SidebarState, list,
+    Alert, AlertButton, AlertStyle, Attach, Attached, ButtonRole, Color, ColorPanel, Context,
+    EnglishMenuLocalizer, Event, EventKind, FileDialog, JapaneseMenuLocalizer, ListFactory,
+    MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, NativeView, Popover, PopoverEdge, Rect,
+    RenderNode, ScrollAxes, Shortcut, Sidebar, SidebarItem, SidebarSection, SidebarState,
+    StandardAction, StandardMenu, StandardText, list,
 };
 pub use zintl_ui_layout::{
     Axis, ChildSizing, CrossAxisAlignment, LayoutDimension, LayoutStyle, MainAxisDistribution, Size,
 };
+
+native_view!(Text, Button, TextField, HStack, VStack);
 
 #[derive(Clone)]
 pub struct Window {
@@ -23,6 +47,44 @@ impl Window {
         Self {
             inner: zintl_ui_appkit::Window::new(bounds, title),
         }
+    }
+
+    /// Creates a floating utility panel, such as an inspector or palette.
+    pub fn panel(bounds: Rect, title: impl Into<String>) -> Self {
+        Self {
+            inner: zintl_ui_appkit::Window::new(bounds, title)
+                .style(zintl_ui_appkit::WindowStyle::Panel),
+        }
+    }
+
+    /// Presents `alert` as a sheet while its bound Store is `true`.
+    pub fn alert(mut self, alert: Alert) -> Self {
+        self.inner = self.inner.alert(alert);
+        self
+    }
+
+    /// Presents `dialog` as a sheet while its bound Store is `true`.
+    pub fn file_dialog(mut self, dialog: FileDialog) -> Self {
+        self.inner = self.inner.file_dialog(dialog);
+        self
+    }
+
+    /// Shows the shared color panel while its bound Store is `true`.
+    pub fn color_panel(mut self, panel: ColorPanel) -> Self {
+        self.inner = self.inner.color_panel(panel);
+        self
+    }
+
+    /// Shows the window while `open` is `true`; closing the window writes `false`.
+    pub fn bind_open(mut self, open: Store<bool>) -> Self {
+        self.inner = self.inner.bind_open(open);
+        self
+    }
+
+    /// Runs after the user closes the window.
+    pub fn on_close(mut self, action: impl for<'a> Fn(&mut Context<'a>) + 'static) -> Self {
+        self.inner = self.inner.on_close(action);
+        self
     }
 
     pub fn sidebar(mut self, sidebar: Sidebar) -> Self {
@@ -86,11 +148,9 @@ impl Text {
     }
 }
 
-impl View for Text {
-    type Output = RenderNode;
-
-    fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
-        self.inner.clone().into_element()
+impl NativeView for Text {
+    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        self.inner.native_element(cx)
     }
 }
 
@@ -120,13 +180,63 @@ impl Button {
         self.inner = self.inner.on_click(action);
         self
     }
+
+    pub fn style(mut self, style: ButtonStyle) -> Self {
+        let bezel = match style {
+            ButtonStyle::Push => Some(zintl_ui_appkit::BezelStyle::Push),
+            ButtonStyle::Flexible => Some(zintl_ui_appkit::BezelStyle::FlexiblePush),
+            ButtonStyle::Borderless => None,
+            ButtonStyle::Toolbar => Some(zintl_ui_appkit::BezelStyle::Toolbar),
+            ButtonStyle::Accessory => Some(zintl_ui_appkit::BezelStyle::AccessoryBarAction),
+            ButtonStyle::Circular => Some(zintl_ui_appkit::BezelStyle::Circular),
+            ButtonStyle::Help => Some(zintl_ui_appkit::BezelStyle::Help),
+            ButtonStyle::Disclosure => Some(zintl_ui_appkit::BezelStyle::PushDisclosure),
+        };
+        self.inner = self.inner.bezel_style(bezel);
+        self
+    }
+
+    /// `Default` answers Return, `Cancel` answers Escape, and `Destructive` warns.
+    pub fn role(mut self, role: ButtonRole) -> Self {
+        self.inner = self.inner.role(role);
+        self
+    }
+
+    /// Shows an SF Symbol; an empty title shows the symbol alone.
+    pub fn system_image(mut self, name: impl Into<String>) -> Self {
+        self.inner = self.inner.system_image(name);
+        self
+    }
+
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.inner = self.inner.enabled(enabled);
+        self
+    }
 }
 
-impl View for Button {
-    type Output = RenderNode;
+/// The bezel drawn around a [`Button`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ButtonStyle {
+    /// The standard rounded push button.
+    #[default]
+    Push,
+    /// A push button that grows to fit multi-line titles.
+    Flexible,
+    /// Only the title or symbol.
+    Borderless,
+    Toolbar,
+    /// A compact button for accessory bars.
+    Accessory,
+    Circular,
+    /// The round question mark button.
+    Help,
+    /// A disclosure triangle in a push button.
+    Disclosure,
+}
 
-    fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
-        self.inner.clone().into_element()
+impl NativeView for Button {
+    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        self.inner.native_element(cx)
     }
 }
 
@@ -174,11 +284,9 @@ impl Default for TextField {
     }
 }
 
-impl View for TextField {
-    type Output = RenderNode;
-
-    fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
-        self.inner.clone().into_element()
+impl NativeView for TextField {
+    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        self.inner.native_element(cx)
     }
 }
 
@@ -227,16 +335,26 @@ impl HStack {
         self.layout.minimum_size = size;
         self
     }
+
+    /// Insets the children from every edge.
+    pub fn padding(mut self, padding: f32) -> Self {
+        self.layout.padding = padding;
+        self
+    }
+
+    /// Takes the remaining space along the parent's main axis.
+    pub fn grow(mut self) -> Self {
+        self.layout.grow = 1.0;
+        self
+    }
 }
 
-impl View for HStack {
-    type Output = RenderNode;
-
-    fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
+impl NativeView for HStack {
+    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let view = zintl_ui_appkit::View::new(self.layout, self.children.clone());
         match &self.id {
-            Some(id) => view.id(id.clone()).into_element(),
-            None => view.into_element(),
+            Some(id) => view.id(id.clone()).native_element(cx),
+            None => view.native_element(cx),
         }
     }
 }
@@ -276,16 +394,26 @@ impl VStack {
         self.layout.minimum_size = size;
         self
     }
+
+    /// Insets the children from every edge.
+    pub fn padding(mut self, padding: f32) -> Self {
+        self.layout.padding = padding;
+        self
+    }
+
+    /// Takes the remaining space along the parent's main axis.
+    pub fn grow(mut self) -> Self {
+        self.layout.grow = 1.0;
+        self
+    }
 }
 
-impl View for VStack {
-    type Output = RenderNode;
-
-    fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
+impl NativeView for VStack {
+    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let view = zintl_ui_appkit::View::new(self.layout, self.children.clone());
         match &self.id {
-            Some(id) => view.id(id.clone()).into_element(),
-            None => view.into_element(),
+            Some(id) => view.id(id.clone()).native_element(cx),
+            None => view.native_element(cx),
         }
     }
 }
@@ -457,6 +585,43 @@ impl App {
             .expect("the rendered root must have an event route");
         self.composer.dispatch_event(route, event)
     }
+
+    /// Dispatches to the node at `path`, starting with the root's children.
+    #[cfg(test)]
+    fn dispatch_at(&mut self, path: &[usize], event: Event) -> bool {
+        let route = event_route_at(self.composer.backend(), path)
+            .expect("the addressed node must have an event route");
+        self.composer.dispatch_event(route, event)
+    }
+
+    /// Renders every root-level element, such as a main menu and windows.
+    #[cfg(test)]
+    fn render_roots(&self) -> Vec<RenderedNode> {
+        let backend = self.composer.backend();
+        backend
+            .children(backend.root())
+            .iter()
+            .map(|child| rendered_node(backend, *child))
+            .collect()
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+fn event_route_at(backend: &DesktopBackend, path: &[usize]) -> Option<EventRouteId> {
+    let mut node = backend.root();
+    for index in path {
+        node = *backend.children(node).get(*index)?;
+    }
+    backend.event_route(node)
+}
+
+#[cfg(all(test, not(target_os = "macos")))]
+fn event_route_at(backend: &TreeBackend, path: &[usize]) -> Option<EventRouteId> {
+    let mut node = backend.root();
+    for index in path {
+        node = *backend.children(node).get(*index)?;
+    }
+    backend.node(node).event_route
 }
 
 #[cfg(all(test, target_os = "macos"))]
@@ -502,6 +667,9 @@ fn rendered_node(backend: &TreeBackend, id: usize) -> RenderedNode {
 
 #[cfg(target_os = "macos")]
 pub use zintl_ui_appkit::AppError;
+
+#[cfg(test)]
+mod widget_tests;
 
 #[cfg(test)]
 mod tests {
@@ -627,6 +795,7 @@ mod tests {
                 title: "Zintl".into(),
                 full_size_content_view: false,
                 id: None,
+                style: zintl_ui_appkit::WindowStyle::Normal,
             }
         );
     }
