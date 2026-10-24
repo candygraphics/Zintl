@@ -1,6 +1,6 @@
 use zintl_ui::composer::Composer;
 pub use zintl_ui::element::{Element, IntoElement};
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(not(target_os = "macos"))]
 use zintl_ui::event::EventRouteId;
 use zintl_ui::renderer::RenderBackend;
 pub use zintl_ui::store::Store;
@@ -32,11 +32,6 @@ impl Window {
 
     pub fn id(mut self, id: impl Into<String>) -> Self {
         self.inner = self.inner.id(id);
-        self
-    }
-
-    pub fn full_size_content_view(mut self) -> Self {
-        self.inner = self.inner.full_size_content_view();
         self
     }
 
@@ -182,49 +177,71 @@ impl View for TextField {
     }
 }
 
+/// Shared state for HStack and VStack.
 #[derive(Clone)]
-pub struct HStack {
+struct Stack {
     children: ListFactory<RenderNode>,
     layout: LayoutStyle,
     id: Option<String>,
 }
 
-impl HStack {
-    pub fn new(children: ListFactory<RenderNode>) -> Self {
+impl Stack {
+    fn new(axis: Axis, children: ListFactory<RenderNode>) -> Self {
         Self {
             children,
-            layout: LayoutStyle::stack(Axis::Horizontal, 8.0),
+            layout: LayoutStyle::stack(axis, 8.0),
             id: None,
         }
     }
 
+    fn element(&self) -> Element<RenderNode> {
+        let view = zintl_ui_appkit::View::new(self.layout, self.children.clone());
+        match &self.id {
+            Some(id) => view.id(id.clone()).into_element(),
+            None => view.into_element(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct HStack {
+    stack: Stack,
+}
+
+impl HStack {
+    pub fn new(children: ListFactory<RenderNode>) -> Self {
+        Self {
+            stack: Stack::new(Axis::Horizontal, children),
+        }
+    }
+
     pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
+        self.stack.id = Some(id.into());
         self
     }
 
     pub fn spacing(mut self, spacing: f32) -> Self {
-        self.layout.gap = spacing;
+        self.stack.layout.gap = spacing;
         self
     }
 
     pub fn fill_width(mut self) -> Self {
-        self.layout.width = LayoutDimension::Percent(1.0);
+        self.stack.layout.width = LayoutDimension::Percent(1.0);
         self
     }
 
     pub fn space_between(mut self) -> Self {
-        self.layout.main_axis_distribution = MainAxisDistribution::SpaceBetween;
+        self.stack.layout.main_axis_distribution = MainAxisDistribution::SpaceBetween;
         self
     }
 
     pub fn equal_width_children(mut self) -> Self {
-        self.layout.child_sizing = ChildSizing::Equal;
+        self.stack.layout.child_sizing = ChildSizing::Equal;
         self
     }
 
     pub fn minimum_size(mut self, size: Size) -> Self {
-        self.layout.minimum_size = size;
+        self.stack.layout.minimum_size = size;
         self
     }
 }
@@ -233,47 +250,39 @@ impl View for HStack {
     type Output = RenderNode;
 
     fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
-        let view = zintl_ui_appkit::View::new(self.layout, self.children.clone());
-        match &self.id {
-            Some(id) => view.id(id.clone()).into_element(),
-            None => view.into_element(),
-        }
+        self.stack.element()
     }
 }
 
 #[derive(Clone)]
 pub struct VStack {
-    children: ListFactory<RenderNode>,
-    layout: LayoutStyle,
-    id: Option<String>,
+    stack: Stack,
 }
 
 impl VStack {
     pub fn new(children: ListFactory<RenderNode>) -> Self {
         Self {
-            children,
-            layout: LayoutStyle::stack(Axis::Vertical, 8.0),
-            id: None,
+            stack: Stack::new(Axis::Vertical, children),
         }
     }
 
     pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
+        self.stack.id = Some(id.into());
         self
     }
 
     pub fn spacing(mut self, spacing: f32) -> Self {
-        self.layout.gap = spacing;
+        self.stack.layout.gap = spacing;
         self
     }
 
     pub fn fill_width(mut self) -> Self {
-        self.layout.width = LayoutDimension::Percent(1.0);
+        self.stack.layout.width = LayoutDimension::Percent(1.0);
         self
     }
 
     pub fn minimum_size(mut self, size: Size) -> Self {
-        self.layout.minimum_size = size;
+        self.stack.layout.minimum_size = size;
         self
     }
 }
@@ -282,11 +291,7 @@ impl View for VStack {
     type Output = RenderNode;
 
     fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
-        let view = zintl_ui_appkit::View::new(self.layout, self.children.clone());
-        match &self.id {
-            Some(id) => view.id(id.clone()).into_element(),
-            None => view.into_element(),
-        }
+        self.stack.element()
     }
 }
 
@@ -324,8 +329,17 @@ impl TreeBackend {
         self.nodes[id].as_mut().unwrap()
     }
 
+    fn value(&self, id: usize) -> Option<&RenderNode> {
+        self.node(id).value.as_ref()
+    }
+
     fn children(&self, id: usize) -> &[usize] {
         &self.node(id).children
+    }
+
+    #[cfg(test)]
+    fn event_route(&self, id: usize) -> Option<EventRouteId> {
+        self.node(id).event_route
     }
 
     fn detach(&mut self, child: usize) {
@@ -407,6 +421,8 @@ type DesktopBackend = zintl_ui_appkit::AppKitBackend<RenderNode>;
 #[cfg(not(target_os = "macos"))]
 type DesktopBackend = TreeBackend;
 
+type DesktopNodeId = <DesktopBackend as RenderBackend<RenderNode>>::NodeId;
+
 pub struct App {
     composer: Composer<RenderNode, DesktopBackend>,
 }
@@ -416,11 +432,7 @@ impl App {
     where
         E: IntoElement<Output = RenderNode>,
     {
-        #[cfg(target_os = "macos")]
-        let backend = DesktopBackend::new();
-        #[cfg(not(target_os = "macos"))]
-        let backend = TreeBackend::new();
-        let mut composer = Composer::new(backend);
+        let mut composer = Composer::new(DesktopBackend::new());
         composer.mount(root);
         Self { composer }
     }
@@ -430,13 +442,29 @@ impl App {
     }
 
     pub fn render_tree(&self) -> RenderedNode {
+        Self::rendered_node(self.composer.backend(), self.root_element())
+    }
+
+    fn root_element(&self) -> DesktopNodeId {
         let backend = self.composer.backend();
-        let root = backend.root();
-        let child = *backend
-            .children(root)
+        *backend
+            .children(backend.root())
             .first()
-            .expect("the rendered tree must contain a root element");
-        rendered_node(backend, child)
+            .expect("the rendered tree must contain a root element")
+    }
+
+    fn rendered_node(backend: &DesktopBackend, id: DesktopNodeId) -> RenderedNode {
+        RenderedNode {
+            value: backend
+                .value(id)
+                .cloned()
+                .expect("render nodes always have values"),
+            children: backend
+                .children(id)
+                .iter()
+                .map(|child| Self::rendered_node(backend, *child))
+                .collect(),
+        }
     }
 
     #[cfg(target_os = "macos")]
@@ -453,50 +481,12 @@ impl App {
 
     #[cfg(test)]
     fn dispatch_root_event(&mut self, event: Event) -> bool {
-        let route = root_event_route(self.composer.backend())
+        let route = self
+            .composer
+            .backend()
+            .event_route(self.root_element())
             .expect("the rendered root must have an event route");
         self.composer.dispatch_event(route, event)
-    }
-}
-
-#[cfg(all(test, target_os = "macos"))]
-fn root_event_route(backend: &DesktopBackend) -> Option<EventRouteId> {
-    let root = backend.root();
-    let child = *backend.children(root).first()?;
-    backend.event_route(child)
-}
-
-#[cfg(all(test, not(target_os = "macos")))]
-fn root_event_route(backend: &TreeBackend) -> Option<EventRouteId> {
-    let child = *backend.children(backend.root()).first()?;
-    backend.node(child).event_route
-}
-
-#[cfg(target_os = "macos")]
-fn rendered_node(backend: &DesktopBackend, id: zintl_ui_appkit::NodeId) -> RenderedNode {
-    RenderedNode {
-        value: backend
-            .value(id)
-            .cloned()
-            .expect("render nodes always have values"),
-        children: backend
-            .children(id)
-            .iter()
-            .map(|child| rendered_node(backend, *child))
-            .collect(),
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn rendered_node(backend: &TreeBackend, id: usize) -> RenderedNode {
-    let node = backend.node(id);
-    RenderedNode {
-        value: node.value.clone().expect("render nodes always have values"),
-        children: node
-            .children
-            .iter()
-            .map(|child| rendered_node(backend, *child))
-            .collect(),
     }
 }
 
@@ -629,21 +619,6 @@ mod tests {
                 id: None,
             }
         );
-    }
-
-    #[test]
-    fn window_full_size_content_view_is_opt_in() {
-        // Verifies the desktop wrapper forwards the AppKit full-size content option.
-        let bounds = Rect::new(10.0, 20.0, 640.0, 480.0);
-        let app = App::new(Window::new(bounds, "Zintl").full_size_content_view());
-
-        assert!(matches!(
-            app.render(),
-            RenderNode::NSWindow {
-                full_size_content_view: true,
-                ..
-            }
-        ));
     }
 
     #[test]

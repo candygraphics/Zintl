@@ -18,7 +18,7 @@ impl View for MainView {
             "Zintl Full-size Sidebar UI Test",
         )
         .id("main-window")
-        .full_size_content_view()
+        .extend_client_area()
         .sidebar(
             Sidebar::new([SidebarSection::new([
                 SidebarItem::new("home", "Home").system_image("house"),
