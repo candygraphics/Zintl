@@ -44,7 +44,7 @@ impl View for FullSizeContentViewExample {
             .content(content);
 
             if *enabled {
-                window.full_size_content_view()
+                window.extend_client_area()
             } else {
                 window
             }

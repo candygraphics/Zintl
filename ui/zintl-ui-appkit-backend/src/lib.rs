@@ -1,35 +1,15 @@
 //! AppKit renderer for Zintl UI trees.
 
-mod sidebar;
-pub use sidebar::{Sidebar, SidebarItem, SidebarSection};
-
 use zintl_ui::renderer::RenderNode;
 use zintl_ui::view::StoreContext;
 use zintl_ui_layout::LayoutStyle;
 pub use zpd_appkit::actor::WindowEventKind as AppKitEvent;
+pub use zpd_appkit::geometry::Rect;
+pub use zpd_appkit::ui::{Sidebar, SidebarItem, SidebarSection};
 
 pub type MainTask = Box<dyn FnOnce() + Send + 'static>;
 
 pub type MainTaskSender = dyn Fn(MainTask) -> bool + Send + Sync;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Rect {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-}
-
-impl Rect {
-    pub const fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            height,
-        }
-    }
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ViewKind {
@@ -93,14 +73,15 @@ mod backend {
         CrossAxisAlignment, LayoutDimension, LayoutError, LayoutStyle, LayoutTree, Size,
     };
     use zpd_appkit::actor::{ActorId, EventRouteToken, WindowEvent, WindowEventKind};
-    use zpd_appkit::geometry::Rect as NativeRect;
     use zpd_appkit::runloop::{Application, ApplicationError};
     use zpd_appkit::ui::{
         AsView, Button as NativeButton, CommandItem, CommandModifier, CommandRole, CommandSet,
         TextField as NativeTextField, UiError, View as NativeView, ViewRef, WindowAppMenu,
     };
 
-    use super::{AppKitRenderNode, MainTask, MainTaskSender, NodeId, NodeKind, Rect, ViewKind};
+    use super::{
+        AppKitRenderNode, MainTask, MainTaskSender, NodeId, NodeKind, Rect, Sidebar, ViewKind,
+    };
 
     #[derive(Debug)]
     pub enum AppError {
@@ -164,7 +145,7 @@ mod backend {
         window_layout: Option<Rc<RefCell<WindowLayout>>>,
         applied_window_bounds: Option<Rect>,
         applied_full_size_content_view: Option<bool>,
-        applied_sidebar: Option<super::Sidebar>,
+        applied_sidebar: Option<Sidebar>,
         event_route: Option<EventRouteId>,
     }
 
@@ -380,9 +361,7 @@ mod backend {
                             .map_err(AppError::Ui)?;
                     }
                     if apply_bounds {
-                        window
-                            .set_bounds(native_rect(bounds))
-                            .map_err(AppError::Ui)?;
+                        window.set_bounds(bounds).map_err(AppError::Ui)?;
                     }
                     window.set_title(&title).map_err(AppError::Ui)?;
                     window.set_identifier(id.as_deref()).map_err(AppError::Ui)
@@ -399,9 +378,7 @@ mod backend {
                 if new_window || self.node(window_id).applied_sidebar != sidebar {
                     cx.with_window(native_id, |window| -> Result<(), AppError> {
                         if let Some(sidebar) = &sidebar {
-                            window
-                                .set_sidebar(&sidebar.native(), |_| {})
-                                .map_err(AppError::Ui)
+                            window.set_sidebar(sidebar, |_| {}).map_err(AppError::Ui)
                         } else {
                             window.clear_sidebar().map_err(AppError::Ui)
                         }
@@ -491,7 +468,7 @@ mod backend {
             };
             let native = match kind {
                 ViewKind::Container => NativeNode::Container(
-                    NativeView::new(application, NativeRect::new(0.0, 0.0, 0.0, 0.0))
+                    NativeView::new(application, Rect::new(0.0, 0.0, 0.0, 0.0))
                         .map_err(AppError::Ui)?,
                 ),
                 ViewKind::Button(title) => NativeNode::Button(
@@ -735,7 +712,7 @@ mod backend {
     }
 
     impl WindowLayout {
-        fn layout(&self, bounds: NativeRect) -> Result<(), AppError> {
+        fn layout(&self, bounds: Rect) -> Result<(), AppError> {
             let available = Size::new(bounds.width as f32, bounds.height as f32);
             let mut layout = LayoutTree::new();
             let built = self
@@ -932,16 +909,12 @@ mod backend {
         EventRouteToken::new(route.into_raw())
     }
 
-    fn native_rect(rect: Rect) -> NativeRect {
-        NativeRect::new(rect.x, rect.y, rect.width, rect.height)
-    }
-
     fn window_bounds_need_update(applied: Option<Rect>, declared: Rect) -> bool {
         applied != Some(declared)
     }
 
-    fn native_frame(frame: zintl_ui_layout::Rect, parent_height: f32) -> NativeRect {
-        NativeRect::new(
+    fn native_frame(frame: zintl_ui_layout::Rect, parent_height: f32) -> Rect {
+        Rect::new(
             frame.x as f64,
             (parent_height - frame.y - frame.height) as f64,
             frame.width as f64,
@@ -1063,7 +1036,7 @@ mod backend {
 
             assert_eq!(
                 native_frame(frame, 100.0),
-                NativeRect::new(12.0, 48.0, 80.0, 32.0)
+                Rect::new(12.0, 48.0, 80.0, 32.0)
             );
         }
 

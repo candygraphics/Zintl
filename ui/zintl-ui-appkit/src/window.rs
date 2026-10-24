@@ -41,18 +41,12 @@ impl Window {
         self
     }
 
-    pub fn content<V>(self, content: V) -> Self
+    pub fn content<V>(mut self, content: V) -> Self
     where
         V: Clone + IntoElement<Output = RenderNode> + 'static,
     {
-        Self {
-            sidebar: self.sidebar,
-            bounds: self.bounds,
-            title: self.title,
-            full_size_content_view: self.full_size_content_view,
-            id: self.id,
-            children: list![content],
-        }
+        self.children = list![content];
+        self
     }
 }
 
