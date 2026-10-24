@@ -60,7 +60,7 @@ mod backend {
     use std::error::Error;
     use std::fmt;
     use std::rc::Rc;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex, PoisonError};
 
     use messageloop_appkit::{
         Context as MessageContext, MessageLoopAppkit, MessageLoopError, MessageLoopHandler, Sender,
@@ -155,7 +155,14 @@ mod backend {
         structure_dirty: bool,
         layout_dirty: bool,
         pending_error: Rc<RefCell<Option<AppError>>>,
-        perform_main: Option<Arc<MainTaskSender>>,
+        main_tasks: Arc<Mutex<MainTaskRoute>>,
+        perform_main: Box<MainTaskSender>,
+    }
+
+    /// Where main-thread tasks go before and after the message loop starts.
+    enum MainTaskRoute {
+        Pending(Vec<MainTask>),
+        Connected(Box<MainTaskSender>),
     }
 
     impl<R: AppKitRenderNode> Default for AppKitBackend<R> {
@@ -166,6 +173,18 @@ mod backend {
 
     impl<R: AppKitRenderNode> AppKitBackend<R> {
         pub fn new() -> Self {
+            let main_tasks = Arc::new(Mutex::new(MainTaskRoute::Pending(Vec::new())));
+            let route = main_tasks.clone();
+            // Tasks queued during the initial mount wait until the loop connects.
+            let perform_main = Box::new(move |task: MainTask| {
+                match &mut *route.lock().unwrap_or_else(PoisonError::into_inner) {
+                    MainTaskRoute::Pending(tasks) => {
+                        tasks.push(task);
+                        true
+                    }
+                    MainTaskRoute::Connected(sender) => sender(task),
+                }
+            });
             Self {
                 nodes: vec![Some(BackendNode {
                     value: None,
@@ -183,7 +202,8 @@ mod backend {
                 structure_dirty: true,
                 layout_dirty: true,
                 pending_error: Rc::new(RefCell::new(None)),
-                perform_main: None,
+                main_tasks,
+                perform_main,
             }
         }
 
@@ -191,7 +211,16 @@ mod backend {
             &mut self,
             sender: impl Fn(MainTask) -> bool + Send + Sync + 'static,
         ) {
-            self.perform_main = Some(Arc::new(sender));
+            let mut route = self
+                .main_tasks
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if let MainTaskRoute::Pending(tasks) = &mut *route {
+                for task in tasks.drain(..) {
+                    sender(task);
+                }
+            }
+            *route = MainTaskRoute::Connected(Box::new(sender));
         }
 
         pub fn value(&self, id: NodeId) -> Option<&R> {
@@ -629,7 +658,7 @@ mod backend {
         type NodeId = NodeId;
 
         fn create_context<'a>(&'a self, store_context: StoreContext<'a>) -> R::Context<'a> {
-            R::create_context(store_context, self.perform_main.as_deref())
+            R::create_context(store_context, Some(&*self.perform_main))
         }
 
         fn root(&self) -> Self::NodeId {
@@ -1115,6 +1144,20 @@ mod backend {
             composer.mount(PerformMainView);
 
             receiver.recv().unwrap()();
+        }
+
+        #[test]
+        fn tasks_queued_before_loop_start_are_forwarded_on_connect() {
+            // Verifies a render before the message loop starts can still queue main-thread work.
+            let mut composer = Composer::new(AppKitBackend::new());
+            composer.mount(PerformMainView);
+
+            let (sender, receiver) = mpsc::channel();
+            composer
+                .backend_mut()
+                .set_main_task_sender(move |task| sender.send(task).is_ok());
+
+            receiver.try_recv().unwrap()();
         }
 
         #[test]
