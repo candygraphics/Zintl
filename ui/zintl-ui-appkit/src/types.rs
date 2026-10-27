@@ -129,6 +129,15 @@ impl Default for ScrollAxes {
     }
 }
 
+/// The saved state of a scroll view, bound with [`crate::ScrollView::bind`].
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ScrollStatus {
+    /// The horizontal document offset shown at the leading edge.
+    pub x: f64,
+    /// The vertical document offset shown at the top edge.
+    pub y: f64,
+}
+
 #[cfg(target_os = "macos")]
 mod backend {
     use super::*;

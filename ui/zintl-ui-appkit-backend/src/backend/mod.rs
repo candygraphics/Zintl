@@ -557,7 +557,7 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
 
     fn attach_contents(&self, id: NodeId, native: &NativeNode) -> Result<(), AppError> {
         match native {
-            NativeNode::ScrollView(scroll) => self.attach_children(scroll.document_view(), id),
+            NativeNode::ScrollView(scroll, _) => self.attach_children(scroll.document_view(), id),
             NativeNode::TabView(tabs) => {
                 let NodeKind::View {
                     kind: ViewKind::TabView { titles, selected },

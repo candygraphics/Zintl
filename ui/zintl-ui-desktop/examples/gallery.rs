@@ -19,6 +19,7 @@ struct Gallery {
     tint: Store<Color>,
     search: Store<String>,
     tab: Store<usize>,
+    scroll_status: Store<ScrollStatus>,
     info: Store<bool>,
     confirm_delete: Store<bool>,
     open_file: Store<bool>,
@@ -112,7 +113,7 @@ impl Gallery {
             .bind(self.tab)
             .minimum_size(Size::new(320.0, 140.0)),
             Text::new("Scrollable list"),
-            ScrollView::new(VStack::new(rows).spacing(6.0).padding(8.0)),
+            ScrollView::new(VStack::new(rows).spacing(6.0).padding(8.0)).bind(self.scroll_status),
         ])
         .spacing(12.0)
         .padding(20.0)
@@ -293,6 +294,7 @@ impl View for Gallery {
         self.tint = cx.store(Color::rgb(0.0, 0.48, 1.0));
         self.search = cx.store(String::new());
         self.tab = cx.store(0);
+        self.scroll_status = cx.store(ScrollStatus::default());
         self.info = cx.store(false);
         self.confirm_delete = cx.store(false);
         self.open_file = cx.store(false);

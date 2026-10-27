@@ -84,6 +84,11 @@ pub enum WindowEventKind {
     ColorChanged {
         color: crate::ui::Color,
     },
+    /// A scroll view's top-left document point moved.
+    Scrolled {
+        x: f64,
+        y: f64,
+    },
     MenuItemSelected {
         id: String,
     },

@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use zpd_appkit::geometry::Rect as NativeRect;
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
@@ -20,7 +22,8 @@ pub(super) enum NativeNode {
     NumberField(NumberField),
     SearchField(SearchField),
     ColorWell(ColorWell),
-    ScrollView(ScrollView),
+    /// The offset waits until layout has sized the document.
+    ScrollView(ScrollView, Cell<Option<(f64, f64)>>),
     TabView(TabView),
 }
 
@@ -38,7 +41,7 @@ impl NativeNode {
             Self::NumberField(view) => view.as_view(),
             Self::SearchField(view) => view.as_view(),
             Self::ColorWell(view) => view.as_view(),
-            Self::ScrollView(view) => view.as_view(),
+            Self::ScrollView(view, _) => view.as_view(),
             Self::TabView(view) => view.as_view(),
         }
     }
@@ -65,7 +68,9 @@ impl NativeNode {
             ViewKind::NumberField { .. } => Self::NumberField(NumberField::new(application)?),
             ViewKind::SearchField { .. } => Self::SearchField(SearchField::new(application)?),
             ViewKind::ColorWell { .. } => Self::ColorWell(ColorWell::new(application)?),
-            ViewKind::ScrollView { .. } => Self::ScrollView(ScrollView::new(application)?),
+            ViewKind::ScrollView { .. } => {
+                Self::ScrollView(ScrollView::new(application)?, Cell::new(None))
+            }
             ViewKind::TabView { .. } => Self::TabView(TabView::new(application)?),
         };
         native.apply(None, kind)?;
@@ -244,9 +249,13 @@ impl NativeNode {
                     well.set_color(*color)?;
                 }
             }
-            (Self::ScrollView(scroll), ViewKind::ScrollView { axes }) => {
-                if !matches!(old, Some(ViewKind::ScrollView { axes: old }) if old == axes) {
+            (Self::ScrollView(scroll, restore), ViewKind::ScrollView { axes, offset }) => {
+                if !matches!(old, Some(ViewKind::ScrollView { axes: old, .. }) if old == axes) {
                     scroll.set_axes(*axes)?;
+                }
+                // Later offsets echo the user's scrolling, so only a new view restores one.
+                if old.is_none() {
+                    restore.set(*offset);
                 }
             }
             (Self::TabView(tabs), ViewKind::TabView { selected, .. }) => {

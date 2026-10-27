@@ -13,6 +13,7 @@ pub enum EventKind {
     ValueChanged,
     SelectionChanged,
     ColorChanged,
+    Scrolled,
     SidebarSelectionChanged,
     SidebarSearchChanged,
     MenuItemSelected,
@@ -47,6 +48,11 @@ pub enum Event {
     },
     ColorChanged {
         color: Color,
+    },
+    /// A scroll view's top-left document point moved.
+    Scrolled {
+        x: f64,
+        y: f64,
     },
     SidebarSelectionChanged {
         id: String,
@@ -84,6 +90,7 @@ impl EventTrait for Event {
             Self::ValueChanged { .. } => EventKind::ValueChanged,
             Self::SelectionChanged { .. } => EventKind::SelectionChanged,
             Self::ColorChanged { .. } => EventKind::ColorChanged,
+            Self::Scrolled { .. } => EventKind::Scrolled,
             Self::SidebarSelectionChanged { .. } => EventKind::SidebarSelectionChanged,
             Self::SidebarSearchChanged { .. } => EventKind::SidebarSearchChanged,
             Self::MenuItemSelected { .. } => EventKind::MenuItemSelected,

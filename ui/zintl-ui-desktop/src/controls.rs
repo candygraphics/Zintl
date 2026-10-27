@@ -8,7 +8,7 @@ use zintl_ui::view::View;
 use zintl_ui_appkit::NativeView;
 use zintl_ui_layout::{Axis, LayoutStyle, Size};
 
-use crate::{Color, Context, ListFactory, RenderNode, ScrollAxes};
+use crate::{Color, Context, ListFactory, RenderNode, ScrollAxes, ScrollStatus};
 
 type Change<T> = dyn for<'a> Fn(&mut Context<'a>, T);
 
@@ -547,6 +547,12 @@ impl ScrollView {
 
     pub fn axes(mut self, axes: ScrollAxes) -> Self {
         self.inner = self.inner.axes(axes);
+        self
+    }
+
+    /// Saves the scroll position and restores it when the view is shown again.
+    pub fn bind(mut self, store: Store<ScrollStatus>) -> Self {
+        self.inner = self.inner.bind(store);
         self
     }
 

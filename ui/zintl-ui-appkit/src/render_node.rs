@@ -7,7 +7,7 @@ use zintl_ui_layout::{LayoutStyle, Size};
 use crate::MenuItemState;
 use crate::{
     AlertStyle, BezelStyle, ButtonType, Color, Event, MenuState, PopoverEdge, ScrollAxes,
-    SidebarState, WindowStyle,
+    ScrollStatus, SidebarState, WindowStyle,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -156,6 +156,8 @@ pub enum RenderNode {
     /// Children are scrolled content.
     NSScrollView {
         axes: ScrollAxes,
+        /// The offset restored when the native view is created.
+        status: Option<ScrollStatus>,
         layout: LayoutStyle,
         id: Option<String>,
     },
@@ -417,9 +419,15 @@ impl zintl_ui_appkit_backend::AppKitRenderNode for RenderNode {
                 id,
                 *enabled,
             ),
-            Self::NSScrollView { axes, layout, id } => view(
+            Self::NSScrollView {
+                axes,
+                status,
+                layout,
+                id,
+            } => view(
                 ViewKind::ScrollView {
                     axes: axes.backend(),
+                    offset: status.map(|status| (status.x, status.y)),
                 },
                 layout,
                 id,
@@ -494,6 +502,7 @@ impl zintl_ui_appkit_backend::AppKitRenderNode for RenderNode {
             AppKitEvent::ColorChanged { color } => Event::ColorChanged {
                 color: Color::from_backend(color),
             },
+            AppKitEvent::Scrolled { x, y } => Event::Scrolled { x, y },
             AppKitEvent::MenuItemSelected { id } => Event::MenuItemSelected { id },
             AppKitEvent::PopoverClosed => Event::PopoverClosed,
             AppKitEvent::AlertResponse { button } => Event::AlertResponse { button },

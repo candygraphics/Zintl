@@ -99,6 +99,8 @@ pub enum ViewKind {
     /// Children are laid out in the scrollable document view.
     ScrollView {
         axes: ScrollAxes,
+        /// The `(x, y)` document point restored at the top-left once the view is created.
+        offset: Option<(f64, f64)>,
     },
     /// Each child is the page for the title at the same index.
     TabView {

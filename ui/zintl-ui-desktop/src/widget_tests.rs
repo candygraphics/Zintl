@@ -626,3 +626,21 @@ fn scroll_view_fills_its_parent_and_hosts_content() {
     ));
     assert_eq!(tree.children.len(), 1);
 }
+
+#[test]
+fn scroll_view_binding_saves_and_restores_offset() {
+    // Verifies native scrolling updates the bound status, which the node carries for restoring.
+    let (mut app, status) = Harness::mount(
+        |cx| cx.store(ScrollStatus::default()),
+        |status| ScrollView::new(VStack::new(list![Text::new("Row")])).bind(status),
+    );
+    assert!(app.dispatch_at(&[0], Event::Scrolled { x: 0.0, y: 120.0 }));
+    assert_eq!(app.get(status), ScrollStatus { x: 0.0, y: 120.0 });
+    assert!(matches!(
+        app.render_tree().value,
+        RenderNode::NSScrollView {
+            status: Some(ScrollStatus { x: 0.0, y: 120.0 }),
+            ..
+        }
+    ));
+}

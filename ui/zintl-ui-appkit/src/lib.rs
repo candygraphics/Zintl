@@ -34,7 +34,8 @@ pub use render_node::{AlertState, FileDialogState, Rect, RenderNode};
 pub use sidebar::{Sidebar, SidebarItem, SidebarSearchState, SidebarSection, SidebarState};
 pub use text_field::TextField;
 pub use types::{
-    AlertStyle, BezelStyle, ButtonRole, ButtonType, Color, PopoverEdge, ScrollAxes, WindowStyle,
+    AlertStyle, BezelStyle, ButtonRole, ButtonType, Color, PopoverEdge, ScrollAxes, ScrollStatus,
+    WindowStyle,
 };
 pub use view::View;
 pub use window::Window;

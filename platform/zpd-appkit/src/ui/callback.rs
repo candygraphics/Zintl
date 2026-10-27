@@ -135,6 +135,39 @@ pub(crate) fn install_delegate(
     .map_err(UiError::from)
 }
 
+/// Routes `name` notifications posted by `object` to `handler` until `actor` is removed.
+///
+/// `object` must stay alive while `actor` is live, such as a view it retains.
+pub(crate) fn install_observer(
+    actor: &ActorRef,
+    name: &str,
+    object: Id,
+    handler: impl FnMut(Id) + 'static,
+) -> Result<(), UiError> {
+    let tree = actor.tree_handle().ok_or(UiError::Closed)?;
+    let observer = tree
+        .replace_owned(actor, "observer", target(handler))
+        .map_err(UiError::from)?;
+    tree.add_teardown(&observer, |observer| {
+        // SAFETY: Unregister the unretained observer before its callback state is released.
+        unsafe {
+            let center = zpd_objc::msg_send!(zpd_objc::class!("NSNotificationCenter"), zpd_objc::sel!("defaultCenter"), () => Id);
+            zpd_objc::msg_send!(center, zpd_objc::sel!("removeObserver:"), ((observer): Id) => ());
+            release(observer);
+        }
+    })
+    .map_err(UiError::from)?;
+    let name = crate::native::nsstring(name);
+    observer.with(|observer| {
+        // SAFETY: The center keeps the observer unretained; teardown removes it first.
+        unsafe {
+            let center = zpd_objc::msg_send!(zpd_objc::class!("NSNotificationCenter"), zpd_objc::sel!("defaultCenter"), () => Id);
+            zpd_objc::msg_send!(center, zpd_objc::sel!("addObserver:selector:name:object:"), ((observer): Id, (zpd_objc::sel!("invoke:")): zpd_objc::Sel, (name.as_ptr()): Id, (object): Id) => ());
+        }
+    })?;
+    Ok(())
+}
+
 /// Returns a function that emits semantic events from `actor` while it is live.
 pub(crate) fn emitter(actor: &ActorRef) -> impl Fn(WindowEventKind) + 'static {
     let actor = actor.clone();

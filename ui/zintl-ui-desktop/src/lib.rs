@@ -28,8 +28,8 @@ pub use zintl_ui_appkit::{
     Alert, AlertButton, AlertStyle, Attach, Attached, ButtonRole, Color, ColorPanel, Context,
     EnglishMenuLocalizer, Event, EventKind, FileDialog, JapaneseMenuLocalizer, ListFactory,
     MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, NativeView, Popover, PopoverEdge, Rect,
-    RenderNode, ScrollAxes, Shortcut, Sidebar, SidebarItem, SidebarSection, SidebarState,
-    StandardAction, StandardMenu, StandardText, list,
+    RenderNode, ScrollAxes, ScrollStatus, Shortcut, Sidebar, SidebarItem, SidebarSection,
+    SidebarState, StandardAction, StandardMenu, StandardText, list,
 };
 pub use zintl_ui_layout::{
     Axis, ChildSizing, CrossAxisAlignment, LayoutDimension, LayoutStyle, MainAxisDistribution, Size,

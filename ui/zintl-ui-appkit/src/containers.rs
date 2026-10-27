@@ -5,7 +5,7 @@ use zintl_ui::store::Store;
 use zintl_ui::view::View;
 use zintl_ui_layout::{Axis, LayoutDimension, LayoutStyle, Size};
 
-use crate::{Context, Element, Event, EventKind, NativeView, RenderNode, ScrollAxes};
+use crate::{Context, Element, Event, EventKind, NativeView, RenderNode, ScrollAxes, ScrollStatus};
 
 type SelectionAction = dyn for<'a> Fn(&mut Context<'a>, usize);
 
@@ -14,6 +14,7 @@ type SelectionAction = dyn for<'a> Fn(&mut Context<'a>, usize);
 pub struct ScrollView {
     content: ElementFactory<RenderNode>,
     axes: ScrollAxes,
+    store: Option<Store<ScrollStatus>>,
     layout: LayoutStyle,
     id: Option<String>,
 }
@@ -26,6 +27,7 @@ impl ScrollView {
         Self {
             content: ElementFactory::new(content),
             axes: ScrollAxes::VERTICAL,
+            store: None,
             layout: LayoutStyle::fill(Size::new(80.0, 80.0)),
             id: None,
         }
@@ -33,6 +35,12 @@ impl ScrollView {
 
     pub fn axes(mut self, axes: ScrollAxes) -> Self {
         self.axes = axes;
+        self
+    }
+
+    /// Saves the scroll position and restores it when the view is created again.
+    pub fn bind(mut self, store: Store<ScrollStatus>) -> Self {
+        self.store = Some(store);
         self
     }
 
@@ -55,13 +63,22 @@ impl ScrollView {
 }
 
 impl NativeView for ScrollView {
-    fn native_element(&self, _cx: &mut Context<'_>) -> Element<RenderNode> {
-        Element::node(RenderNode::NSScrollView {
+    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        let element = Element::node(RenderNode::NSScrollView {
             axes: self.axes,
+            status: self.store.map(|store| *cx.get(store)),
             layout: self.layout,
             id: self.id.clone(),
         })
-        .with_children([self.content.clone().into_element()])
+        .with_children([self.content.clone().into_element()]);
+        let Some(store) = self.store else {
+            return element;
+        };
+        element.on_event(EventKind::Scrolled, move |cx, event| {
+            if let Event::Scrolled { x, y } = event {
+                cx.update(store, |status| *status = ScrollStatus { x, y });
+            }
+        })
     }
 }
 

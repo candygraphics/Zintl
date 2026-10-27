@@ -59,7 +59,7 @@ impl BuiltLayout<'_> {
             child.apply(layout, Some(frame.height))?;
         }
         match native.as_ref() {
-            NativeNode::ScrollView(scroll) => {
+            NativeNode::ScrollView(scroll, restore) => {
                 let (width, height) = scroll.content_size().map_err(AppError::Ui)?;
                 let (width, height) = (width as f32, height as f32);
                 let size = HostLayout::place(
@@ -73,6 +73,9 @@ impl BuiltLayout<'_> {
                 scroll
                     .set_document_size(size.width.max(width) as f64, size.height.max(height) as f64)
                     .map_err(AppError::Ui)?;
+                if let Some((x, y)) = restore.take() {
+                    scroll.scroll_to(x, y).map_err(AppError::Ui)?;
+                }
             }
             NativeNode::TabView(tabs) => {
                 let area = tabs.content_rect().map_err(AppError::Ui)?;
