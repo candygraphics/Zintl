@@ -43,16 +43,12 @@ impl TextField {
         let value = value.into();
         let minimum_width = value.chars().count() as f32 * 7.0;
         Self {
-            value,
-            binding: None,
-            placeholder: None,
             editable: false,
             selectable: false,
             bordered: false,
             draws_background: false,
-            multiline: false,
             layout: LayoutStyle::leaf(Size::new(minimum_width, 20.0)),
-            id: None,
+            ..Self::with_string(value)
         }
     }
 

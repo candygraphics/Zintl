@@ -456,13 +456,13 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
                 window.set_full_size_content_view(full_size_content_view)?;
             }
             if apply_bounds {
-                window.set_bounds(native_rect(bounds))?;
+                window.set_bounds(bounds)?;
             }
             window.set_title(&title)?;
             window.set_identifier(id.as_deref())?;
             if apply_sidebar {
                 match &sidebar {
-                    Some(sidebar) => window.update_sidebar(&sidebar.native())?,
+                    Some(sidebar) => window.update_sidebar(sidebar)?,
                     None => window.clear_sidebar()?,
                 }
             }
@@ -939,10 +939,6 @@ impl<R: AppKitRenderNode> RenderBackend<R> for AppKitBackend<R> {
 
 fn route_token(route: EventRouteId) -> EventRouteToken {
     EventRouteToken::new(route.into_raw())
-}
-
-fn native_rect(rect: Rect) -> zpd_appkit::geometry::Rect {
-    zpd_appkit::geometry::Rect::new(rect.x, rect.y, rect.width, rect.height)
 }
 
 fn window_bounds_need_update(applied: Option<Rect>, declared: Rect) -> bool {

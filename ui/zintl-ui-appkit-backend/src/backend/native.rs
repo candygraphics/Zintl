@@ -1,13 +1,12 @@
 use std::cell::Cell;
 
-use zpd_appkit::geometry::Rect as NativeRect;
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
     AsView, Button, ColorWell, ComboBox, NumberField, PopUpButton, ScrollView, SearchField,
     SegmentedControl, Slider, Switch, TabView, TextField, UiError, View, ViewRef,
 };
 
-use crate::{ButtonType, ViewKind};
+use crate::{ButtonType, Rect, ViewKind};
 
 /// A native view created for a [`ViewKind`].
 pub(super) enum NativeNode {
@@ -50,7 +49,7 @@ impl NativeNode {
     pub(super) fn create(application: &Application, kind: &ViewKind) -> Result<Self, UiError> {
         let native = match kind {
             ViewKind::Container => {
-                Self::Container(View::new(application, NativeRect::new(0.0, 0.0, 0.0, 0.0))?)
+                Self::Container(View::new(application, Rect::new(0.0, 0.0, 0.0, 0.0))?)
             }
             ViewKind::Button(button) => {
                 Self::Button(Button::with_title(application, &button.title)?)

@@ -1,40 +1,20 @@
 //! AppKit renderer for Zintl UI trees.
 
-mod sidebar;
-pub use sidebar::{Sidebar, SidebarItem, SidebarSearch, SidebarSection};
-
 use zintl_ui::renderer::RenderNode;
 use zintl_ui::view::StoreContext;
 use zintl_ui_layout::{LayoutStyle, Size};
 pub use zpd_appkit::actor::WindowEventKind as AppKitEvent;
+pub use zpd_appkit::geometry::Rect;
 pub use zpd_appkit::ui::{
     AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, Color,
     CommandItem, CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig,
-    FileDialogMode, MenuRole, NumberFormat, PopoverEdge, ScrollAxes, WindowAppMenu, WindowStyle,
+    FileDialogMode, MenuRole, NumberFormat, PopoverEdge, ScrollAxes, Sidebar, SidebarItem,
+    SidebarSearch, SidebarSection, WindowAppMenu, WindowStyle,
 };
 
 pub type MainTask = Box<dyn FnOnce() + Send + 'static>;
 
 pub type MainTaskSender = dyn Fn(MainTask) -> bool + Send + Sync;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Rect {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-}
-
-impl Rect {
-    pub const fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            height,
-        }
-    }
-}
 
 /// An `NSButton` configuration.
 #[derive(Clone, Debug, PartialEq)]

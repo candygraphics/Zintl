@@ -7,7 +7,6 @@ use zintl_ui::renderer::{RenderBackend, RenderNode};
 use zintl_ui::view::{Context as ContextTrait, StoreContext, View};
 use zintl_ui_layout::{LayoutStyle, Size};
 use zpd_appkit::actor::WindowEventKind;
-use zpd_appkit::geometry::Rect as NativeRect;
 
 use super::app::WindowEventAction;
 use super::layout::native_frame;
@@ -112,7 +111,7 @@ fn converts_taffy_top_origin_to_cgrect_bottom_origin() {
 
     assert_eq!(
         native_frame(frame, Some(100.0)),
-        NativeRect::new(12.0, 48.0, 80.0, 32.0)
+        Rect::new(12.0, 48.0, 80.0, 32.0)
     );
 }
 
@@ -126,10 +125,7 @@ fn flipped_parents_keep_the_top_origin() {
         height: 32.0,
     };
 
-    assert_eq!(
-        native_frame(frame, None),
-        NativeRect::new(0.0, 20.0, 80.0, 32.0)
-    );
+    assert_eq!(native_frame(frame, None), Rect::new(0.0, 20.0, 80.0, 32.0));
 }
 
 #[test]

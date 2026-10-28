@@ -81,14 +81,12 @@ impl Window {
         self
     }
 
-    pub fn content<V>(self, content: V) -> Self
+    pub fn content<V>(mut self, content: V) -> Self
     where
         V: Clone + IntoElement<Output = RenderNode> + 'static,
     {
-        Self {
-            children: list![content],
-            ..self
-        }
+        self.children = list![content];
+        self
     }
 
     pub fn alert(mut self, alert: Alert) -> Self {

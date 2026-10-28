@@ -3,10 +3,10 @@ use std::rc::Rc;
 use zintl_ui_layout::{
     Axis, CrossAxisAlignment, LayoutDimension, LayoutStyle, LayoutTree, Rect as LayoutRect, Size,
 };
-use zpd_appkit::geometry::Rect as NativeRect;
 
 use super::AppError;
 use super::native::NativeNode;
+use crate::Rect;
 
 /// A view and the layout inputs of its subtree, detached from backend storage.
 pub(super) struct LayoutSnapshot {
@@ -122,7 +122,7 @@ pub(super) struct HostLayout {
 }
 
 impl HostLayout {
-    pub(super) fn layout(&self, bounds: NativeRect) -> Result<(), AppError> {
+    pub(super) fn layout(&self, bounds: Rect) -> Result<(), AppError> {
         let size = Size::new(bounds.width as f32, bounds.height as f32);
         Self::place(
             &self.children,
@@ -204,12 +204,12 @@ impl HostLayout {
 ///
 /// Unflipped parents measure `y` from their bottom edge, so the frame is
 /// mirrored within `parent_height`; flipped parents pass `None`.
-pub(super) fn native_frame(frame: LayoutRect, parent_height: Option<f32>) -> NativeRect {
+pub(super) fn native_frame(frame: LayoutRect, parent_height: Option<f32>) -> Rect {
     let y = match parent_height {
         Some(parent_height) => parent_height - frame.y - frame.height,
         None => frame.y,
     };
-    NativeRect::new(
+    Rect::new(
         frame.x as f64,
         y as f64,
         frame.width as f64,

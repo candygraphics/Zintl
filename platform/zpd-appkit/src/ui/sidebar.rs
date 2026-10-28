@@ -7,24 +7,24 @@ use super::callback;
 use super::layout::LayoutAttribute;
 use super::sidebar_table::{SidebarTable, constrain};
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Sidebar {
     pub sections: Vec<SidebarSection>,
     pub selected_id: Option<String>,
     /// Shows a search field above the items.
     pub search: Option<SidebarSearch>,
 }
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SidebarSearch {
     pub value: String,
     pub placeholder: Option<String>,
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SidebarSection {
     pub title: Option<String>,
     pub items: Vec<SidebarItem>,
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SidebarItem {
     pub id: String,
     pub title: String,
