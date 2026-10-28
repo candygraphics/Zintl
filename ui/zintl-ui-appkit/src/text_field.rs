@@ -3,7 +3,8 @@ use zintl_ui::store::Store;
 use zintl_ui::view::View;
 use zintl_ui_layout::{LayoutStyle, Size};
 
-use crate::{Context, Element, Event, EventKind, NativeView, RenderNode};
+use crate::attach::attachments;
+use crate::{Attachments, Context, Element, Event, EventKind, NativeView, RenderNode};
 
 #[derive(Clone)]
 pub struct TextField {
@@ -17,6 +18,7 @@ pub struct TextField {
     multiline: bool,
     layout: LayoutStyle,
     id: Option<String>,
+    attachments: Attachments,
 }
 
 impl TextField {
@@ -36,6 +38,7 @@ impl TextField {
             multiline: false,
             layout: LayoutStyle::leaf(Size::new(160.0, 28.0)),
             id: None,
+            attachments: Attachments::default(),
         }
     }
 
@@ -93,7 +96,9 @@ impl View for TextField {
 }
 
 impl NativeView for TextField {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    attachments!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let value = self
             .binding
             .map(|store| cx.get(store).clone())

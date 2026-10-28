@@ -7,7 +7,8 @@ use zintl_ui::store::Store;
 use zintl_ui::view::View;
 use zintl_ui_layout::{LayoutStyle, Size};
 
-use crate::{Color, Context, Element, Event, EventKind, NativeView, RenderNode};
+use crate::attach::attachments;
+use crate::{Attachments, Color, Context, Element, Event, EventKind, NativeView, RenderNode};
 
 type Change<T> = dyn for<'a> Fn(&mut Context<'a>, T);
 
@@ -113,6 +114,7 @@ pub struct Switch {
     enabled: bool,
     layout: LayoutStyle,
     id: Option<String>,
+    attachments: Attachments,
 }
 
 impl Switch {
@@ -124,6 +126,7 @@ impl Switch {
             enabled: true,
             layout: LayoutStyle::leaf(Size::new(38.0, 22.0)),
             id: None,
+            attachments: Attachments::default(),
         }
     }
 
@@ -150,7 +153,9 @@ impl Default for Switch {
 }
 
 impl NativeView for Switch {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    attachments!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::NSSwitch {
             on: self.store.map_or(self.on, |store| *cx.get(store)),
             enabled: self.enabled,
@@ -181,6 +186,7 @@ pub struct Slider {
     enabled: bool,
     layout: LayoutStyle,
     id: Option<String>,
+    attachments: Attachments,
 }
 
 impl Slider {
@@ -196,6 +202,7 @@ impl Slider {
             enabled: true,
             layout: LayoutStyle::leaf(Size::new(160.0, 24.0)),
             id: None,
+            attachments: Attachments::default(),
         }
     }
 
@@ -223,7 +230,9 @@ impl Slider {
 }
 
 impl NativeView for Slider {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    attachments!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::NSSlider {
             value: self.store.map_or(self.value, |store| *cx.get(store)),
             minimum: self.minimum,
@@ -265,6 +274,7 @@ pub struct PopUpButton {
     enabled: bool,
     layout: LayoutStyle,
     id: Option<String>,
+    attachments: Attachments,
 }
 
 impl PopUpButton {
@@ -285,6 +295,7 @@ impl PopUpButton {
             enabled: true,
             layout: LayoutStyle::leaf(Size::new(width.max(100.0), 26.0)),
             id: None,
+            attachments: Attachments::default(),
         }
     }
 
@@ -306,7 +317,9 @@ impl PopUpButton {
 }
 
 impl NativeView for PopUpButton {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    attachments!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::NSPopUpButton {
             items: self.items.clone(),
             selected: self.store.map(|store| *cx.get(store)).or(self.selected),
@@ -332,6 +345,7 @@ pub struct SegmentedControl {
     enabled: bool,
     layout: LayoutStyle,
     id: Option<String>,
+    attachments: Attachments,
 }
 
 impl SegmentedControl {
@@ -349,6 +363,7 @@ impl SegmentedControl {
             enabled: true,
             layout: LayoutStyle::leaf(Size::new(width, 24.0)),
             id: None,
+            attachments: Attachments::default(),
         }
     }
 
@@ -370,7 +385,9 @@ impl SegmentedControl {
 }
 
 impl NativeView for SegmentedControl {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    attachments!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::NSSegmentedControl {
             segments: self.segments.clone(),
             selected: self.store.map(|store| *cx.get(store)).or(self.selected),
@@ -397,6 +414,7 @@ pub struct ComboBox {
     enabled: bool,
     layout: LayoutStyle,
     id: Option<String>,
+    attachments: Attachments,
 }
 
 impl ComboBox {
@@ -410,6 +428,7 @@ impl ComboBox {
             enabled: true,
             layout: LayoutStyle::leaf(Size::new(160.0, 26.0)),
             id: None,
+            attachments: Attachments::default(),
         }
     }
 
@@ -438,7 +457,9 @@ impl ComboBox {
 }
 
 impl NativeView for ComboBox {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    attachments!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::NSComboBox {
             items: self.items.clone(),
             value: self
@@ -473,6 +494,7 @@ pub struct NumberField {
     enabled: bool,
     layout: LayoutStyle,
     id: Option<String>,
+    attachments: Attachments,
 }
 
 impl NumberField {
@@ -488,6 +510,7 @@ impl NumberField {
             enabled: true,
             layout: LayoutStyle::leaf(Size::new(100.0, 22.0)),
             id: None,
+            attachments: Attachments::default(),
         }
     }
 
@@ -533,7 +556,9 @@ impl Default for NumberField {
 }
 
 impl NativeView for NumberField {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    attachments!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::NSNumberField {
             value: self.store.map_or(self.value, |store| *cx.get(store)),
             minimum: self.minimum,
@@ -565,6 +590,7 @@ pub struct SearchField {
     action: Option<Rc<Change<String>>>,
     layout: LayoutStyle,
     id: Option<String>,
+    attachments: Attachments,
 }
 
 impl SearchField {
@@ -576,6 +602,7 @@ impl SearchField {
             action: None,
             layout: LayoutStyle::leaf(Size::new(160.0, 22.0)),
             id: None,
+            attachments: Attachments::default(),
         }
     }
 
@@ -605,7 +632,9 @@ impl Default for SearchField {
 }
 
 impl NativeView for SearchField {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    attachments!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::NSSearchField {
             value: self
                 .store
@@ -634,6 +663,7 @@ pub struct ColorWell {
     enabled: bool,
     layout: LayoutStyle,
     id: Option<String>,
+    attachments: Attachments,
 }
 
 impl ColorWell {
@@ -645,6 +675,7 @@ impl ColorWell {
             enabled: true,
             layout: LayoutStyle::leaf(Size::new(44.0, 24.0)),
             id: None,
+            attachments: Attachments::default(),
         }
     }
 
@@ -671,7 +702,9 @@ impl Default for ColorWell {
 }
 
 impl NativeView for ColorWell {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    attachments!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::NSColorWell {
             color: self.store.map_or(self.color, |store| *cx.get(store)),
             enabled: self.enabled,
