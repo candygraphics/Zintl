@@ -312,6 +312,26 @@ fn context_menu_routes_custom_items_by_position() {
 }
 
 #[test]
+fn view_builders_chain_after_attachments() {
+    // Verifies attachment modifiers keep the view type, so its own builders still apply.
+    let app = App::new(
+        VStack::new(list![Text::new("Row")])
+            .context_menu([MenuItem::new("Duplicate")])
+            .spacing(12.0)
+            .padding(20.0),
+    );
+    let tree = app.render_tree();
+    let RenderNode::NSView { layout, .. } = &tree.value else {
+        panic!("stacks render as an NSView");
+    };
+    assert_eq!((layout.gap, layout.padding), (12.0, 20.0));
+    assert!(matches!(
+        tree.children.last().map(|child| &child.value),
+        Some(RenderNode::NSMenu { .. })
+    ));
+}
+
+#[test]
 fn popover_follows_its_presented_store() {
     // Verifies popovers render content as children and AppKit dismissal clears the Store.
     let (mut app, shown) = Harness::mount(

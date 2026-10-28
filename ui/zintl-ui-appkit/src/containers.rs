@@ -5,7 +5,11 @@ use zintl_ui::store::Store;
 use zintl_ui::view::View;
 use zintl_ui_layout::{Axis, LayoutDimension, LayoutStyle, Size};
 
-use crate::{Context, Element, Event, EventKind, NativeView, RenderNode, ScrollAxes, ScrollStatus};
+use crate::attach::attachments;
+use crate::{
+    Attachments, Context, Element, Event, EventKind, NativeView, RenderNode, ScrollAxes,
+    ScrollStatus,
+};
 
 type SelectionAction = dyn for<'a> Fn(&mut Context<'a>, usize);
 
@@ -17,6 +21,7 @@ pub struct ScrollView {
     store: Option<Store<ScrollStatus>>,
     layout: LayoutStyle,
     id: Option<String>,
+    attachments: Attachments,
 }
 
 impl ScrollView {
@@ -30,6 +35,7 @@ impl ScrollView {
             store: None,
             layout: LayoutStyle::fill(Size::new(80.0, 80.0)),
             id: None,
+            attachments: Attachments::default(),
         }
     }
 
@@ -63,7 +69,9 @@ impl ScrollView {
 }
 
 impl NativeView for ScrollView {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    attachments!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::NSScrollView {
             axes: self.axes,
             status: self.store.map(|store| *cx.get(store)),
@@ -118,6 +126,7 @@ pub struct TabView {
     action: Option<Rc<SelectionAction>>,
     layout: LayoutStyle,
     id: Option<String>,
+    attachments: Attachments,
 }
 
 impl TabView {
@@ -132,6 +141,7 @@ impl TabView {
             action: None,
             layout: LayoutStyle::fill(Size::new(200.0, 120.0)),
             id: None,
+            attachments: Attachments::default(),
         }
     }
 
@@ -163,7 +173,9 @@ impl TabView {
 }
 
 impl NativeView for TabView {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    attachments!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let mut page_layout = LayoutStyle::stack(Axis::Vertical, 8.0);
         page_layout.padding = Self::PAGE_PADDING;
         let pages = self.items.iter().map(|item| {

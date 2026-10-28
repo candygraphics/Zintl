@@ -25,7 +25,7 @@ use zintl_ui::renderer::RenderBackend;
 pub use zintl_ui::store::Store;
 pub use zintl_ui::view::View;
 pub use zintl_ui_appkit::{
-    Alert, AlertButton, AlertStyle, Attach, Attached, ButtonRole, Color, ColorPanel, Context,
+    Alert, AlertButton, AlertStyle, Attach, Attachments, ButtonRole, Color, ColorPanel, Context,
     EnglishMenuLocalizer, Event, EventKind, FileDialog, JapaneseMenuLocalizer, ListFactory,
     MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, NativeView, Popover, PopoverEdge, Rect,
     RenderNode, ScrollAxes, ScrollStatus, Shortcut, Sidebar, SidebarItem, SidebarSection,
@@ -144,8 +144,16 @@ impl Text {
 }
 
 impl NativeView for Text {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        self.inner.native_element(cx)
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        self.inner.base_element(cx)
+    }
+
+    fn attachments(&self) -> &Attachments {
+        self.inner.attachments()
+    }
+
+    fn attachments_mut(&mut self) -> &mut Attachments {
+        self.inner.attachments_mut()
     }
 }
 
@@ -230,8 +238,16 @@ pub enum ButtonStyle {
 }
 
 impl NativeView for Button {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        self.inner.native_element(cx)
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        self.inner.base_element(cx)
+    }
+
+    fn attachments(&self) -> &Attachments {
+        self.inner.attachments()
+    }
+
+    fn attachments_mut(&mut self) -> &mut Attachments {
+        self.inner.attachments_mut()
     }
 }
 
@@ -280,8 +296,16 @@ impl Default for TextField {
 }
 
 impl NativeView for TextField {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        self.inner.native_element(cx)
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        self.inner.base_element(cx)
+    }
+
+    fn attachments(&self) -> &Attachments {
+        self.inner.attachments()
+    }
+
+    fn attachments_mut(&mut self) -> &mut Attachments {
+        self.inner.attachments_mut()
     }
 }
 
@@ -291,6 +315,7 @@ struct Stack {
     children: ListFactory<RenderNode>,
     layout: LayoutStyle,
     id: Option<String>,
+    attachments: Attachments,
 }
 
 impl Stack {
@@ -299,6 +324,7 @@ impl Stack {
             children,
             layout: LayoutStyle::stack(axis, 8.0),
             id: None,
+            attachments: Attachments::default(),
         }
     }
 
@@ -367,8 +393,16 @@ impl HStack {
 }
 
 impl NativeView for HStack {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         self.stack.native_element(cx)
+    }
+
+    fn attachments(&self) -> &Attachments {
+        &self.stack.attachments
+    }
+
+    fn attachments_mut(&mut self) -> &mut Attachments {
+        &mut self.stack.attachments
     }
 }
 
@@ -418,8 +452,16 @@ impl VStack {
 }
 
 impl NativeView for VStack {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         self.stack.native_element(cx)
+    }
+
+    fn attachments(&self) -> &Attachments {
+        &self.stack.attachments
+    }
+
+    fn attachments_mut(&mut self) -> &mut Attachments {
+        &mut self.stack.attachments
     }
 }
 

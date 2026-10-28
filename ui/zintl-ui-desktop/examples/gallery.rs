@@ -88,6 +88,7 @@ impl Gallery {
                 .bind(self.search),
             self.summary(),
         ])
+        .context_menu([MenuItem::new("Duplicate").shortcut(Shortcut::command("d"))])
         .spacing(12.0)
         .padding(20.0)
     }

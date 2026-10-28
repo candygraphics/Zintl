@@ -15,7 +15,7 @@ mod types;
 mod view;
 mod window;
 
-pub use attach::{Attach, Attached, NativeView};
+pub use attach::{Attach, Attachments, NativeView};
 pub use button::Button;
 pub use containers::{ScrollView, TabView, TabViewItem};
 #[doc(hidden)]

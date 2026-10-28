@@ -2,13 +2,15 @@ use zintl_ui::element::{IntoElement, ListFactory};
 use zintl_ui::view::View as ViewTrait;
 use zintl_ui_layout::LayoutStyle;
 
-use crate::{Context, Element, NativeView, RenderNode};
+use crate::attach::attachments;
+use crate::{Attachments, Context, Element, NativeView, RenderNode};
 
 #[derive(Clone)]
 pub struct View {
     children: ListFactory<RenderNode>,
     layout: LayoutStyle,
     id: Option<String>,
+    attachments: Attachments,
 }
 
 impl View {
@@ -17,6 +19,7 @@ impl View {
             children,
             layout,
             id: None,
+            attachments: Attachments::default(),
         }
     }
 
@@ -27,7 +30,9 @@ impl View {
 }
 
 impl NativeView for View {
-    fn native_element(&self, _cx: &mut Context<'_>) -> Element<RenderNode> {
+    attachments!();
+
+    fn base_element(&self, _cx: &mut Context<'_>) -> Element<RenderNode> {
         Element::node(RenderNode::NSView {
             layout: self.layout,
             id: self.id.clone(),

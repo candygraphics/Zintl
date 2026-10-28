@@ -8,7 +8,7 @@ use zintl_ui::view::View;
 use zintl_ui_appkit::NativeView;
 use zintl_ui_layout::{Axis, LayoutStyle, Size};
 
-use crate::{Color, Context, ListFactory, RenderNode, ScrollAxes, ScrollStatus};
+use crate::{Attachments, Color, Context, ListFactory, RenderNode, ScrollAxes, ScrollStatus};
 
 type Change<T> = dyn for<'a> Fn(&mut Context<'a>, T);
 
@@ -46,6 +46,7 @@ pub struct Toggle {
     enabled: bool,
     id: Option<String>,
     action: Option<std::rc::Rc<Change<bool>>>,
+    attachments: Attachments,
 }
 
 impl Toggle {
@@ -58,6 +59,7 @@ impl Toggle {
             enabled: true,
             id: None,
             action: None,
+            attachments: Attachments::default(),
         }
     }
 
@@ -107,7 +109,15 @@ impl Toggle {
 }
 
 impl NativeView for Toggle {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    fn attachments(&self) -> &Attachments {
+        &self.attachments
+    }
+
+    fn attachments_mut(&mut self) -> &mut Attachments {
+        &mut self.attachments
+    }
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         match self.style {
             ToggleStyle::Checkbox => self
                 .button(zintl_ui_appkit::Button::checkbox(self.label.clone()))
@@ -175,6 +185,7 @@ pub struct Picker {
     enabled: bool,
     id: Option<String>,
     action: Option<std::rc::Rc<Change<usize>>>,
+    attachments: Attachments,
 }
 
 impl Picker {
@@ -187,6 +198,7 @@ impl Picker {
             enabled: true,
             id: None,
             action: None,
+            attachments: Attachments::default(),
         }
     }
 
@@ -223,7 +235,15 @@ impl Picker {
 }
 
 impl NativeView for Picker {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    fn attachments(&self) -> &Attachments {
+        &self.attachments
+    }
+
+    fn attachments_mut(&mut self) -> &mut Attachments {
+        &mut self.attachments
+    }
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let action = self.action.clone();
         let on_change = move |cx: &mut Context<'_>, index: usize| {
             if let Some(action) = &action {
@@ -316,8 +336,16 @@ macro_rules! wrapper {
         }
 
         impl NativeView for $name {
-            fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-                self.inner.native_element(cx)
+            fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+                self.inner.base_element(cx)
+            }
+
+            fn attachments(&self) -> &Attachments {
+                self.inner.attachments()
+            }
+
+            fn attachments_mut(&mut self) -> &mut Attachments {
+                self.inner.attachments_mut()
             }
         }
     };

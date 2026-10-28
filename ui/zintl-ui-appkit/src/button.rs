@@ -5,8 +5,10 @@ use zintl_ui::store::Store;
 use zintl_ui::view::View;
 use zintl_ui_layout::{LayoutStyle, Size};
 
+use crate::attach::attachments;
 use crate::{
-    BezelStyle, ButtonRole, ButtonType, Context, Element, Event, EventKind, NativeView, RenderNode,
+    Attachments, BezelStyle, ButtonRole, ButtonType, Context, Element, Event, EventKind,
+    NativeView, RenderNode,
 };
 
 type Action = dyn for<'a> Fn(&mut Context<'a>);
@@ -24,6 +26,7 @@ pub struct Button {
     enabled: bool,
     layout: LayoutStyle,
     id: Option<String>,
+    attachments: Attachments,
     action: Option<Rc<Action>>,
     state_action: Option<Rc<StateAction>>,
 }
@@ -41,6 +44,7 @@ impl Button {
             enabled: true,
             layout: LayoutStyle::leaf(Size::new(80.0, 32.0)),
             id: None,
+            attachments: Attachments::default(),
             action: None,
             state_action: None,
         }
@@ -130,7 +134,9 @@ impl Button {
 }
 
 impl NativeView for Button {
-    fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    attachments!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let on = self.state.map_or(self.on, |store| *cx.get(store));
         let key_equivalent = match self.role {
             ButtonRole::Default => Some("\r".to_owned()),
