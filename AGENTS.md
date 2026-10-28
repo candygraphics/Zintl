@@ -3,6 +3,7 @@
 ## Guidelines
 
 - Do not edit files under `thirdparty/`.
+- Make breaking API changes freely when they lead to a better design. Do not keep compatibility shims or deprecated aliases.
 - Always run Cargo commands from the workspace directory, e.g. `cd zintl && cargo check`.
 - Use `cd zintl && cargo fmt` before finishing Rust changes.
 - Use `swift format format <file>` before finishing Swift changes.
