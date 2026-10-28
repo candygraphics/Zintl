@@ -71,6 +71,11 @@ pub struct LayoutStyle {
     pub axis: Option<Axis>,
     pub gap: f32,
     pub width: LayoutDimension,
+    pub height: LayoutDimension,
+    /// Share of the parent's remaining main-axis space taken by this node.
+    pub grow: f32,
+    /// Inset applied to all four edges of a container.
+    pub padding: f32,
     pub main_axis_distribution: MainAxisDistribution,
     pub child_sizing: ChildSizing,
     pub cross_axis_alignment: CrossAxisAlignment,
@@ -83,10 +88,21 @@ impl LayoutStyle {
             axis: None,
             gap: 0.0,
             width: LayoutDimension::Auto,
+            height: LayoutDimension::Auto,
+            grow: 0.0,
+            padding: 0.0,
             main_axis_distribution: MainAxisDistribution::Start,
             child_sizing: ChildSizing::Intrinsic,
             cross_axis_alignment: CrossAxisAlignment::Stretch,
         }
+    }
+
+    /// A leaf that fills its parent's width and the remaining main-axis space.
+    pub const fn fill(minimum_size: Size) -> Self {
+        let mut style = Self::leaf(minimum_size);
+        style.width = LayoutDimension::Percent(1.0);
+        style.grow = 1.0;
+        style
     }
 
     pub const fn stack(axis: Axis, gap: f32) -> Self {
@@ -95,6 +111,9 @@ impl LayoutStyle {
             axis: Some(axis),
             gap,
             width: LayoutDimension::Auto,
+            height: LayoutDimension::Auto,
+            grow: 0.0,
+            padding: 0.0,
             main_axis_distribution: MainAxisDistribution::Start,
             child_sizing: ChildSizing::Intrinsic,
             cross_axis_alignment: CrossAxisAlignment::Stretch,
@@ -174,6 +193,27 @@ impl LayoutTree {
         Ok(())
     }
 
+    /// Computes a layout whose unspecified axes fit the content.
+    ///
+    /// `None` sizes that axis to its max-content extent instead of a definite space.
+    pub fn compute_fitting(
+        &mut self,
+        root: NodeId,
+        width: Option<f32>,
+        height: Option<f32>,
+    ) -> Result<(), LayoutError> {
+        let space =
+            |value: Option<f32>| value.map_or(AvailableSpace::MaxContent, AvailableSpace::Definite);
+        self.tree.compute_layout(
+            root.0,
+            TaffySize {
+                width: space(width),
+                height: space(height),
+            },
+        )?;
+        Ok(())
+    }
+
     pub fn layout(&self, node: NodeId) -> Result<Rect, LayoutError> {
         let layout = self.tree.layout(node.0)?;
         Ok(Rect {
@@ -187,16 +227,19 @@ impl LayoutTree {
 
 fn to_taffy_style(style: LayoutStyle) -> TaffyStyle {
     let gap = LengthPercentage::length(style.gap);
+    let dimension = |value: LayoutDimension| match value {
+        LayoutDimension::Auto => TaffyDimension::auto(),
+        LayoutDimension::Points(points) => TaffyDimension::length(points),
+        LayoutDimension::Percent(percent) => TaffyDimension::percent(percent),
+    };
     TaffyStyle {
         display: Display::Flex,
         size: TaffySize {
-            width: match style.width {
-                LayoutDimension::Auto => TaffyDimension::auto(),
-                LayoutDimension::Points(points) => TaffyDimension::length(points),
-                LayoutDimension::Percent(percent) => TaffyDimension::percent(percent),
-            },
-            height: TaffyDimension::auto(),
+            width: dimension(style.width),
+            height: dimension(style.height),
         },
+        flex_grow: style.grow,
+        padding: taffy::geometry::Rect::length(style.padding),
         min_size: TaffySize {
             width: TaffyDimension::length(style.minimum_size.width),
             height: TaffyDimension::length(style.minimum_size.height),
@@ -305,6 +348,63 @@ mod tests {
 
         assert_eq!(tree.layout(first).unwrap().width, 190.0);
         assert_eq!(tree.layout(second).unwrap().width, 190.0);
+    }
+
+    #[test]
+    fn growing_child_fills_remaining_height() {
+        // Verifies `grow` lets one child absorb the free main-axis space of a fixed-height column.
+        let mut tree = LayoutTree::new();
+        let header = tree
+            .create_node(LayoutStyle::leaf(Size::new(80.0, 20.0)), &[])
+            .unwrap();
+        let mut body_style = LayoutStyle::leaf(Size::new(80.0, 40.0));
+        body_style.grow = 1.0;
+        let body = tree.create_node(body_style, &[]).unwrap();
+        let mut root_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        root_style.height = LayoutDimension::Points(200.0);
+        let root = tree.create_node(root_style, &[header, body]).unwrap();
+
+        tree.compute(root, Size::new(100.0, 200.0)).unwrap();
+
+        assert_eq!(tree.layout(body).unwrap().y, 20.0);
+        assert_eq!(tree.layout(body).unwrap().height, 180.0);
+    }
+
+    #[test]
+    fn padding_insets_children() {
+        // Verifies container padding offsets children and grows the measured size.
+        let mut tree = LayoutTree::new();
+        let child = tree
+            .create_node(LayoutStyle::leaf(Size::new(40.0, 20.0)), &[])
+            .unwrap();
+        let mut root_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        root_style.padding = 12.0;
+        let root = tree.create_node(root_style, &[child]).unwrap();
+
+        tree.compute_fitting(root, None, None).unwrap();
+
+        assert_eq!(tree.layout(child).unwrap().x, 12.0);
+        assert_eq!(tree.layout(root).unwrap().height, 44.0);
+    }
+
+    #[test]
+    fn fitting_layout_measures_content_height() {
+        // Verifies an unspecified height measures the stacked content instead of the viewport.
+        let mut tree = LayoutTree::new();
+        let first = tree
+            .create_node(LayoutStyle::leaf(Size::new(80.0, 30.0)), &[])
+            .unwrap();
+        let second = tree
+            .create_node(LayoutStyle::leaf(Size::new(80.0, 50.0)), &[])
+            .unwrap();
+        let mut root_style = LayoutStyle::stack(Axis::Vertical, 10.0);
+        root_style.width = LayoutDimension::Points(120.0);
+        let root = tree.create_node(root_style, &[first, second]).unwrap();
+
+        tree.compute_fitting(root, Some(120.0), None).unwrap();
+
+        assert_eq!(tree.layout(root).unwrap().height, 90.0);
+        assert_eq!(tree.layout(root).unwrap().width, 120.0);
     }
 
     #[test]

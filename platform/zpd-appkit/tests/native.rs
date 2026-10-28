@@ -63,6 +63,7 @@ fn main() {
                 app_menu: None,
                 menus: vec![CommandMenu {
                     title: "Test".into(),
+                    role: None,
                     items: vec![CommandItem {
                         id: Some("test.run".into()),
                         title: "Run".into(),
@@ -70,6 +71,8 @@ fn main() {
                         key: Some("r".into()),
                         modifiers: vec![CommandModifier::Cmd],
                         enabled: true,
+                        checked: false,
+                        submenu: None,
                     }],
                 }],
             },
@@ -167,6 +170,7 @@ fn main() {
                     }],
                 }],
                 selected_id: Some("home".into()),
+                search: None,
             },
             |_| {},
         )

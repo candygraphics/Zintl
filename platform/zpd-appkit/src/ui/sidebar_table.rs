@@ -14,7 +14,7 @@ struct Row {
 }
 
 struct TableState {
-    rows: Vec<Row>,
+    rows: RefCell<Vec<Row>>,
     ready: Cell<bool>,
     callback: RefCell<Box<dyn FnMut(&str)>>,
 }
@@ -32,13 +32,14 @@ impl TableState {
 }
 
 unsafe extern "C" fn row_count(object: Id, _: zpd_objc::Sel, _: Id) -> i64 {
-    TableState::with(object, |state| state.rows.len() as i64)
+    TableState::with(object, |state| state.rows.borrow().len() as i64)
 }
 
 unsafe extern "C" fn row_view(object: Id, _: zpd_objc::Sel, _: Id, _: Id, row: i64) -> Id {
     TableState::with(object, |state| {
         state
             .rows
+            .borrow()
             .get(row as usize)
             .map_or(zpd_objc::NIL, |row| row.cell.as_ptr())
     })
@@ -48,6 +49,7 @@ unsafe extern "C" fn is_group(object: Id, _: zpd_objc::Sel, _: Id, row: i64) -> 
     TableState::with(object, |state| {
         state
             .rows
+            .borrow()
             .get(row as usize)
             .is_some_and(|row| row.id.is_none())
     })
@@ -57,6 +59,7 @@ unsafe extern "C" fn should_select(object: Id, _: zpd_objc::Sel, _: Id, row: i64
     TableState::with(object, |state| {
         state
             .rows
+            .borrow()
             .get(row as usize)
             .is_some_and(|row| row.id.is_some())
     })
@@ -73,12 +76,13 @@ unsafe extern "C" fn selection_changed(object: Id, _: zpd_objc::Sel, notificatio
                 zpd_objc::msg_send!(notification, zpd_objc::sel!("object"), () => zpd_objc::Id);
             zpd_objc::msg_send!(table, zpd_objc::sel!("selectedRow"), () => i64)
         };
-        if let Some(id) = state
+        let id = state
             .rows
+            .borrow()
             .get(row as usize)
-            .and_then(|row| row.id.as_deref())
-        {
-            (state.callback.borrow_mut())(id);
+            .and_then(|row| row.id.clone());
+        if let Some(id) = id {
+            (state.callback.borrow_mut())(&id);
         }
     });
 }
@@ -113,7 +117,7 @@ fn delegate_class() -> zpd_objc::Class {
     }) as zpd_objc::Class
 }
 
-fn constrain(
+pub(crate) fn constrain(
     first: Id,
     attribute: LayoutAttribute,
     second: Id,
@@ -215,20 +219,8 @@ fn cell(title: &str, symbol: Option<&str>, group: bool) -> Strong {
     cell
 }
 
-pub(crate) fn install(
-    controller: &ActorRef,
-    sidebar: &Sidebar,
-    callback: impl FnMut(&str) + 'static,
-) -> Result<(), UiError> {
-    let tree = controller.tree_handle().ok_or(UiError::Closed)?;
-    let scroll = native::alloc_init(zpd_objc::class!("NSScrollView"));
-    let scroll_actor = tree
-        .insert_child(controller, scroll.clone())
-        .map_err(UiError::from)?;
-    let table = native::alloc_init(zpd_objc::class!("NSTableView"));
-    let table_actor = tree
-        .insert_child(&scroll_actor, table.clone())
-        .map_err(UiError::from)?;
+/// Builds table rows: section titles become group rows without IDs.
+fn rows(sidebar: &Sidebar) -> Vec<Row> {
     let mut rows = Vec::new();
     for section in &sidebar.sections {
         if let Some(title) = &section.title {
@@ -244,11 +236,67 @@ pub(crate) fn install(
             });
         }
     }
-    let selected = rows
+    rows
+}
+
+/// Selects the row for `selected_id` without reporting a user selection.
+///
+/// # Safety
+/// `table` must be the live NSTableView backed by `state`.
+unsafe fn select(table: Id, state: &TableState, selected_id: Option<&str>) {
+    let selected = state
+        .rows
+        .borrow()
         .iter()
-        .position(|row| row.id.is_some() && row.id == sidebar.selected_id);
+        .position(|row| row.id.is_some() && row.id.as_deref() == selected_id);
+    // SAFETY: Guaranteed by the caller.
+    unsafe {
+        if let Some(row) = selected {
+            let indexes = zpd_objc::msg_send!(zpd_objc::class!("NSIndexSet"), zpd_objc::sel!("indexSetWithIndex:"), ((row as u64): u64) => zpd_objc::Id);
+            zpd_objc::msg_send!(table, zpd_objc::sel!("selectRowIndexes:byExtendingSelection:"), ((indexes): zpd_objc::Id, (false): bool) => ());
+        } else {
+            zpd_objc::msg_send!(table, zpd_objc::sel!("deselectAll:"), ((zpd_objc::NIL): zpd_objc::Id) => ());
+        }
+    }
+}
+
+/// The installed sidebar table, which can be updated without reinstalling.
+pub(crate) struct SidebarTable {
+    state: Rc<TableState>,
+    table: ActorRef,
+}
+impl SidebarTable {
+    pub(crate) fn update(&self, sidebar: &Sidebar) -> Result<(), UiError> {
+        self.state.ready.set(false);
+        *self.state.rows.borrow_mut() = rows(sidebar);
+        let result = self.table.with(|table| {
+            // SAFETY: The Actor holds the live table backed by this state.
+            unsafe {
+                zpd_objc::msg_send!(table, zpd_objc::sel!("reloadData"), () => ());
+                select(table, &self.state, sidebar.selected_id.as_deref());
+            }
+        });
+        self.state.ready.set(true);
+        result.map_err(UiError::from)
+    }
+}
+
+pub(crate) fn install(
+    controller: &ActorRef,
+    sidebar: &Sidebar,
+    callback: impl FnMut(&str) + 'static,
+) -> Result<SidebarTable, UiError> {
+    let tree = controller.tree_handle().ok_or(UiError::Closed)?;
+    let scroll = native::alloc_init(zpd_objc::class!("NSScrollView"));
+    let scroll_actor = tree
+        .insert_child(controller, scroll.clone())
+        .map_err(UiError::from)?;
+    let table = native::alloc_init(zpd_objc::class!("NSTableView"));
+    let table_actor = tree
+        .insert_child(&scroll_actor, table.clone())
+        .map_err(UiError::from)?;
     let state = Rc::new(TableState {
-        rows,
+        rows: RefCell::new(rows(sidebar)),
         ready: Cell::new(false),
         callback: RefCell::new(Box::new(callback)),
     });
@@ -288,10 +336,7 @@ pub(crate) fn install(
         zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setDelegate:"), ((delegate.as_ptr()): zpd_objc::Id) => ());
         zpd_objc::msg_send!(scroll.as_ptr(), zpd_objc::sel!("setDocumentView:"), ((table.as_ptr()): zpd_objc::Id) => ());
         zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("reloadData"), () => ());
-        if let Some(row) = selected {
-            let indexes = zpd_objc::msg_send!(zpd_objc::class!("NSIndexSet"), zpd_objc::sel!("indexSetWithIndex:"), ((row as u64): u64) => zpd_objc::Id);
-            zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("selectRowIndexes:byExtendingSelection:"), ((indexes): zpd_objc::Id, (false): bool) => ());
-        }
+        select(table.as_ptr(), &state, sidebar.selected_id.as_deref());
     }
     controller
         .with(|controller| {
@@ -302,5 +347,8 @@ pub(crate) fn install(
         })
         .map_err(UiError::from)?;
     state.ready.set(true);
-    Ok(())
+    Ok(SidebarTable {
+        state,
+        table: table_actor,
+    })
 }

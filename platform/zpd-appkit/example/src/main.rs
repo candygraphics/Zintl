@@ -99,6 +99,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 },
             ],
             selected_id: Some("home".into()),
+            search: None,
         },
         move |item_id| {
             let _ = label.set_string_value(&format!("Selected: {item_id}"));
@@ -122,6 +123,8 @@ fn commands() -> CommandSet {
                     key: None,
                     modifiers: Vec::new(),
                     enabled: true,
+                    checked: false,
+                    submenu: None,
                 },
                 CommandItem {
                     id: None,
@@ -130,11 +133,14 @@ fn commands() -> CommandSet {
                     key: Some("q".into()),
                     modifiers: vec![CommandModifier::Cmd],
                     enabled: true,
+                    checked: false,
+                    submenu: None,
                 },
             ],
         }),
         menus: vec![CommandMenu {
             title: "Example".into(),
+            role: None,
             items: vec![CommandItem {
                 id: Some("example.hello".into()),
                 title: "Print Hello".into(),
@@ -142,6 +148,8 @@ fn commands() -> CommandSet {
                 key: Some("h".into()),
                 modifiers: vec![CommandModifier::Cmd],
                 enabled: true,
+                checked: false,
+                submenu: None,
             }],
         }],
     }

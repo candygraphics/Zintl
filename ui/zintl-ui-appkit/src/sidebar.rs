@@ -9,6 +9,8 @@ pub struct Sidebar {
     sections: Vec<SidebarSection>,
     selection: Option<Store<Option<String>>>,
     action: Option<Rc<SelectionAction>>,
+    search: Option<Store<String>>,
+    search_placeholder: Option<String>,
 }
 
 impl std::fmt::Debug for Sidebar {
@@ -18,6 +20,7 @@ impl std::fmt::Debug for Sidebar {
             .field("sections", &self.sections)
             .field("selection", &self.selection)
             .field("has_action", &self.action.is_some())
+            .field("search", &self.search)
             .finish()
     }
 }
@@ -70,6 +73,14 @@ impl SidebarItem {
 pub struct SidebarState {
     pub sections: Vec<SidebarSection>,
     pub selected_id: Option<String>,
+    pub search: Option<SidebarSearchState>,
+}
+
+/// Rendered search field text shown above sidebar items.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SidebarSearchState {
+    pub value: String,
+    pub placeholder: Option<String>,
 }
 
 impl Sidebar {
@@ -78,6 +89,8 @@ impl Sidebar {
             sections: sections.into_iter().collect(),
             selection: None,
             action: None,
+            search: None,
+            search_placeholder: None,
         }
     }
 
@@ -92,14 +105,39 @@ impl Sidebar {
         self
     }
 
+    /// Shows a search field above the items that edits `query`.
+    ///
+    /// Filter the sections from the same Store to show matching items.
+    pub fn searchable(mut self, query: Store<String>) -> Self {
+        self.search = Some(query);
+        self
+    }
+
+    pub fn search_placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        self.search_placeholder = Some(placeholder.into());
+        self
+    }
+
     pub(crate) fn state(&self, cx: &mut Context<'_>) -> SidebarState {
         SidebarState {
             sections: self.sections.clone(),
             selected_id: self.selection.and_then(|store| cx.get(store).clone()),
+            search: self.search.map(|store| SidebarSearchState {
+                value: cx.get(store).clone(),
+                placeholder: self.search_placeholder.clone(),
+            }),
         }
     }
 
     pub(crate) fn route(&self, element: Element<RenderNode>) -> Element<RenderNode> {
+        let element = match self.search {
+            Some(query) => element.on_event(EventKind::SidebarSearchChanged, move |cx, event| {
+                if let Event::SidebarSearchChanged { value } = event {
+                    cx.update(query, |current| *current = value);
+                }
+            }),
+            None => element,
+        };
         let store = self.selection;
         let action = self.action.clone();
         if store.is_none() && action.is_none() {
@@ -129,6 +167,13 @@ impl SidebarState {
     pub(crate) fn backend(&self) -> zintl_ui_appkit_backend::Sidebar {
         zintl_ui_appkit_backend::Sidebar {
             selected_id: self.selected_id.clone(),
+            search: self
+                .search
+                .as_ref()
+                .map(|search| zintl_ui_appkit_backend::SidebarSearch {
+                    value: search.value.clone(),
+                    placeholder: search.placeholder.clone(),
+                }),
             sections: self
                 .sections
                 .iter()
