@@ -1,109 +1,122 @@
-#include "zpd_winui3.h"
+#include "common.h"
 
-#define NOMINMAX
-#include <windows.h>
-#undef GetCurrentTime
 #include <MddBootstrap.h>
+#include <microsoft.ui.xaml.window.h>
 
 #include <algorithm>
 #include <cctype>
-#include <functional>
-#include <memory>
 #include <mutex>
-#include <string>
-#include <string_view>
-#include <utility>
 #include <vector>
 
-#include <winrt/Microsoft.UI.Dispatching.h>
-#include <winrt/Microsoft.UI.Xaml.Controls.h>
-#include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Hosting.h>
-#include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
-#include <winrt/Microsoft.UI.Xaml.Media.h>
 #include <winrt/Microsoft.UI.Xaml.XamlTypeInfo.h>
-#include <winrt/Microsoft.UI.Xaml.h>
-#include <winrt/Microsoft.UI.Windowing.h>
-#include <winrt/Windows.Foundation.Collections.h>
-#include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.System.h>
 
-using namespace winrt;
-using namespace Microsoft::UI;
-using namespace Microsoft::UI::Dispatching;
-using namespace Microsoft::UI::Xaml;
-using namespace Microsoft::UI::Xaml::Controls;
-using namespace Microsoft::UI::Xaml::Markup;
+using namespace zpd;
+using namespace winrt::Microsoft::UI;
+using namespace winrt::Microsoft::UI::Dispatching;
+using namespace winrt::Microsoft::UI::Xaml::Markup;
+
+namespace zpd {
 
 thread_local std::string last_error;
 
-std::string_view bytes(zpd_winui3_string value) {
-  return {reinterpret_cast<const char*>(value.data), value.length};
+Media::SolidColorBrush brush_from(zpd_winui3_color color) {
+  auto channel = [](double value) {
+    return static_cast<uint8_t>(std::clamp(value, 0.0, 1.0) * 255.0 + 0.5);
+  };
+  return Media::SolidColorBrush(Windows::UI::Color{
+      channel(color.alpha), channel(color.red), channel(color.green), channel(color.blue)});
 }
 
-hstring string_from(zpd_winui3_string value) {
-  return to_hstring(bytes(value));
+Windows::System::VirtualKey key_from(zpd_winui3_string key) {
+  auto value = bytes(key);
+  if (value.size() == 1) {
+    char character = static_cast<char>(std::toupper(static_cast<unsigned char>(value[0])));
+    if (character >= 'A' && character <= 'Z') return static_cast<Windows::System::VirtualKey>(character);
+    if (character >= '0' && character <= '9') return static_cast<Windows::System::VirtualKey>(character);
+    if (character == ',') return static_cast<Windows::System::VirtualKey>(VK_OEM_COMMA);
+  }
+  if (value == "enter") return Windows::System::VirtualKey::Enter;
+  if (value == "escape") return Windows::System::VirtualKey::Escape;
+  if (value == "delete") return Windows::System::VirtualKey::Delete;
+  if (value == "space") return Windows::System::VirtualKey::Space;
+  throw hresult_invalid_argument(L"unsupported keyboard accelerator key");
 }
 
-template <typename F>
-int32_t status(F&& body) noexcept {
-  try {
-    body();
-    last_error.clear();
-    return 0;
-  } catch (hresult_error const& error) {
-    last_error = to_string(error.message());
-    return error.code().value;
-  } catch (std::exception const& error) {
-    last_error = error.what();
-    return E_FAIL;
-  } catch (...) {
-    last_error = "unknown native exception";
-    return E_FAIL;
+Windows::System::VirtualKeyModifiers modifiers_from(uint32_t value) {
+  auto result = Windows::System::VirtualKeyModifiers::None;
+  if (value & 1) result = result | Windows::System::VirtualKeyModifiers::Control;
+  if (value & 2) result = result | Windows::System::VirtualKeyModifiers::Menu;
+  if (value & 4) result = result | Windows::System::VirtualKeyModifiers::Shift;
+  if (value & 8) result = result | Windows::System::VirtualKeyModifiers::Windows;
+  return result;
+}
+
+void configure_accelerator(MenuFlyoutItem const& item, zpd_winui3_menu_item const& source) {
+  if (!source.key.length) return;
+  Xaml::Input::KeyboardAccelerator accelerator;
+  accelerator.Key(key_from(source.key));
+  accelerator.Modifiers(modifiers_from(source.modifiers));
+  item.KeyboardAccelerators().Append(accelerator);
+}
+
+/* Applies a standard editing action to the focused text box. */
+void perform_role(int32_t role, XamlRoot const& root) {
+  if (!root) return;
+  auto box = Xaml::Input::FocusManager::GetFocusedElement(root).try_as<TextBox>();
+  if (!box) return;
+  switch (role) {
+    case ZPD_WINUI3_MENU_ROLE_CUT: box.CutSelectionToClipboard(); break;
+    case ZPD_WINUI3_MENU_ROLE_COPY: box.CopySelectionToClipboard(); break;
+    case ZPD_WINUI3_MENU_ROLE_PASTE: box.PasteFromClipboard(); break;
+    case ZPD_WINUI3_MENU_ROLE_SELECT_ALL: box.SelectAll(); break;
+    case ZPD_WINUI3_MENU_ROLE_UNDO: box.Undo(); break;
+    case ZPD_WINUI3_MENU_ROLE_REDO: box.Redo(); break;
+    case ZPD_WINUI3_MENU_ROLE_DELETE: box.SelectedText(L""); break;
+    default: break;
   }
 }
 
-template <typename T, typename F>
-T* create(F&& body) noexcept {
-  try {
-    auto result = body();
-    last_error.clear();
-    return result;
-  } catch (hresult_error const& error) {
-    last_error = to_string(error.message());
-  } catch (std::exception const& error) {
-    last_error = error.what();
-  } catch (...) {
-    last_error = "unknown native exception";
-  }
-  return nullptr;
-}
-
-struct Callback {
-  const void* data{};
-  zpd_winui3_release_fn release{};
-
-  Callback() = default;
-  Callback(const void* data, zpd_winui3_release_fn release) : data(data), release(release) {}
-  Callback(Callback const&) = delete;
-  Callback& operator=(Callback const&) = delete;
-  Callback(Callback&& other) noexcept : data(std::exchange(other.data, nullptr)), release(std::exchange(other.release, nullptr)) {}
-  Callback& operator=(Callback&& other) noexcept {
-    if (this != &other) {
-      reset();
-      data = std::exchange(other.data, nullptr);
-      release = std::exchange(other.release, nullptr);
+void append_menu_items(
+    Windows::Foundation::Collections::IVector<MenuFlyoutItemBase> const& target,
+    std::shared_ptr<MenuTarget> const& menu_target,
+    const zpd_winui3_menu_item* items,
+    size_t length) {
+  for (size_t index = 0; index < length; ++index) {
+    auto const& source = items[index];
+    if (source.kind == ZPD_WINUI3_MENU_SEPARATOR) {
+      target.Append(MenuFlyoutSeparator());
+      continue;
     }
-    return *this;
+    if (source.kind == ZPD_WINUI3_MENU_SUBMENU) {
+      MenuFlyoutSubItem submenu;
+      submenu.Text(string_from(source.title));
+      submenu.IsEnabled(source.enabled);
+      append_menu_items(submenu.Items(), menu_target, source.children, source.children_length);
+      target.Append(submenu);
+      continue;
+    }
+    MenuFlyoutItem item;
+    item.Text(string_from(source.title));
+    item.IsEnabled(source.enabled);
+    configure_accelerator(item, source);
+    auto id = std::string(bytes(source.id));
+    auto role = source.role;
+    std::weak_ptr<MenuTarget> weak = menu_target;
+    item.Click([weak, id = std::move(id), role](Windows::Foundation::IInspectable const& sender, RoutedEventArgs const&) {
+      if (role != ZPD_WINUI3_MENU_ROLE_NONE) {
+        perform_role(role, sender.as<UIElement>().XamlRoot());
+        return;
+      }
+      if (auto target = weak.lock()) target->select(id);
+    });
+    target.Append(item);
   }
-  ~Callback() { reset(); }
-  void reset() {
-    if (data && release) release(data);
-    data = nullptr;
-    release = nullptr;
-  }
-};
+}
+
+}  // namespace zpd
 
 struct zpd_winui3_dispatcher {
   DispatcherQueue queue{nullptr};
@@ -129,12 +142,6 @@ struct zpd_winui3_dispatcher_signaler {
 
 struct zpd_winui3_app_context {
   DispatcherQueue queue{nullptr};
-};
-
-struct zpd_winui3_element {
-  FrameworkElement value{nullptr};
-  explicit zpd_winui3_element(FrameworkElement const& value) : value(value) {}
-  virtual ~zpd_winui3_element() = default;
 };
 
 struct ButtonElement final : zpd_winui3_element {
@@ -171,30 +178,42 @@ struct TextBoxElement final : zpd_winui3_element {
   }
 };
 
-struct zpd_winui3_window {
-  Window window{nullptr};
-  Grid shell{nullptr};
-  MenuBar menu_bar{nullptr};
-  FrameworkElement content{nullptr};
-  Callback menu_callback;
-  zpd_winui3_string_fn menu_invoke{};
+zpd_winui3_window::zpd_winui3_window(int32_t style) {
+  window = Window();
+  shell = Grid();
+  menu_bar = MenuBar();
 
-  zpd_winui3_window() {
-    window = Window();
-    shell = Grid();
-    menu_bar = MenuBar();
+  RowDefinition menu_row;
+  menu_row.Height(GridLengthHelper::Auto());
+  RowDefinition content_row;
+  content_row.Height(GridLengthHelper::FromValueAndType(1.0, GridUnitType::Star));
+  shell.RowDefinitions().Append(menu_row);
+  shell.RowDefinitions().Append(content_row);
+  shell.Children().Append(menu_bar);
+  menu_bar.Visibility(Visibility::Collapsed);
+  window.Content(shell);
 
-    RowDefinition menu_row;
-    menu_row.Height(GridLengthHelper::Auto());
-    RowDefinition content_row;
-    content_row.Height(GridLengthHelper::FromValueAndType(1.0, GridUnitType::Star));
-    shell.RowDefinitions().Append(menu_row);
-    shell.RowDefinitions().Append(content_row);
-    shell.Children().Append(menu_bar);
-    menu_bar.Visibility(Visibility::Collapsed);
-    window.Content(shell);
+  if (style == ZPD_WINUI3_WINDOW_PANEL) {
+    auto presenter = Windowing::OverlappedPresenter::Create();
+    presenter.IsAlwaysOnTop(true);
+    presenter.IsMinimizable(false);
+    presenter.IsMaximizable(false);
+    window.AppWindow().SetPresenter(presenter);
+    window.AppWindow().IsShownInSwitchers(false);
   }
-};
+  closed_token = window.Closed([this](auto&&, auto&&) {
+    closed = true;
+    if (closed_invoke && closed_callback.data) closed_invoke(closed_callback.data);
+  });
+}
+
+HWND zpd_winui3_window::hwnd() const {
+  HWND handle{};
+  check_hresult(window.as<IWindowNative>()->get_WindowHandle(&handle));
+  return handle;
+}
+
+XamlRoot zpd_winui3_window::xaml_root() const { return shell.XamlRoot(); }
 
 struct LaunchState {
   const void* data;
@@ -241,70 +260,6 @@ struct NativeApplication : ApplicationT<NativeApplication, IXamlMetadataProvider
     return {definitions.begin(), definitions.end()};
   }
 };
-
-Windows::System::VirtualKey key_from(zpd_winui3_string key) {
-  auto value = bytes(key);
-  if (value.size() == 1) {
-    char character = static_cast<char>(std::toupper(static_cast<unsigned char>(value[0])));
-    if (character >= 'A' && character <= 'Z') return static_cast<Windows::System::VirtualKey>(character);
-    if (character >= '0' && character <= '9') return static_cast<Windows::System::VirtualKey>(character);
-  }
-  if (value == "enter") return Windows::System::VirtualKey::Enter;
-  if (value == "escape") return Windows::System::VirtualKey::Escape;
-  if (value == "delete") return Windows::System::VirtualKey::Delete;
-  if (value == "space") return Windows::System::VirtualKey::Space;
-  throw hresult_invalid_argument(L"unsupported keyboard accelerator key");
-}
-
-Windows::System::VirtualKeyModifiers modifiers_from(uint32_t value) {
-  auto result = Windows::System::VirtualKeyModifiers::None;
-  if (value & 1) result = result | Windows::System::VirtualKeyModifiers::Control;
-  if (value & 2) result = result | Windows::System::VirtualKeyModifiers::Menu;
-  if (value & 4) result = result | Windows::System::VirtualKeyModifiers::Shift;
-  if (value & 8) result = result | Windows::System::VirtualKeyModifiers::Windows;
-  return result;
-}
-
-void configure_accelerator(MenuFlyoutItem const& item, zpd_winui3_menu_item const& source) {
-  if (!source.key.length) return;
-  Microsoft::UI::Xaml::Input::KeyboardAccelerator accelerator;
-  accelerator.Key(key_from(source.key));
-  accelerator.Modifiers(modifiers_from(source.modifiers));
-  item.KeyboardAccelerators().Append(accelerator);
-}
-
-void append_menu_items(
-    Windows::Foundation::Collections::IVector<MenuFlyoutItemBase> const& target,
-    zpd_winui3_window* window,
-    const zpd_winui3_menu_item* items,
-    size_t length) {
-  for (size_t index = 0; index < length; ++index) {
-    auto const& source = items[index];
-    if (source.kind == ZPD_WINUI3_MENU_SEPARATOR) {
-      target.Append(MenuFlyoutSeparator());
-      continue;
-    }
-    if (source.kind == ZPD_WINUI3_MENU_SUBMENU) {
-      MenuFlyoutSubItem submenu;
-      submenu.Text(string_from(source.title));
-      submenu.IsEnabled(source.enabled);
-      append_menu_items(submenu.Items(), window, source.children, source.children_length);
-      target.Append(submenu);
-      continue;
-    }
-    MenuFlyoutItem item;
-    item.Text(string_from(source.title));
-    item.IsEnabled(source.enabled);
-    configure_accelerator(item, source);
-    auto id = std::string(bytes(source.id));
-    item.Click([window, id = std::move(id)](Windows::Foundation::IInspectable const&, RoutedEventArgs const&) {
-      if (!window->menu_invoke || !window->menu_callback.data) return;
-      zpd_winui3_string value{reinterpret_cast<uint8_t const*>(id.data()), id.size()};
-      window->menu_invoke(window->menu_callback.data, value);
-    });
-    target.Append(item);
-  }
-}
 
 GridLength grid_length(zpd_winui3_grid_length value) {
   switch (value.kind) {
@@ -361,8 +316,8 @@ int32_t zpd_winui3_application_exit() {
   return status([] { Application::Current().Exit(); });
 }
 
-zpd_winui3_window* zpd_winui3_window_create() {
-  return create<zpd_winui3_window>([] { return new zpd_winui3_window(); });
+zpd_winui3_window* zpd_winui3_window_create_styled(int32_t style) {
+  return create<zpd_winui3_window>([&] { return new zpd_winui3_window(style); });
 }
 
 zpd_winui3_dispatcher* zpd_winui3_dispatcher_clone(const zpd_winui3_dispatcher* dispatcher) {
@@ -467,9 +422,12 @@ bool zpd_winui3_dispatcher_signaler_signal(const zpd_winui3_dispatcher_signaler*
 void zpd_winui3_window_release(zpd_winui3_window* window) {
   if (!window) return;
   try {
+    window->closed_invoke = nullptr;
+    window->closed_callback.reset();
+    window->window.Closed(window->closed_token);
     window->menu_bar.Items().Clear();
-    window->menu_callback.reset();
-    window->window.Close();
+    window->menu_target.reset();
+    if (!window->closed) window->window.Close();
   } catch (...) {
   }
   delete window;
@@ -477,9 +435,26 @@ void zpd_winui3_window_release(zpd_winui3_window* window) {
 int32_t zpd_winui3_window_set_title(zpd_winui3_window* window, zpd_winui3_string title) { return status([&] { window->window.Title(string_from(title)); }); }
 int32_t zpd_winui3_window_resize(zpd_winui3_window* window, int32_t width, int32_t height) { return status([&] { window->window.AppWindow().Resize({width, height}); }); }
 int32_t zpd_winui3_window_activate(zpd_winui3_window* window) { return status([&] { window->window.Activate(); }); }
-int32_t zpd_winui3_window_close(zpd_winui3_window* window) { return status([&] { window->window.Close(); }); }
+int32_t zpd_winui3_window_close(zpd_winui3_window* window) { return status([&] { if (!window->closed) window->window.Close(); }); }
 int32_t zpd_winui3_window_extend_content_into_title_bar(zpd_winui3_window* window, bool enabled) { return status([&] { window->window.ExtendsContentIntoTitleBar(enabled); }); }
 int32_t zpd_winui3_window_set_title_bar(zpd_winui3_window* window, const zpd_winui3_element* element) { return status([&] { window->window.SetTitleBar(element ? element->value : nullptr); }); }
+
+int32_t zpd_winui3_window_move_and_resize(zpd_winui3_window* window, double x, double y, double width, double height) {
+  return status([&] {
+    double scale = GetDpiForWindow(window->hwnd()) / 96.0;
+    auto pixels = [scale](double value) { return static_cast<int32_t>(value * scale + 0.5); };
+    window->window.AppWindow().MoveAndResize({pixels(x), pixels(y), pixels(width), pixels(height)});
+  });
+}
+
+int32_t zpd_winui3_window_set_closed_handler(zpd_winui3_window* window, const void* data, zpd_winui3_invoke_fn invoke, zpd_winui3_release_fn release) {
+  return status([&] {
+    window->closed_callback = Callback(data, release);
+    window->closed_invoke = invoke;
+  });
+}
+
+bool zpd_winui3_window_has_sheet(const zpd_winui3_window* window) { return window && *window->sheets > 0; }
 
 int32_t zpd_winui3_window_set_content(zpd_winui3_window* window, const zpd_winui3_element* element) {
   return status([&] {
@@ -508,20 +483,21 @@ int32_t zpd_winui3_window_clear_menu_bar(zpd_winui3_window* window) {
   return status([&] {
     window->menu_bar.Items().Clear();
     window->menu_bar.Visibility(Visibility::Collapsed);
-    window->menu_invoke = nullptr;
-    window->menu_callback.reset();
+    window->menu_target.reset();
   });
 }
 
 int32_t zpd_winui3_window_set_menu_bar(zpd_winui3_window* window, const zpd_winui3_menu* menus, size_t length, const void* data, zpd_winui3_string_fn invoke, zpd_winui3_release_fn release) {
   return status([&] {
     window->menu_bar.Items().Clear();
-    window->menu_callback = Callback(data, release);
-    window->menu_invoke = invoke;
+    auto target = std::make_shared<MenuTarget>();
+    target->callback = Callback(data, release);
+    target->invoke = invoke;
+    window->menu_target = target;
     for (size_t index = 0; index < length; ++index) {
       MenuBarItem menu;
       menu.Title(string_from(menus[index].title));
-      append_menu_items(menu.Items(), window, menus[index].items, menus[index].items_length);
+      append_menu_items(menu.Items(), target, menus[index].items, menus[index].items_length);
       window->menu_bar.Items().Append(menu);
     }
     window->menu_bar.Visibility(length ? Visibility::Visible : Visibility::Collapsed);
@@ -543,12 +519,12 @@ int32_t zpd_winui3_text_set_alignment(zpd_winui3_element* element, int32_t align
 
 zpd_winui3_element* zpd_winui3_text_field_create(zpd_winui3_string value) { return create<zpd_winui3_element>([&] { TextBox box; box.Text(string_from(value)); return new TextBoxElement(box); }); }
 int32_t zpd_winui3_text_field_set_value(zpd_winui3_element* element, zpd_winui3_string value) { return status([&] { static_cast<TextBoxElement*>(element)->text_box.Text(string_from(value)); }); }
-int32_t zpd_winui3_text_field_get_value(const zpd_winui3_element* element, const void* data, zpd_winui3_string_fn receive) { return status([&] { auto utf8 = to_string(static_cast<TextBoxElement const*>(element)->text_box.Text()); zpd_winui3_string value{reinterpret_cast<uint8_t const*>(utf8.data()), utf8.size()}; receive(data, value); }); }
+int32_t zpd_winui3_text_field_get_value(const zpd_winui3_element* element, const void* data, zpd_winui3_string_fn receive) { return status([&] { with_utf8(static_cast<TextBoxElement const*>(element)->text_box.Text(), [&](zpd_winui3_string value) { receive(data, value); }); }); }
 int32_t zpd_winui3_text_field_set_placeholder(zpd_winui3_element* element, zpd_winui3_string value) { return status([&] { static_cast<TextBoxElement*>(element)->text_box.PlaceholderText(string_from(value)); }); }
 int32_t zpd_winui3_text_field_set_read_only(zpd_winui3_element* element, bool read_only) { return status([&] { static_cast<TextBoxElement*>(element)->text_box.IsReadOnly(read_only); }); }
 int32_t zpd_winui3_text_field_clear_change_handler(zpd_winui3_element* element) { return status([&] { static_cast<TextBoxElement*>(element)->clear(); }); }
 int32_t zpd_winui3_text_field_set_change_handler(zpd_winui3_element* element, const void* data, zpd_winui3_string_fn invoke, zpd_winui3_release_fn release) {
-  return status([&] { auto box = static_cast<TextBoxElement*>(element); box->clear(); box->callback = Callback(data, release); box->change_token = box->text_box.TextChanged([box, invoke](auto&&, auto&&) { auto utf8 = to_string(box->text_box.Text()); zpd_winui3_string value{reinterpret_cast<uint8_t const*>(utf8.data()), utf8.size()}; invoke(box->callback.data, value); }); });
+  return status([&] { auto box = static_cast<TextBoxElement*>(element); box->clear(); box->callback = Callback(data, release); box->change_token = box->text_box.TextChanged([box, invoke](auto&&, auto&&) { with_utf8(box->text_box.Text(), [&](zpd_winui3_string value) { invoke(box->callback.data, value); }); }); });
 }
 
 zpd_winui3_element* zpd_winui3_stack_panel_create(int32_t orientation, double spacing) { return create<zpd_winui3_element>([&] { StackPanel panel; panel.Orientation(static_cast<Orientation>(orientation)); panel.Spacing(spacing); return new zpd_winui3_element(panel); }); }
@@ -566,5 +542,31 @@ int32_t zpd_winui3_element_set_width(zpd_winui3_element* element, double width) 
 int32_t zpd_winui3_element_set_height(zpd_winui3_element* element, double height) { return status([&] { element->value.Height(height); }); }
 int32_t zpd_winui3_element_set_horizontal_alignment(zpd_winui3_element* element, int32_t alignment) { return status([&] { element->value.HorizontalAlignment(static_cast<HorizontalAlignment>(alignment)); }); }
 int32_t zpd_winui3_element_set_vertical_alignment(zpd_winui3_element* element, int32_t alignment) { return status([&] { element->value.VerticalAlignment(static_cast<VerticalAlignment>(alignment)); }); }
+
+int32_t zpd_winui3_element_set_frame(zpd_winui3_element* element, double x, double y, double width, double height) {
+  return status([&] {
+    Canvas::SetLeft(element->value, x);
+    Canvas::SetTop(element->value, y);
+    element->value.Width(std::max(width, 0.0));
+    element->value.Height(std::max(height, 0.0));
+  });
+}
+
+int32_t zpd_winui3_element_set_context_menu(zpd_winui3_element* element, const zpd_winui3_menu_item* items, size_t length, const void* data, zpd_winui3_string_fn invoke, zpd_winui3_release_fn release) {
+  auto target = std::make_shared<MenuTarget>();
+  target->callback = Callback(data, release);
+  target->invoke = invoke;
+  return status([&] {
+    MenuFlyout menu;
+    append_menu_items(menu.Items(), target, items, length);
+    // The flyout keeps the target alive for as long as it is attached.
+    menu.Opening([target](auto&&, auto&&) {});
+    element->value.ContextFlyout(menu);
+  });
+}
+
+int32_t zpd_winui3_element_clear_context_menu(zpd_winui3_element* element) {
+  return status([&] { element->value.ContextFlyout(nullptr); });
+}
 
 } // extern "C"

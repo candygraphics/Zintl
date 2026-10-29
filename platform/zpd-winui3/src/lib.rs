@@ -2,7 +2,17 @@
 
 #![cfg(target_os = "windows")]
 
+mod control;
 mod ffi;
+mod presentation;
+
+pub use control::{
+    BoolProperty, Color, Control, ControlEvent, ControlKind, NavigationItem, NumberProperty,
+    TextProperty,
+};
+pub use presentation::{
+    Dialog, DialogConfig, DialogResult, FileDialogMode, FileDialogOptions, Placement, Popover,
+};
 
 use std::cell::RefCell;
 use std::ffi::c_void;
@@ -149,8 +159,12 @@ impl ApplicationContext {
     }
 
     pub fn create_window(&self) -> Result<Window> {
+        self.create_styled_window(WindowStyle::Normal)
+    }
+
+    pub fn create_styled_window(&self, style: WindowStyle) -> Result<Window> {
         // SAFETY: ApplicationContext is restricted to the initialized UI thread.
-        let raw = unsafe { ffi::zpd_winui3_window_create() };
+        let raw = unsafe { ffi::zpd_winui3_window_create_styled(style as i32) };
         Ok(Window {
             raw: NonNull::new(raw).ok_or(Error(-1))?,
             _main_thread: PhantomData,
@@ -405,6 +419,44 @@ impl Window {
         // SAFETY: The window is live and clears its owned callback state.
         check(unsafe { ffi::zpd_winui3_window_clear_menu_bar(self.raw.as_ptr()) })
     }
+
+    /// Moves and resizes the outer window in device-independent pixels.
+    pub fn move_and_resize(&self, x: f64, y: f64, width: f64, height: f64) -> Result<()> {
+        // SAFETY: The window is live on the UI thread.
+        check(unsafe {
+            ffi::zpd_winui3_window_move_and_resize(self.raw.as_ptr(), x, y, width, height)
+        })
+    }
+
+    /// Invokes `callback` once the window has closed.
+    pub fn set_closed<F: FnMut() + 'static>(&self, callback: F) -> Result<()> {
+        let callback = Rc::into_raw(Rc::new(RefCell::new(callback)));
+        // SAFETY: Native code takes ownership of one Rc strong reference.
+        check(unsafe {
+            ffi::zpd_winui3_window_set_closed_handler(
+                self.raw.as_ptr(),
+                callback.cast(),
+                invoke_unit::<F>,
+                release_callback::<F>,
+            )
+        })
+    }
+
+    /// Returns whether a dialog or file picker is open on this window.
+    #[must_use]
+    pub fn has_sheet(&self) -> bool {
+        // SAFETY: The window is live on the UI thread.
+        unsafe { ffi::zpd_winui3_window_has_sheet(self.raw.as_ptr()) }
+    }
+}
+
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WindowStyle {
+    #[default]
+    Normal = 0,
+    /// An always-on-top utility window hidden from the task switcher.
+    Panel = 1,
 }
 
 impl Drop for Window {
@@ -497,6 +549,40 @@ pub trait AsElement {
                 value as i32,
             )
         })
+    }
+
+    /// Places the element inside its parent Canvas.
+    fn set_frame(&self, x: f64, y: f64, width: f64, height: f64) -> Result<()> {
+        // SAFETY: The element is live on the UI thread.
+        check(unsafe {
+            ffi::zpd_winui3_element_set_frame(self.as_element().raw.as_ptr(), x, y, width, height)
+        })
+    }
+
+    /// Shows `items` on right-click and reports chosen item ids to `callback`.
+    fn set_context_menu<F>(&self, items: &[MenuFlyoutItemBase], callback: F) -> Result<()>
+    where
+        F: FnMut(&str) + 'static,
+    {
+        let native: Vec<_> = items.iter().map(NativeMenuItem::new).collect();
+        let raw: Vec<_> = native.iter().map(|item| item.raw).collect();
+        let callback = Rc::into_raw(Rc::new(RefCell::new(callback)));
+        // SAFETY: Native code owns the transferred Rc and borrows menu data for this call.
+        check(unsafe {
+            ffi::zpd_winui3_element_set_context_menu(
+                self.as_element().raw.as_ptr(),
+                raw.as_ptr(),
+                raw.len(),
+                callback.cast(),
+                invoke_string::<F>,
+                release_callback::<F>,
+            )
+        })
+    }
+
+    fn clear_context_menu(&self) -> Result<()> {
+        // SAFETY: The element is live on the UI thread.
+        check(unsafe { ffi::zpd_winui3_element_clear_context_menu(self.as_element().raw.as_ptr()) })
     }
 }
 
@@ -841,6 +927,23 @@ pub struct MenuFlyoutItem {
     pub text: String,
     pub is_enabled: bool,
     pub keyboard_accelerator: Option<KeyboardAccelerator>,
+    /// A standard editing action applied instead of reporting `id`.
+    pub role: MenuItemRole,
+}
+
+/// Standard editing actions applied to the focused text box.
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MenuItemRole {
+    #[default]
+    None = 0,
+    Cut = 1,
+    Copy = 2,
+    Paste = 3,
+    SelectAll = 4,
+    Undo = 5,
+    Redo = 6,
+    Delete = 7,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -914,6 +1017,10 @@ impl NativeMenuItem {
             key: ffi::StringRef::new(key),
             modifiers,
             enabled,
+            role: match source {
+                MenuFlyoutItemBase::Item(item) => item.role as i32,
+                _ => MenuItemRole::None as i32,
+            },
             children: child_raw.as_ptr(),
             children_length: child_raw.len(),
         };
@@ -958,6 +1065,19 @@ impl NativeMenuBar {
             raw,
         }
     }
+}
+
+/// Copies a native UTF-8 string.
+///
+/// # Safety
+/// `value` must point to `length` readable bytes for the duration of the call.
+unsafe fn string_from_ref(value: ffi::StringRef) -> String {
+    if value.length == 0 {
+        return String::new();
+    }
+    // SAFETY: The caller guarantees the buffer; WinRT strings convert to valid UTF-8.
+    let bytes = unsafe { std::slice::from_raw_parts(value.data, value.length) };
+    String::from_utf8_lossy(bytes).into_owned()
 }
 
 unsafe fn clone_callback<F>(data: *const c_void) -> Rc<RefCell<F>> {
@@ -1056,6 +1176,7 @@ mod tests {
                         text: "Open".into(),
                         is_enabled: true,
                         keyboard_accelerator: None,
+                        role: MenuItemRole::None,
                     })],
                 })],
             }],

@@ -43,7 +43,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="include\zpd_winui3.h" />
+    <ClInclude Include="src\common.h" />
     <ClCompile Include="src\zpd_winui3.cpp" />
+    <ClCompile Include="src\controls.cpp" />
+    <ClCompile Include="src\presentations.cpp" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />
     <PackageReference Include="Microsoft.Windows.CppWinRT" Version="2.0.250303.1" />
   </ItemGroup>
