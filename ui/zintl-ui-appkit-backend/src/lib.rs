@@ -3,12 +3,11 @@
 use zintl_ui::renderer::RenderNode;
 use zintl_ui::view::StoreContext;
 use zintl_ui_layout::{LayoutStyle, Size};
-pub use zpd_appkit::actor::WindowEventKind as AppKitEvent;
-pub use zpd_appkit::geometry::Rect;
-pub use zpd_appkit::ui::{
+pub use zpd_appkit::model::WindowEventKind as AppKitEvent;
+pub use zpd_appkit::model::{
     AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, Color,
     CommandItem, CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig,
-    FileDialogMode, MenuRole, NumberFormat, PopoverEdge, ScrollAxes, Sidebar, SidebarItem,
+    FileDialogMode, MenuRole, NumberFormat, PopoverEdge, Rect, ScrollAxes, Sidebar, SidebarItem,
     SidebarSearch, SidebarSection, WindowAppMenu, WindowStyle,
 };
 
@@ -164,6 +163,9 @@ pub trait AppKitRenderNode: RenderNode {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct NodeId(usize);
+
+pub mod layout;
+pub mod tree;
 
 #[cfg(target_os = "macos")]
 mod backend;

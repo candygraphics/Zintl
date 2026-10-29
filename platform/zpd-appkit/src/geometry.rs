@@ -1,23 +1,4 @@
-/// Rectangle in logical points / DIP.
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[repr(C)]
-pub struct Rect {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-}
-
-impl Rect {
-    pub const fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            height,
-        }
-    }
-}
+pub use crate::model::Rect;
 
 impl From<Rect> for crate::native::Rect {
     fn from(rect: Rect) -> Self {

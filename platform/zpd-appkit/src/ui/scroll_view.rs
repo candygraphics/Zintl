@@ -27,12 +27,7 @@ fn flipped_view_class() -> zpd_objc::Class {
     }) as zpd_objc::Class
 }
 
-/// Scroll directions enabled on a [`ScrollView`].
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ScrollAxes {
-    pub horizontal: bool,
-    pub vertical: bool,
-}
+pub use crate::model::ScrollAxes;
 
 /// An `NSScrollView` whose document view uses top-left coordinates.
 pub struct ScrollView {

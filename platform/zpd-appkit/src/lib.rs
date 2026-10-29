@@ -3,13 +3,20 @@
 #[cfg(all(target_os = "macos", not(target_arch = "aarch64")))]
 compile_error!("zpd-appkit supports Apple Silicon macOS only");
 
+#[cfg(target_os = "macos")]
 pub mod actor;
+#[cfg(target_os = "macos")]
 pub mod geometry;
+pub mod model;
+#[cfg(target_os = "macos")]
 mod native;
+#[cfg(target_os = "macos")]
 pub mod runloop;
+#[cfg(target_os = "macos")]
 pub mod ui;
 
 /// Runs an operation inside an Objective-C autorelease pool.
+#[cfg(target_os = "macos")]
 pub fn with_autorelease_pool<R>(operation: impl FnOnce() -> R) -> R {
     struct Pool(zpd_objc::Id);
 

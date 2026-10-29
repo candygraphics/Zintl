@@ -7,41 +7,7 @@ use zpd_objc::{Id, Strong};
 
 use super::{Color, UiError, Window, callback};
 
-/// Mirrors `NSAlertStyle`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[repr(u64)]
-pub enum AlertStyle {
-    #[default]
-    Warning = 0,
-    Informational = 1,
-    Critical = 2,
-}
-
-/// How an alert button behaves when the user presses a key.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum AlertButtonRole {
-    #[default]
-    Normal,
-    /// Answers the Escape key.
-    Cancel,
-    /// Draws the button as destructive.
-    Destructive,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct AlertButton {
-    pub title: String,
-    pub role: AlertButtonRole,
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct AlertConfig {
-    pub style: AlertStyle,
-    pub title: String,
-    pub message: Option<String>,
-    /// Buttons from right to left; the first answers Return.
-    pub buttons: Vec<AlertButton>,
-}
+pub use crate::model::{AlertButton, AlertButtonRole, AlertConfig, AlertStyle};
 
 /// An `NSAlert` presented as a sheet on a Window.
 ///
@@ -129,29 +95,7 @@ impl Drop for AlertSheet {
     }
 }
 
-/// Whether a [`FileDialogConfig`] opens existing items or chooses a save location.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum FileDialogMode {
-    #[default]
-    Open,
-    Save,
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct FileDialogConfig {
-    pub mode: FileDialogMode,
-    pub title: Option<String>,
-    pub message: Option<String>,
-    pub prompt: Option<String>,
-    /// Filename extensions without dots; empty allows every type.
-    pub allowed_extensions: Vec<String>,
-    pub can_choose_files: bool,
-    pub can_choose_directories: bool,
-    pub allows_multiple: bool,
-    pub can_create_directories: bool,
-    pub file_name: Option<String>,
-    pub directory: Option<String>,
-}
+pub use crate::model::{FileDialogConfig, FileDialogMode};
 
 /// An `NSOpenPanel` or `NSSavePanel` presented as a sheet on a Window.
 ///

@@ -11,6 +11,7 @@ use zpd_appkit::actor::WindowEventKind;
 use super::app::WindowEventAction;
 use super::layout::native_frame;
 use super::*;
+use crate::MainTaskSender;
 
 #[derive(Clone, PartialEq)]
 struct TestNode(NodeKind);
@@ -139,8 +140,8 @@ fn removing_backend_parent_removes_its_descendants() {
 
     backend.remove(parent);
 
-    assert!(backend.nodes[parent.0].is_none());
-    assert!(backend.nodes[child.0].is_none());
+    assert!(!backend.tree.contains(parent));
+    assert!(!backend.tree.contains(child));
     assert!(backend.children(backend.root()).is_empty());
 }
 

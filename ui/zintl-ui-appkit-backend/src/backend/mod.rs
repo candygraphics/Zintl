@@ -2,13 +2,12 @@ use std::cell::RefCell;
 use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex, PoisonError};
 
 use messageloop_appkit::{Context as MessageContext, MessageLoopError, Sender};
 use zintl_ui::event::EventRouteId;
 use zintl_ui::renderer::RenderBackend;
 use zintl_ui::view::StoreContext;
-use zintl_ui_layout::LayoutError;
+use zintl_ui_layout::{LayoutError, Size};
 use zpd_appkit::actor::{ActorId, EventRouteToken};
 use zpd_appkit::runloop::{Application, ApplicationError};
 use zpd_appkit::ui::{
@@ -23,12 +22,13 @@ mod native;
 use app::Message;
 pub use app::run_composer;
 use attachment::Attachment;
-use layout::{HostLayout, LayoutSnapshot};
 use native::NativeNode;
 
+use super::layout::{HostLayout, LayoutSnapshot};
+use super::tree::{ErrorSlot, MainTasks, NodeTree};
 use super::{
-    AppKitRenderNode, Color, CommandItem, CommandModifier, CommandRole, CommandSet, MainTask,
-    MainTaskSender, NodeId, NodeKind, Rect, Sidebar, ViewKind, WindowAppMenu, WindowStyle,
+    AppKitRenderNode, Color, CommandSet, MainTask, NodeId, NodeKind, Rect, Sidebar, ViewKind,
+    WindowStyle,
 };
 
 /// Inset between a popover's edge and its content.
@@ -84,7 +84,7 @@ impl From<LayoutError> for AppError {
 /// Native state of a rendered Window node.
 struct WindowState {
     native: ActorId,
-    layout: Rc<RefCell<HostLayout>>,
+    layout: Rc<RefCell<HostLayout<NativeNode>>>,
     style: WindowStyle,
     applied_bounds: Option<Rect>,
     applied_full_size_content_view: Option<bool>,
@@ -94,49 +94,31 @@ struct WindowState {
     closed: bool,
 }
 
-struct BackendNode<R> {
-    value: Option<R>,
-    parent: Option<NodeId>,
-    children: Vec<NodeId>,
+/// AppKit state attached to a rendered node.
+#[derive(Default)]
+struct NodeState {
     native: Option<Rc<NativeNode>>,
     window: Option<WindowState>,
     attachment: Option<Attachment>,
     /// The attachment declaration last applied to `attachment`.
     applied: Option<NodeKind>,
-    event_route: Option<EventRouteId>,
 }
 
-impl<R> BackendNode<R> {
-    fn new(value: Option<R>, event_route: Option<EventRouteId>) -> Self {
-        Self {
-            value,
-            parent: None,
-            children: Vec::new(),
-            native: None,
-            window: None,
-            attachment: None,
-            applied: None,
-            event_route,
-        }
+impl NodeState {
+    fn is_closed_window(&self) -> bool {
+        self.window.as_ref().is_some_and(|state| state.closed)
     }
 }
 
 pub struct AppKitBackend<R: AppKitRenderNode> {
-    nodes: Vec<Option<BackendNode<R>>>,
+    tree: NodeTree<R, NodeState>,
     retired_windows: Vec<ActorId>,
     structure_dirty: bool,
     layout_dirty: bool,
-    pending_error: Rc<RefCell<Option<AppError>>>,
-    main_tasks: Arc<Mutex<MainTaskRoute>>,
-    perform_main: Box<MainTaskSender>,
+    pending_error: ErrorSlot<AppError>,
+    main_tasks: MainTasks,
     main_menu: Option<CommandSet>,
     opened_window: bool,
-}
-
-/// Where main-thread tasks go before and after the message loop starts.
-enum MainTaskRoute {
-    Pending(Vec<MainTask>),
-    Connected(Box<MainTaskSender>),
 }
 
 impl<R: AppKitRenderNode> Default for AppKitBackend<R> {
@@ -147,190 +129,98 @@ impl<R: AppKitRenderNode> Default for AppKitBackend<R> {
 
 impl<R: AppKitRenderNode> AppKitBackend<R> {
     pub fn new() -> Self {
-        let main_tasks = Arc::new(Mutex::new(MainTaskRoute::Pending(Vec::new())));
-        let route = main_tasks.clone();
-        // Tasks queued during the initial mount wait until the loop connects.
-        let perform_main = Box::new(move |task: MainTask| {
-            match &mut *route.lock().unwrap_or_else(PoisonError::into_inner) {
-                MainTaskRoute::Pending(tasks) => {
-                    tasks.push(task);
-                    true
-                }
-                MainTaskRoute::Connected(sender) => sender(task),
-            }
-        });
         Self {
-            nodes: vec![Some(BackendNode::new(None, None))],
+            tree: NodeTree::new(),
             retired_windows: Vec::new(),
             structure_dirty: true,
             layout_dirty: true,
-            pending_error: Rc::new(RefCell::new(None)),
-            main_tasks,
-            perform_main,
+            pending_error: ErrorSlot::default(),
+            main_tasks: MainTasks::new(),
             main_menu: None,
             opened_window: false,
         }
     }
 
     fn set_main_task_sender(&mut self, sender: impl Fn(MainTask) -> bool + Send + Sync + 'static) {
-        let mut route = self
-            .main_tasks
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if let MainTaskRoute::Pending(tasks) = &mut *route {
-            for task in tasks.drain(..) {
-                sender(task);
-            }
-        }
-        *route = MainTaskRoute::Connected(Box::new(sender));
+        self.main_tasks.connect(sender);
     }
 
     pub fn value(&self, id: NodeId) -> Option<&R> {
-        self.nodes
-            .get(id.0)
-            .and_then(Option::as_ref)
-            .and_then(|node| node.value.as_ref())
+        self.tree.value(id)
     }
 
     pub fn children(&self, id: NodeId) -> &[NodeId] {
-        &self.node(id).children
+        self.tree.children(id)
     }
 
     /// Returns the Composer route associated with a rendered backend node.
     pub fn event_route(&self, id: NodeId) -> Option<EventRouteId> {
-        self.node(id).event_route
+        self.tree.node(id).event_route
     }
 
-    fn node(&self, id: NodeId) -> &BackendNode<R> {
-        self.nodes
-            .get(id.0)
-            .and_then(Option::as_ref)
-            .expect("node handle must belong to this AppKit backend")
+    fn state(&self, id: NodeId) -> &NodeState {
+        &self.tree.node(id).state
     }
 
-    fn node_mut(&mut self, id: NodeId) -> &mut BackendNode<R> {
-        self.nodes
-            .get_mut(id.0)
-            .and_then(Option::as_mut)
-            .expect("node handle must belong to this AppKit backend")
+    fn state_mut(&mut self, id: NodeId) -> &mut NodeState {
+        &mut self.tree.node_mut(id).state
     }
 
     fn kind(&self, id: NodeId) -> NodeKind {
-        self.value(id)
-            .expect("render nodes have values")
-            .appkit_node()
-    }
-
-    fn detach(&mut self, child: NodeId) {
-        let Some(parent) = self.node(child).parent else {
-            return;
-        };
-        self.node_mut(parent)
-            .children
-            .retain(|candidate| *candidate != child);
-        self.node_mut(child).parent = None;
+        self.tree.kind(id)
     }
 
     /// Records the first error, ignoring natives that AppKit already closed.
     fn record_error(&mut self, error: AppError) {
         if !matches!(error, AppError::Ui(UiError::Closed)) {
-            record_error(&self.pending_error, error);
+            self.pending_error.record(error);
         }
-    }
-
-    fn take_error(&self) -> Result<(), AppError> {
-        self.pending_error.borrow_mut().take().map_or(Ok(()), Err)
     }
 
     fn remove_subtree(&mut self, id: NodeId) {
-        let Some(children) = self
-            .nodes
-            .get(id.0)
-            .and_then(Option::as_ref)
-            .map(|node| node.children.clone())
-        else {
-            return;
-        };
-        for child in children {
-            self.remove_subtree(child);
-        }
-        self.detach(id);
-        if let Some(window) = &self.node(id).window {
-            self.retired_windows.push(window.native);
-        }
-        if let Some(mut node) = self.nodes.get_mut(id.0).and_then(Option::take)
-            && let Some(native) = node.native.take()
-            && let Err(error) = native.as_view().remove_from_superview()
-        {
+        let mut retired = Vec::new();
+        let mut errors = Vec::new();
+        self.tree.remove_subtree(id, &mut |node| {
+            if let Some(window) = &node.state.window {
+                retired.push(window.native);
+            }
+            if let Some(native) = node.state.native
+                && let Err(error) = native.as_view().remove_from_superview()
+            {
+                errors.push(error);
+            }
+        });
+        self.retired_windows.extend(retired);
+        for error in errors {
             self.record_error(AppError::Ui(error));
         }
     }
 
     /// Drops native state below a window whose native object was replaced.
     fn reset_natives(&mut self, id: NodeId) {
-        let node = self.node_mut(id);
-        node.native = None;
-        node.window = None;
-        node.attachment = None;
-        node.applied = None;
+        *self.state_mut(id) = NodeState::default();
         for child in self.children(id).to_vec() {
             self.reset_natives(child);
         }
     }
 
-    fn root_children(&self) -> impl Iterator<Item = (NodeId, NodeKind)> + '_ {
-        self.children(NodeId(0))
-            .iter()
-            .map(|id| (*id, self.kind(*id)))
-    }
-
-    /// Returns declared windows that the user has not closed.
-    fn window_ids(&self) -> Vec<NodeId> {
-        self.root_children()
-            .filter(|(id, kind)| {
-                matches!(kind, NodeKind::Window { .. })
-                    && !self
-                        .node(*id)
-                        .window
-                        .as_ref()
-                        .is_some_and(|state| state.closed)
-            })
-            .map(|(id, _)| id)
-            .collect()
-    }
-
     /// Returns whether the app should end because its last normal window is gone.
     fn should_terminate(&self) -> bool {
-        self.opened_window
-            && !self.root_children().any(|(id, kind)| {
-                matches!(
-                    kind,
-                    NodeKind::Window {
-                        style: WindowStyle::Normal,
-                        ..
-                    }
-                ) && !self
-                    .node(id)
-                    .window
-                    .as_ref()
-                    .is_some_and(|state| state.closed)
-            })
+        self.opened_window && !self.tree.has_normal_window(NodeState::is_closed_window)
     }
 
     fn mark_window_closed(&mut self, native: ActorId) {
-        for node in self.nodes.iter_mut().flatten() {
-            if let Some(state) = &mut node.window
-                && state.native == native
+        for state in self.tree.states_mut() {
+            if let Some(window) = &mut state.window
+                && window.native == native
             {
-                state.closed = true;
+                window.closed = true;
             }
         }
     }
 
     fn main_menu_route(&self) -> Option<EventRouteId> {
-        self.root_children()
-            .find(|(_, kind)| matches!(kind, NodeKind::MainMenu(_)))
-            .and_then(|(id, _)| self.node(id).event_route)
+        self.tree.main_menu_route()
     }
 
     fn synchronize(
@@ -338,12 +228,12 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
         application: &Application,
         cx: &MessageContext<'_, '_, Message>,
     ) -> Result<(), AppError> {
-        self.take_error()?;
+        self.pending_error.take()?;
         for window in self.retired_windows.drain(..) {
             cx.remove_window(window);
         }
         self.synchronize_main_menu(application, cx)?;
-        let window_ids = self.window_ids();
+        let window_ids = self.tree.window_ids(NodeState::is_closed_window);
         if window_ids.is_empty() && !self.opened_window {
             return Err(AppError::NoWindow);
         }
@@ -353,7 +243,7 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
         }
         self.structure_dirty = false;
         self.layout_dirty = false;
-        self.take_error()
+        self.pending_error.take()
     }
 
     fn synchronize_main_menu(
@@ -361,13 +251,7 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
         application: &Application,
         cx: &MessageContext<'_, '_, Message>,
     ) -> Result<(), AppError> {
-        let declared = self.root_children().find_map(|(_, kind)| match kind {
-            NodeKind::MainMenu(commands) => Some(commands),
-            _ => None,
-        });
-        let commands = declared
-            .or_else(R::default_main_menu)
-            .unwrap_or_else(quit_commands);
+        let commands = self.tree.main_menu();
         if self.main_menu.as_ref() != Some(&commands) {
             let sender = cx.sender();
             application.set_commands(&commands, move |id| {
@@ -398,32 +282,33 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
         };
 
         // The native class cannot change, so a new style needs a new window.
-        if let Some(state) = &self.node(window_id).window
+        if let Some(state) = &self.state(window_id).window
             && state.style != style
         {
             cx.remove_window(state.native);
             self.reset_natives(window_id);
         }
         let new_window = self
-            .node(window_id)
+            .state(window_id)
             .window
             .as_ref()
             .is_none_or(|state| !cx.contains_window(state.native));
         if new_window {
-            let route = self.node(window_id).event_route.map(route_token);
+            let route = self.event_route(window_id).map(route_token);
             let native = cx.create_styled_window(route, style)?;
             let layout = Rc::new(RefCell::new(HostLayout::default()));
             let callback_layout = layout.clone();
             let callback_error = self.pending_error.clone();
             cx.with_window(native, |window| {
                 window.set_content_layout_handler(move |bounds| {
-                    if let Err(error) = callback_layout.borrow().layout(bounds) {
-                        record_error(&callback_error, error);
+                    let size = Size::new(bounds.width as f32, bounds.height as f32);
+                    if let Err(error) = callback_layout.borrow().layout(size) {
+                        callback_error.record(error);
                     }
                 })
             })
             .ok_or(UiError::Closed)??;
-            self.node_mut(window_id).window = Some(WindowState {
+            self.state_mut(window_id).window = Some(WindowState {
                 native,
                 layout,
                 style,
@@ -436,12 +321,12 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
         }
         let rebuild_structure = rebuild_structure || new_window;
         let state = self
-            .node(window_id)
+            .state(window_id)
             .window
             .as_ref()
             .expect("a synchronized window has native state");
         let native_id = state.native;
-        let event_route = self.node(window_id).event_route.map(route_token);
+        let event_route = self.event_route(window_id).map(route_token);
         let apply_full_size_content_view =
             state.applied_full_size_content_view != Some(full_size_content_view);
         let apply_bounds =
@@ -470,7 +355,7 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
         })
         .ok_or(UiError::Closed)??;
         let state = self
-            .node_mut(window_id)
+            .state_mut(window_id)
             .window
             .as_mut()
             .expect("a synchronized window has native state");
@@ -489,7 +374,7 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
         if update_layout {
             let children = self.content_snapshots(window_id)?;
             let state = self
-                .node(window_id)
+                .state(window_id)
                 .window
                 .as_ref()
                 .expect("a synchronized window has native state");
@@ -504,7 +389,7 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
                 Ok(())
             })
             .ok_or(UiError::Closed)??;
-            self.take_error()?;
+            self.pending_error.take()?;
         }
         if new_window {
             cx.with_window(native_id, |window| window.show())
@@ -520,7 +405,7 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
         parent: NodeId,
     ) -> Result<(), AppError> {
         for child in self.children(parent).to_vec() {
-            if self.node(child).native.is_none()
+            if self.state(child).native.is_none()
                 && let NodeKind::View {
                     kind, id, enabled, ..
                 } = self.kind(child)
@@ -533,9 +418,9 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
                 native
                     .as_view()
                     .actor_ref()
-                    .set_event_route(self.node(child).event_route.map(route_token))
+                    .set_event_route(self.event_route(child).map(route_token))
                     .map_err(UiError::from)?;
-                self.node_mut(child).native = Some(Rc::new(native));
+                self.state_mut(child).native = Some(Rc::new(native));
             }
             self.materialize_children(application, child)?;
         }
@@ -545,7 +430,7 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
     /// Adds view children to `parent`; attachments are presented separately.
     fn attach_children(&self, parent: ViewRef<'_>, parent_id: NodeId) -> Result<(), AppError> {
         for child in self.children(parent_id) {
-            let Some(native) = self.node(*child).native.as_ref() else {
+            let Some(native) = self.state(*child).native.as_ref() else {
                 continue;
             };
             native.as_view().remove_from_superview()?;
@@ -569,7 +454,7 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
                 let pages = self
                     .children(id)
                     .iter()
-                    .filter_map(|page| Some((*page, self.node(*page).native.clone()?)))
+                    .filter_map(|page| Some((*page, self.state(*page).native.clone()?)))
                     .collect::<Vec<_>>();
                 for (_, page) in &pages {
                     page.as_view().remove_from_superview()?;
@@ -592,7 +477,10 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
         }
     }
 
-    fn content_snapshots(&self, parent: NodeId) -> Result<Vec<LayoutSnapshot>, AppError> {
+    fn content_snapshots(
+        &self,
+        parent: NodeId,
+    ) -> Result<Vec<LayoutSnapshot<NativeNode>>, AppError> {
         self.children(parent)
             .iter()
             .filter(|child| !self.kind(**child).is_attachment())
@@ -600,7 +488,7 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
             .collect()
     }
 
-    fn build_layout_snapshot(&self, id: NodeId) -> Result<LayoutSnapshot, AppError> {
+    fn build_layout_snapshot(&self, id: NodeId) -> Result<LayoutSnapshot<NativeNode>, AppError> {
         let NodeKind::View {
             kind,
             layout: style,
@@ -610,7 +498,7 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
             return Err(AppError::InvalidTree);
         };
         let native = self
-            .node(id)
+            .state(id)
             .native
             .as_ref()
             .expect("materialized view nodes have native views")
@@ -655,24 +543,17 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
         relayout: bool,
     ) -> Result<(), AppError> {
         let kind = self.kind(id);
-        let route = self.node(id).event_route.map(route_token);
+        let route = self.event_route(id).map(route_token);
         let anchor = self
+            .tree
             .node(id)
             .parent
-            .and_then(|parent| self.node(parent).native.clone());
-        let applied = self.node(id).applied.clone();
+            .and_then(|parent| self.state(parent).native.clone());
+        let applied = self.state(id).applied.clone();
         let was_presented = applied.as_ref().is_some_and(NodeKind::is_presented);
         // A window shows one sheet at a time; retry after the current one ends.
-        if matches!(
-            kind,
-            NodeKind::Alert {
-                presented: true,
-                ..
-            } | NodeKind::FileDialog {
-                presented: true,
-                ..
-            }
-        ) && !was_presented
+        if kind.is_presented_sheet()
+            && !was_presented
             && cx
                 .with_window(window, |window| window.has_attached_sheet())
                 .unwrap_or(false)
@@ -684,11 +565,11 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
                 let Some(anchor) = anchor else {
                     return Ok(());
                 };
-                if self.node(id).attachment.is_none() || applied.as_ref() != Some(&kind) {
+                if self.state(id).attachment.is_none() || applied.as_ref() != Some(&kind) {
                     // Drop the old menu first so its teardown cannot clear the new one.
-                    self.node_mut(id).attachment = None;
+                    self.state_mut(id).attachment = None;
                     let menu = ContextMenu::install(anchor.as_view(), items, route)?;
-                    self.node_mut(id).attachment = Some(Attachment::ContextMenu(menu));
+                    self.state_mut(id).attachment = Some(Attachment::ContextMenu(menu));
                 }
             }
             NodeKind::Popover {
@@ -699,21 +580,22 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
                 let Some(anchor) = anchor else {
                     return Ok(());
                 };
-                let created = self.node(id).attachment.is_none();
+                let created = self.state(id).attachment.is_none();
                 if created {
                     let popover = Popover::new(anchor.as_view())?;
                     let layout = Rc::new(RefCell::new(HostLayout::default()));
                     let callback_layout = layout.clone();
                     let callback_error = self.pending_error.clone();
                     popover.set_content_layout_handler(move |bounds| {
-                        if let Err(error) = callback_layout.borrow().layout(bounds) {
-                            record_error(&callback_error, error);
+                        let size = Size::new(bounds.width as f32, bounds.height as f32);
+                        if let Err(error) = callback_layout.borrow().layout(size) {
+                            callback_error.record(error);
                         }
                     })?;
                     popover.set_event_route(route)?;
-                    self.node_mut(id).attachment = Some(Attachment::Popover { popover, layout });
+                    self.state_mut(id).attachment = Some(Attachment::Popover { popover, layout });
                 }
-                let Some(Attachment::Popover { popover, layout }) = &self.node(id).attachment
+                let Some(Attachment::Popover { popover, layout }) = &self.state(id).attachment
                 else {
                     unreachable!("the popover attachment was created above");
                 };
@@ -743,27 +625,27 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
             }
             NodeKind::Alert { presented, config } => {
                 if *presented && !was_presented {
-                    self.node_mut(id).attachment = None;
+                    self.state_mut(id).attachment = None;
                     let sheet = cx
                         .with_window(window, |window| AlertSheet::present(window, config, route))
                         .ok_or(UiError::Closed)??;
-                    self.node_mut(id).attachment = Some(Attachment::Alert(Some(sheet)));
+                    self.state_mut(id).attachment = Some(Attachment::Alert(Some(sheet)));
                 } else if !*presented {
                     // Dropping a sheet that is still open dismisses it.
-                    self.node_mut(id).attachment = None;
+                    self.state_mut(id).attachment = None;
                 }
             }
             NodeKind::FileDialog { presented, config } => {
                 if *presented && !was_presented {
-                    self.node_mut(id).attachment = None;
+                    self.state_mut(id).attachment = None;
                     let sheet = cx
                         .with_window(window, |window| {
                             FileDialogSheet::present(window, config, route)
                         })
                         .ok_or(UiError::Closed)??;
-                    self.node_mut(id).attachment = Some(Attachment::FileDialog(Some(sheet)));
+                    self.state_mut(id).attachment = Some(Attachment::FileDialog(Some(sheet)));
                 } else if !*presented {
-                    self.node_mut(id).attachment = None;
+                    self.state_mut(id).attachment = None;
                 }
             }
             NodeKind::ColorPanel {
@@ -772,31 +654,31 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
                 shows_alpha,
             } => {
                 if *presented && !was_presented {
-                    self.node_mut(id).attachment = None;
+                    self.state_mut(id).attachment = None;
                     let session = cx
                         .with_window(window, |window| {
                             ColorPanelSession::present(window, *color, *shows_alpha, route)
                         })
                         .ok_or(UiError::Closed)??;
-                    self.node_mut(id).attachment = Some(Attachment::ColorPanel(Some(session)));
+                    self.state_mut(id).attachment = Some(Attachment::ColorPanel(Some(session)));
                 } else if *presented {
-                    if let Some(Attachment::ColorPanel(Some(session))) = &self.node(id).attachment
+                    if let Some(Attachment::ColorPanel(Some(session))) = &self.state(id).attachment
                         && !colors_match(session.color()?, *color)
                     {
                         session.set_color(*color)?;
                     }
                 } else {
-                    self.node_mut(id).attachment = None;
+                    self.state_mut(id).attachment = None;
                 }
             }
             _ => {}
         }
-        self.node_mut(id).applied = Some(kind);
+        self.state_mut(id).applied = Some(kind);
         Ok(())
     }
 
     fn update_native(&self, id: NodeId, old: &NodeKind, new: &NodeKind) -> Result<(), AppError> {
-        let Some(native) = self.node(id).native.as_ref() else {
+        let Some(native) = self.state(id).native.as_ref() else {
             return Ok(());
         };
         let (
@@ -827,46 +709,21 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
     }
 }
 
-impl NodeKind {
-    /// Returns whether a presentable attachment is declared as shown.
-    fn is_presented(&self) -> bool {
-        matches!(
-            self,
-            Self::Popover {
-                presented: true,
-                ..
-            } | Self::Alert {
-                presented: true,
-                ..
-            } | Self::FileDialog {
-                presented: true,
-                ..
-            } | Self::ColorPanel {
-                presented: true,
-                ..
-            }
-        )
-    }
-}
-
 impl<R: AppKitRenderNode> RenderBackend<R> for AppKitBackend<R> {
     type NodeId = NodeId;
 
     fn create_context<'a>(&'a self, store_context: StoreContext<'a>) -> R::Context<'a> {
-        R::create_context(store_context, Some(&*self.perform_main))
+        R::create_context(store_context, Some(self.main_tasks.sender()))
     }
 
     fn root(&self) -> Self::NodeId {
-        NodeId(0)
+        NodeTree::<R, NodeState>::ROOT
     }
 
     fn create(&mut self, value: &R, event_route: Option<EventRouteId>) -> Self::NodeId {
-        let id = NodeId(self.nodes.len());
-        self.nodes
-            .push(Some(BackendNode::new(Some(value.clone()), event_route)));
         self.structure_dirty = true;
         self.layout_dirty = true;
-        id
+        self.tree.create(value, event_route)
     }
 
     fn update(&mut self, id: Self::NodeId, value: &R) {
@@ -890,15 +747,15 @@ impl<R: AppKitRenderNode> RenderBackend<R> for AppKitBackend<R> {
         {
             self.structure_dirty = true;
         }
-        self.node_mut(id).value = Some(value.clone());
+        self.tree.node_mut(id).value = Some(value.clone());
         self.layout_dirty = true;
     }
 
     fn set_event_route(&mut self, id: Self::NodeId, event_route: Option<EventRouteId>) {
-        self.node_mut(id).event_route = event_route;
+        self.tree.node_mut(id).event_route = event_route;
         let token = event_route.map(route_token);
-        let node = self.node(id);
-        let result = match (&node.native, &node.attachment) {
+        let state = self.state(id);
+        let result = match (&state.native, &state.attachment) {
             (Some(native), _) => native
                 .as_view()
                 .actor_ref()
@@ -913,10 +770,7 @@ impl<R: AppKitRenderNode> RenderBackend<R> for AppKitBackend<R> {
     }
 
     fn insert_child(&mut self, parent: Self::NodeId, index: usize, child: Self::NodeId) {
-        self.detach(child);
-        let index = index.min(self.node(parent).children.len());
-        self.node_mut(parent).children.insert(index, child);
-        self.node_mut(child).parent = Some(parent);
+        self.tree.insert_child(parent, index, child);
         self.structure_dirty = true;
         self.layout_dirty = true;
     }
@@ -928,12 +782,9 @@ impl<R: AppKitRenderNode> RenderBackend<R> for AppKitBackend<R> {
     }
 
     fn move_child(&mut self, parent: Self::NodeId, index: usize, child: Self::NodeId) {
-        if self.node(child).parent == Some(parent)
-            && self.node(parent).children.get(index) == Some(&child)
-        {
-            return;
+        if !self.tree.is_at(parent, index, child) {
+            self.insert_child(parent, index, child);
         }
-        self.insert_child(parent, index, child);
     }
 }
 
@@ -956,24 +807,6 @@ fn colors_match(first: Color, second: Color) -> bool {
     ]
     .iter()
     .all(|difference| difference.abs() < TOLERANCE)
-}
-
-fn record_error(slot: &RefCell<Option<AppError>>, error: AppError) {
-    let mut slot = slot.borrow_mut();
-    if slot.is_none() {
-        *slot = Some(error);
-    }
-}
-
-fn quit_commands() -> CommandSet {
-    let mut quit = CommandItem::new("Quit");
-    quit.role = Some(CommandRole::Quit);
-    quit.key = Some("q".into());
-    quit.modifiers = vec![CommandModifier::Cmd];
-    CommandSet {
-        app_menu: Some(WindowAppMenu { items: vec![quit] }),
-        menus: Vec::new(),
-    }
 }
 
 #[cfg(test)]

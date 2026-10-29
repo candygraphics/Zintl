@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use zintl_ui::renderer::RenderNode as RenderNodeTrait;
 use zintl_ui_layout::{LayoutStyle, Size};
 
-#[cfg(target_os = "macos")]
 use crate::MenuItemState;
 use crate::{
     AlertStyle, BezelStyle, ButtonType, Color, Event, MenuState, PopoverEdge, ScrollAxes,
@@ -204,7 +203,6 @@ impl RenderNodeTrait for RenderNode {
     }
 }
 
-#[cfg(target_os = "macos")]
 impl zintl_ui_appkit_backend::AppKitRenderNode for RenderNode {
     fn create_context<'a>(
         store_context: zintl_ui::view::StoreContext<'a>,
@@ -519,7 +517,6 @@ impl zintl_ui_appkit_backend::AppKitRenderNode for RenderNode {
     }
 }
 
-#[cfg(target_os = "macos")]
 impl AlertState {
     fn backend(&self) -> zintl_ui_appkit_backend::AlertConfig {
         use zintl_ui_appkit_backend::{AlertButton, AlertButtonRole};
@@ -546,7 +543,6 @@ impl AlertState {
     }
 }
 
-#[cfg(target_os = "macos")]
 impl FileDialogState {
     fn backend(
         &self,

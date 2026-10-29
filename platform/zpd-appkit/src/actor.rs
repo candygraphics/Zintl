@@ -52,57 +52,7 @@ pub struct WindowEvent {
     pub kind: WindowEventKind,
 }
 
-/// Semantic AppKit events supported by the Actor tree.
-#[derive(Clone, Debug, PartialEq)]
-pub enum WindowEventKind {
-    Created,
-    DidResize,
-    WillClose,
-    DidClose,
-    ButtonClicked,
-    TextChanged {
-        value: String,
-    },
-    SidebarSelectionChanged {
-        id: String,
-    },
-    SidebarSearchChanged {
-        value: String,
-    },
-    /// A two-state control such as a switch, checkbox, or toggle button changed.
-    StateChanged {
-        on: bool,
-    },
-    /// A continuous control such as a slider or stepper changed.
-    ValueChanged {
-        value: f64,
-    },
-    /// A choice control such as a pop-up button, segmented control, or tab view changed.
-    SelectionChanged {
-        index: usize,
-    },
-    ColorChanged {
-        color: crate::ui::Color,
-    },
-    /// A scroll view's top-left document point moved.
-    Scrolled {
-        x: f64,
-        y: f64,
-    },
-    MenuItemSelected {
-        id: String,
-    },
-    PopoverClosed,
-    /// An alert ended; `button` is `None` when it was dismissed programmatically.
-    AlertResponse {
-        button: Option<usize>,
-    },
-    /// A file panel ended; `paths` is `None` when it was cancelled.
-    FileDialogCompleted {
-        paths: Option<Vec<String>>,
-    },
-    ColorPanelClosed,
-}
+pub use crate::model::WindowEventKind;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ActorError {

@@ -86,15 +86,7 @@ fn window_delegate_class() -> zpd_objc::Class {
     }) as zpd_objc::Class
 }
 
-/// Selects the native window class and chrome.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum WindowStyle {
-    /// A standard titled, resizable `NSWindow`.
-    #[default]
-    Normal,
-    /// A floating utility `NSPanel` that hides while the app is inactive.
-    Panel,
-}
+pub use crate::model::WindowStyle;
 
 pub struct Window<'application> {
     actor: ActorRef,

@@ -162,7 +162,6 @@ impl Sidebar {
     }
 }
 
-#[cfg(target_os = "macos")]
 impl SidebarState {
     pub(crate) fn backend(&self) -> zintl_ui_appkit_backend::Sidebar {
         zintl_ui_appkit_backend::Sidebar {

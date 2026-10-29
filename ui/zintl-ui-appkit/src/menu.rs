@@ -803,7 +803,6 @@ impl View for MainMenu {
     }
 }
 
-#[cfg(target_os = "macos")]
 mod backend {
     use super::*;
     use zintl_ui_appkit_backend as native;
