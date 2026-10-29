@@ -23,24 +23,18 @@ pub fn decode_event(bytes: &[u8]) -> Result<EngineEvent, EngineError> {
             outcome: EvaluationOutcome::Value(cursor.length_prefixed()?.to_vec()),
         },
         2 => {
-            let value =
-                std::str::from_utf8(cursor.length_prefixed()?).map_err(|_| EngineError::Backend)?;
-            let (name, message) = value.split_once(':').unwrap_or(("Error", value));
+            let mut payload = Cursor::new(cursor.length_prefixed()?);
+            let name = payload.length_prefixed_utf8_u16()?;
+            let message = utf8_remaining(&mut payload)?;
             EngineEvent::EvaluationSettled {
                 id: EvaluationId(id),
-                outcome: EvaluationOutcome::Exception(JavaScriptException {
-                    name: name.trim().to_owned(),
-                    message: message.trim().to_owned(),
-                }),
+                outcome: EvaluationOutcome::Exception(JavaScriptException { name, message }),
             }
         }
-        3 => {
-            let _ = cursor.length_prefixed()?;
-            EngineEvent::EvaluationSettled {
-                id: EvaluationId(id),
-                outcome: EvaluationOutcome::Cancelled,
-            }
-        }
+        3 if cursor.length_prefixed()?.is_empty() => EngineEvent::EvaluationSettled {
+            id: EvaluationId(id),
+            outcome: EvaluationOutcome::Cancelled,
+        },
         4 => {
             let operation = cursor.u16()?;
             let payload = cursor.length_prefixed()?;
@@ -174,8 +168,43 @@ impl<'a> Cursor<'a> {
 mod tests {
     use super::decode_event;
     use crate::{
-        EngineEvent, EvaluationId, EvaluationOutcome, HostRequest, HostRequestId, MountRequest,
+        EngineEvent, EvaluationId, EvaluationOutcome, HostRequest, HostRequestId,
+        JavaScriptException, MountRequest,
     };
+
+    #[test]
+    // Verifies exception names and messages are framed separately, so a colon in a message survives.
+    fn canonical_exception_vector_decodes() {
+        let mut payload = b"\0\x09TypeError".to_vec();
+        payload.extend_from_slice(b"see http://x");
+        let mut bytes = b"ZJE1\0\x01\0\x02\0\0\0\0\0\0\0\x01".to_vec();
+        bytes.extend_from_slice(&u32::try_from(payload.len()).unwrap().to_be_bytes());
+        bytes.extend_from_slice(&payload);
+        assert_eq!(
+            decode_event(&bytes),
+            Ok(EngineEvent::EvaluationSettled {
+                id: EvaluationId(1),
+                outcome: EvaluationOutcome::Exception(JavaScriptException {
+                    name: "TypeError".into(),
+                    message: "see http://x".into(),
+                }),
+            })
+        );
+    }
+
+    #[test]
+    // Verifies a cancellation event carries no payload.
+    fn canonical_cancelled_vector_requires_empty_payload() {
+        let bytes = b"ZJE1\0\x01\0\x03\0\0\0\0\0\0\0\x01\0\0\0\0";
+        assert_eq!(
+            decode_event(bytes),
+            Ok(EngineEvent::EvaluationSettled {
+                id: EvaluationId(1),
+                outcome: EvaluationOutcome::Cancelled,
+            })
+        );
+        assert!(decode_event(b"ZJE1\0\x01\0\x03\0\0\0\0\0\0\0\x01\0\0\0\x01x").is_err());
+    }
 
     #[test]
     // Verifies the canonical value vector decodes without accepting trailing bytes.

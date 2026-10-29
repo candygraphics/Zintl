@@ -10,7 +10,7 @@ private let invalidState: UInt32 = 4
 private let quotaExceeded: UInt32 = 5
 private let backendError: UInt32 = 255
 
-private let maximumSafeInteger: UInt64 = 9_007_199_254_740_991
+private let maximumSafeInteger: UInt64 = (1 << 53) - 1
 
 public typealias NotifyFunction = @convention(c) (UnsafeMutableRawPointer?) -> Void
 
@@ -19,7 +19,13 @@ private struct PendingPromise {
   let reject: JSValue
 }
 
-private final class JSCFFIEngine: @unchecked Sendable {
+/// One JavaScriptCore context behind the C ABI.
+///
+/// Rust calls every entry point on the engine's owning thread, and JavaScript
+/// callbacks run inside those calls, so the state needs no locks. Engine-
+/// independent request limits are enforced by Rust after decoding; this side
+/// checks only what the wire format itself needs.
+private final class JSCFFIEngine {
   init(
     maximumEvaluations: Int,
     maximumHostRequests: Int,
@@ -37,12 +43,12 @@ private final class JSCFFIEngine: @unchecked Sendable {
     runtimeID = UInt64.random(in: 1...UInt64.max)
   }
 
-  func start() -> UInt32 {
+  func start(bootstrap: String) -> UInt32 {
     guard context == nil, !shuttingDown else { return invalidState }
     guard let context = JSContext() else { return backendError }
     self.context = context
     installCallbacks(in: context)
-    guard let bridge = context.evaluateScript(Self.bootstrap), context.exception == nil else {
+    guard let bridge = context.evaluateScript(bootstrap), context.exception == nil else {
       context.exception = nil
       self.context = nil
       return backendError
@@ -56,34 +62,21 @@ private final class JSCFFIEngine: @unchecked Sendable {
       source.count <= maximumSourceBytes,
       let source = String(data: source, encoding: .utf8)
     else { return invalidArgument }
-    stateLock.lock()
-    guard !shuttingDown else {
-      stateLock.unlock()
-      return invalidState
-    }
-    eventLock.lock()
-    let terminalCapacityAvailable = terminalEvents.count < maximumEvaluations
-    eventLock.unlock()
-    guard terminalCapacityAvailable else {
-      stateLock.unlock()
-      return quotaExceeded
-    }
-    guard pendingEvaluations.insert(evaluationID).inserted,
-      pendingEvaluations.count <= maximumEvaluations
-    else {
-      pendingEvaluations.remove(evaluationID)
-      stateLock.unlock()
-      return quotaExceeded
-    }
-    stateLock.unlock()
-    evaluate(evaluationID: evaluationID, source: source)
+    guard !shuttingDown else { return invalidState }
+    guard !pendingEvaluations.values.contains(evaluationID) else { return invalidArgument }
+    guard terminalEvents.count < maximumEvaluations,
+      pendingEvaluations.count < maximumEvaluations,
+      nextEvaluationToken <= maximumSafeInteger
+    else { return quotaExceeded }
+    let token = nextEvaluationToken
+    nextEvaluationToken += 1
+    pendingEvaluations[token] = evaluationID
+    evaluate(token: token, source: source)
     return ok
   }
 
   func nextEvent(output: UnsafeMutablePointer<UInt8>?, capacity: Int, required: inout Int) -> UInt32
   {
-    eventLock.lock()
-    defer { eventLock.unlock() }
     let terminal = events.isEmpty ? terminalEvents.first : nil
     guard let event = events.first ?? terminal else {
       required = 0
@@ -107,11 +100,10 @@ private final class JSCFFIEngine: @unchecked Sendable {
     objectID: UInt64,
     payload: Data
   ) -> UInt32 {
-    stateLock.lock()
-    let canAccept = !shuttingDown && pendingHostIDs.contains(requestID)
-    stateLock.unlock()
-    guard canAccept else { return invalidArgument }
-    finishHostRequest(requestID: requestID, kind: kind, objectID: objectID, payload: payload)
+    guard !shuttingDown, let promise = promises.removeValue(forKey: requestID) else {
+      return invalidArgument
+    }
+    settle(promise, kind: kind, objectID: objectID, payload: payload)
     return ok
   }
 
@@ -128,292 +120,269 @@ private final class JSCFFIEngine: @unchecked Sendable {
   }
 
   func cancel(evaluationID: UInt64) -> UInt32 {
-    stateLock.lock()
-    guard pendingEvaluations.contains(evaluationID) else {
-      stateLock.unlock()
+    guard let token = pendingEvaluations.first(where: { $0.value == evaluationID })?.key else {
       return invalidArgument
     }
-    cancelledEvaluations.insert(evaluationID)
-    stateLock.unlock()
+    settle(token: token, kind: 3, payload: Data())
     return ok
   }
 
   func shutdown() -> UInt32 {
-    stateLock.lock()
-    if shuttingDown {
-      stateLock.unlock()
-      return ok
-    }
+    guard !shuttingDown else { return ok }
     shuttingDown = true
-    stateLock.unlock()
     for promise in promises.values {
-      _ = promise.reject.call(withArguments: [
-        Self.errorObject("Runtime is shutting down", code: "ShuttingDown", context: context)
-      ])
+      reject(promise.reject, "Runtime is shutting down", code: "ShuttingDown")
     }
     promises.removeAll()
+    pendingEvaluations.removeAll()
     bridge = nil
     context = nil
-    stateLock.lock()
-    pendingHostIDs.removeAll()
-    pendingEvaluations.removeAll()
-    cancelledEvaluations.removeAll()
-    stateLock.unlock()
     return ok
   }
 
   private func installCallbacks(in context: JSContext) {
-    typealias EvaluationDone = @convention(block) (Double, Bool, NSString) -> Void
-    let evaluationDone: EvaluationDone = { [weak self] identifier, succeeded, value in
-      self?.finishEvaluation(
-        evaluationID: UInt64(identifier), succeeded: succeeded, value: value as String)
+    typealias EvaluationDone = @convention(block) (Double, NSString) -> Void
+    let evaluationDone: EvaluationDone = { [weak self] token, value in
+      guard let self, let token = Self.exactUInt64(token) else { return }
+      settle(token: token, kind: 1, payload: Data((value as String).utf8))
+    }
+    typealias EvaluationFailed = @convention(block) (Double, NSString, NSString) -> Void
+    let evaluationFailed: EvaluationFailed = { [weak self] token, name, message in
+      guard let self, let token = Self.exactUInt64(token) else { return }
+      fail(token: token, name: name as String, message: message as String)
     }
     typealias Invoke = @convention(block) (NSString, JSValue, JSValue, JSValue) -> Void
-    let invoke: Invoke = { [weak self] name, bytes, resolve, reject in
-      self?.submitInvoke(name: name as String, bytes: bytes, resolve: resolve, reject: reject)
+    let invoke: Invoke = { [weak self] name, input, resolve, reject in
+      guard let self else { return }
+      submitHost(
+        operation: 1, payload: invokePayload(name: name as String, input: input),
+        invalid: "Invalid operation input", resolve: resolve, reject: reject)
     }
     typealias Sleep = @convention(block) (Double, JSValue, JSValue) -> Void
     let sleep: Sleep = { [weak self] milliseconds, resolve, reject in
-      self?.submitSleep(milliseconds: milliseconds, resolve: resolve, reject: reject)
+      guard let self else { return }
+      submitHost(
+        operation: 2, payload: sleepPayload(milliseconds: milliseconds),
+        invalid: "Invalid timer delay", resolve: resolve, reject: reject)
     }
     typealias ReadFile = @convention(block) (NSString, Double, JSValue, JSValue) -> Void
     let readFile: ReadFile = { [weak self] url, maximum, resolve, reject in
-      self?.submitMountRead(url: url as String, maximum: maximum, resolve: resolve, reject: reject)
+      guard let self else { return }
+      submitHost(
+        operation: 10, payload: readFilePayload(url: url as String, maximum: maximum),
+        invalid: "Invalid mount read request", resolve: resolve, reject: reject)
     }
     typealias MountOperation =
-      @convention(block) (
-        Double, NSString, JSValue, JSValue, JSValue
-      ) -> Void
-    let mountOperation: MountOperation = { [weak self] operation, first, second, resolve, reject in
-      self?.submitMountOperation(
-        operation: operation, first: first as String, second: second,
-        resolve: resolve, reject: reject)
+      @convention(block) (Double, NSString, JSValue, JSValue, JSValue) ->
+      Void
+    let mountOperation: MountOperation = { [weak self] kind, url, operand, resolve, reject in
+      guard let self else { return }
+      let operation = Self.exactUInt64(kind).flatMap { UInt16(exactly: $0) } ?? 0
+      submitHost(
+        operation: operation,
+        payload: mountPayload(operation: operation, url: url as String, operand: operand),
+        invalid: "Invalid mount operation", resolve: resolve, reject: reject)
     }
     typealias Console = @convention(block) (NSString) -> Void
     let console: Console = { [weak self] message in
       self?.emitConsole(message as String)
     }
-    context.setObject(evaluationDone, forKeyedSubscript: "__zintlEvaluationDone" as NSString)
-    context.setObject(invoke, forKeyedSubscript: "__zintlInvoke" as NSString)
-    context.setObject(sleep, forKeyedSubscript: "__zintlSleep" as NSString)
-    context.setObject(readFile, forKeyedSubscript: "__zintlReadFile" as NSString)
-    context.setObject(mountOperation, forKeyedSubscript: "__zintlMountOperation" as NSString)
-    context.setObject(console, forKeyedSubscript: "__zintlConsole" as NSString)
+    // Lone surrogates become U+FFFD when the string is converted to UTF-8.
+    typealias EncodeUtf8 = @convention(block) (NSString) -> JSValue?
+    let encodeUtf8: EncodeUtf8 = { [weak self] text in
+      self?.uint8Array(Data((text as String).utf8))
+    }
+    // Returning nil yields `undefined` for invalid UTF-8.
+    typealias DecodeUtf8 = @convention(block) (JSValue) -> NSString?
+    let decodeUtf8: DecodeUtf8 = { [weak self] bytes in
+      guard let data = self?.bytes(bytes, maximum: .max) else { return nil }
+      return String(data: data, encoding: .utf8) as NSString?
+    }
+    let callbacks: [(String, Any)] = [
+      ("__zintlEvaluationDone", evaluationDone),
+      ("__zintlEvaluationFailed", evaluationFailed),
+      ("__zintlInvoke", invoke),
+      ("__zintlSleep", sleep),
+      ("__zintlReadFile", readFile),
+      ("__zintlMountOperation", mountOperation),
+      ("__zintlConsole", console),
+      ("__zintlEncodeUtf8", encodeUtf8),
+      ("__zintlDecodeUtf8", decodeUtf8),
+    ]
+    for (name, callback) in callbacks {
+      context.setObject(callback, forKeyedSubscript: name as NSString)
+    }
   }
 
   private func emitConsole(_ message: String) {
-    let bytes = Data(message.utf8)
-    guard bytes.count <= maximumEventBytes, let length = UInt32(exactly: bytes.count) else {
-      return
-    }
-    var event = Data()
-    event.append(contentsOf: [0x5A, 0x4A, 0x45, 0x31])
-    appendUInt16(1, to: &event)
-    appendUInt16(5, to: &event)
-    appendUInt64(0, to: &event)
-    appendUInt32(length, to: &event)
-    event.append(bytes)
-    enqueue(event)
+    enqueue(Self.event(kind: 5, id: 0, payload: Data(message.utf8)))
   }
 
-  private func evaluate(evaluationID: UInt64, source: String) {
+  /// Runs the bridge with a private settlement token, never the public evaluation ID.
+  private func evaluate(token: UInt64, source: String) {
     guard let bridge, !shuttingDown else {
-      finishEvaluation(
-        evaluationID: evaluationID, succeeded: false, value: "Error: Runtime is shutting down")
+      fail(token: token, name: "Error", message: "Runtime is shutting down")
       return
     }
-    _ = bridge.invokeMethod("evaluate", withArguments: [Double(evaluationID), source])
-    if let exception = context?.exception {
+    _ = bridge.invokeMethod("evaluate", withArguments: [Double(token), source])
+    if context?.exception != nil {
       context?.exception = nil
-      finishEvaluation(
-        evaluationID: evaluationID, succeeded: false,
-        value: "Error: \(exception.toString() ?? "JavaScript evaluation failed")")
+      fail(token: token, name: "Error", message: "JavaScript evaluation failed")
     }
   }
 
-  private func finishEvaluation(evaluationID: UInt64, succeeded: Bool, value: String) {
-    stateLock.lock()
-    let wasPending = pendingEvaluations.remove(evaluationID) != nil
-    let cancelled = cancelledEvaluations.remove(evaluationID) != nil
-    stateLock.unlock()
-    guard wasPending else { return }
-    var payload = Data()
-    payload.append(contentsOf: [0x5A, 0x4A, 0x45, 0x31])
-    appendUInt16(1, to: &payload)
-    appendUInt16(cancelled ? 3 : (succeeded ? 1 : 2), to: &payload)
-    appendUInt64(evaluationID, to: &payload)
-    let bytes = Data(value.utf8)
-    appendUInt32(UInt32(bytes.count), to: &payload)
-    payload.append(bytes)
-    if !enqueue(payload) {
-      var fallback = Data()
-      fallback.append(contentsOf: [0x5A, 0x4A, 0x45, 0x31])
-      appendUInt16(1, to: &fallback)
-      appendUInt16(2, to: &fallback)
-      appendUInt64(evaluationID, to: &fallback)
-      let message = Data("QuotaExceeded: Engine event queue exhausted".utf8)
-      appendUInt32(UInt32(message.count), to: &fallback)
-      fallback.append(message)
-      eventLock.lock()
+  private func fail(token: UInt64, name: String, message: String) {
+    settle(token: token, kind: 2, payload: Self.exceptionPayload(name: name, message: message))
+  }
+
+  /// Emits one settlement event for `token`; stale tokens are ignored.
+  private func settle(token: UInt64, kind: UInt16, payload: Data) {
+    guard let evaluationID = pendingEvaluations.removeValue(forKey: token) else { return }
+    if !enqueue(Self.event(kind: kind, id: evaluationID, payload: payload)) {
+      let fallback = Self.event(
+        kind: 2, id: evaluationID,
+        payload: Self.exceptionPayload(
+          name: "QuotaExceeded", message: "Engine event queue exhausted"))
       if terminalEvents.count < maximumEvaluations { terminalEvents.append(fallback) }
-      eventLock.unlock()
       notify?(userData)
     }
   }
 
-  private func submitInvoke(name: String, bytes: JSValue, resolve: JSValue, reject: JSValue) {
-    guard let input = byteArray(bytes), name.utf8.count <= UInt16.max else {
-      rejectNow(reject, "Invalid operation input", code: "InvalidRequest")
-      return
-    }
+  private func invokePayload(name: String, input: JSValue) -> Data? {
+    guard let length = UInt16(exactly: name.utf8.count),
+      let input = bytes(input, maximum: maximumEventBytes)
+    else { return nil }
     var payload = Data()
-    appendUInt32(1, to: &payload)
-    appendUInt16(UInt16(name.utf8.count), to: &payload)
-    payload.append(Data(name.utf8))
+    Self.append(UInt32(1), to: &payload)
+    Self.append(length, to: &payload)
+    payload.append(contentsOf: name.utf8)
     payload.append(input)
-    submitHost(kind: 1, payload: payload, resolve: resolve, reject: reject)
+    return payload
   }
 
-  private func submitSleep(milliseconds: Double, resolve: JSValue, reject: JSValue) {
-    guard milliseconds.isFinite, milliseconds >= 0, milliseconds <= 86_400_000,
-      milliseconds.rounded(.down) == milliseconds
-    else {
-      rejectNow(reject, "Invalid timer delay", code: "InvalidRequest")
-      return
-    }
+  private func sleepPayload(milliseconds: Double) -> Data? {
+    guard let milliseconds = Self.exactUInt64(milliseconds) else { return nil }
+    let (nanoseconds, overflow) = milliseconds.multipliedReportingOverflow(by: 1_000_000)
+    guard !overflow else { return nil }
     var payload = Data()
-    appendUInt64(UInt64(milliseconds) * 1_000_000, to: &payload)
-    submitHost(kind: 2, payload: payload, resolve: resolve, reject: reject)
+    Self.append(nanoseconds, to: &payload)
+    return payload
   }
 
-  private func submitMountRead(
-    url: String, maximum: Double, resolve: JSValue, reject: JSValue
-  ) {
-    guard url.utf8.count <= 4096, let maximum = exactUInt64(maximum), maximum > 0
-    else {
-      rejectNow(reject, "Invalid mount read request", code: "InvalidRequest")
-      return
-    }
+  private func readFilePayload(url: String, maximum: Double) -> Data? {
+    guard let maximum = Self.exactUInt64(maximum) else { return nil }
     var payload = Data()
-    appendUInt64(maximum, to: &payload)
-    payload.append(Data(url.utf8))
-    submitHost(kind: 10, payload: payload, resolve: resolve, reject: reject)
+    Self.append(maximum, to: &payload)
+    payload.append(contentsOf: url.utf8)
+    return payload
   }
 
-  private func submitMountOperation(
-    operation: Double, first: String, second: JSValue, resolve: JSValue, reject: JSValue
-  ) {
-    guard let kind = exactUInt64(operation), (11...15).contains(kind), first.utf8.count <= 4096
-    else {
-      rejectNow(reject, "Invalid mount operation", code: "InvalidRequest")
-      return
-    }
+  private func mountPayload(operation: UInt16, url: String, operand: JSValue) -> Data? {
     var payload = Data()
-    switch kind {
+    switch operation {
     case 11:
-      guard let length = UInt16(exactly: first.utf8.count), let bytes = byteArray(second) else {
-        rejectNow(reject, "Invalid mount write", code: "InvalidRequest")
-        return
-      }
-      appendUInt16(length, to: &payload)
-      payload.append(Data(first.utf8))
+      guard let length = UInt16(exactly: url.utf8.count),
+        let bytes = bytes(operand, maximum: maximumEventBytes)
+      else { return nil }
+      Self.append(length, to: &payload)
+      payload.append(contentsOf: url.utf8)
       payload.append(bytes)
     case 12...14:
-      payload.append(Data(first.utf8))
+      payload.append(contentsOf: url.utf8)
     case 15:
-      guard second.isString, let destination = second.toString(),
-        destination.utf8.count <= 4096, let length = UInt16(exactly: first.utf8.count)
-      else {
-        rejectNow(reject, "Invalid mount rename", code: "InvalidRequest")
-        return
-      }
-      appendUInt16(length, to: &payload)
-      payload.append(Data(first.utf8))
-      payload.append(Data(destination.utf8))
+      guard operand.isString, let destination = operand.toString(),
+        let length = UInt16(exactly: url.utf8.count)
+      else { return nil }
+      Self.append(length, to: &payload)
+      payload.append(contentsOf: url.utf8)
+      payload.append(contentsOf: destination.utf8)
     default:
-      rejectNow(reject, "Invalid mount operation", code: "InvalidRequest")
-      return
+      return nil
     }
-    submitHost(kind: UInt16(kind), payload: payload, resolve: resolve, reject: reject)
+    return payload
   }
 
-  private func submitHost(kind: UInt16, payload body: Data, resolve: JSValue, reject: JSValue) {
-    stateLock.lock()
-    guard !shuttingDown, pendingHostIDs.count < maximumHostRequests, nextHostID < UInt64.max else {
-      stateLock.unlock()
-      rejectNow(reject, "Host request limit exceeded", code: "QuotaExceeded")
+  /// Queues one host request, or rejects at once when `payload` could not be built.
+  private func submitHost(
+    operation: UInt16, payload: Data?, invalid: String, resolve: JSValue, reject: JSValue
+  ) {
+    guard let payload else {
+      self.reject(reject, invalid, code: "InvalidRequest")
+      return
+    }
+    guard !shuttingDown, promises.count < maximumHostRequests, nextHostID <= maximumSafeInteger
+    else {
+      self.reject(reject, "Host request limit exceeded", code: "QuotaExceeded")
       return
     }
     let requestID = nextHostID
     nextHostID += 1
-    pendingHostIDs.insert(requestID)
-    stateLock.unlock()
-    promises[requestID] = PendingPromise(resolve: resolve, reject: reject)
-    var event = Data()
-    event.append(contentsOf: [0x5A, 0x4A, 0x45, 0x31])
-    appendUInt16(1, to: &event)
-    appendUInt16(4, to: &event)
-    appendUInt64(requestID, to: &event)
-    appendUInt16(kind, to: &event)
-    appendUInt32(UInt32(body.count), to: &event)
-    event.append(body)
-    if !enqueue(event) {
-      stateLock.lock()
-      pendingHostIDs.remove(requestID)
-      stateLock.unlock()
-      promises.removeValue(forKey: requestID)
-      rejectNow(reject, "Engine event queue exhausted", code: "QuotaExceeded")
+    guard enqueue(Self.event(kind: 4, id: requestID, operation: operation, payload: payload)) else {
+      self.reject(reject, "Engine event queue exhausted", code: "QuotaExceeded")
+      return
     }
+    promises[requestID] = PendingPromise(resolve: resolve, reject: reject)
   }
 
-  private func finishHostRequest(requestID: UInt64, kind: UInt32, objectID _: UInt64, payload: Data)
-  {
-    stateLock.lock()
-    pendingHostIDs.remove(requestID)
-    stateLock.unlock()
-    guard let promise = promises.removeValue(forKey: requestID) else { return }
+  private func settle(_ promise: PendingPromise, kind: UInt32, objectID: UInt64, payload: Data) {
     switch kind {
     case 0:
       _ = promise.resolve.call(withArguments: [])
     case 1:
-      _ = promise.resolve.call(withArguments: [Array(payload)])
+      guard let bytes = uint8Array(payload) else {
+        reject(promise.reject, "Host operation failed", code: "OperationFailed")
+        return
+      }
+      _ = promise.resolve.call(withArguments: [bytes])
+    case 2, 3:
+      // Completion kinds 2 and 3 carry Directory and File objects; the shim brands them 1 and 2.
+      guard let context,
+        let object = rtjsc_host_object_make(
+          context.jsGlobalContextRef, runtimeID, objectID, kind - 1),
+        let value = JSValue(jsValueRef: object, in: context)
+      else {
+        reject(promise.reject, "Host operation failed", code: "OperationFailed")
+        return
+      }
+      _ = promise.resolve.call(withArguments: [value])
     default:
-      let fallbackCode = "OperationFailed"
-      let fallbackMessage = "Host operation failed"
-      guard payload.count >= 2 else {
-        rejectNow(promise.reject, fallbackMessage, code: fallbackCode)
-        return
-      }
-      let codeLength =
-        (Int(payload[payload.startIndex]) << 8)
-        | Int(payload[payload.index(after: payload.startIndex)])
-      guard payload.count >= 2 + codeLength else {
-        rejectNow(promise.reject, fallbackMessage, code: fallbackCode)
-        return
-      }
-      let codeStart = payload.index(payload.startIndex, offsetBy: 2)
-      let messageStart = payload.index(codeStart, offsetBy: codeLength)
-      let code = String(data: payload[codeStart..<messageStart], encoding: .utf8) ?? fallbackCode
-      let message = String(data: payload[messageStart...], encoding: .utf8) ?? fallbackMessage
-      rejectNow(promise.reject, message, code: code)
+      let (code, message) =
+        Self.failure(payload) ?? ("OperationFailed", "Host operation failed")
+      reject(promise.reject, message, code: code)
     }
   }
 
-  private func byteArray(_ value: JSValue) -> Data? {
-    guard let array = value.toArray(), array.count <= maximumEventBytes else { return nil }
-    var data = Data(capacity: array.count)
-    for item in array {
-      guard let number = item as? NSNumber else { return nil }
-      let value = number.intValue
-      guard (0...255).contains(value) else { return nil }
-      data.append(UInt8(value))
+  /// Copies a `Uint8Array` of at most `maximum` bytes, honoring its byte offset.
+  private func bytes(_ value: JSValue, maximum: Int) -> Data? {
+    guard let context else { return nil }
+    let ctx = context.jsGlobalContextRef
+    guard JSValueGetTypedArrayType(ctx, value.jsValueRef, nil) == kJSTypedArrayTypeUint8Array,
+      let view = JSValueToObject(ctx, value.jsValueRef, nil)
+    else { return nil }
+    let length = JSObjectGetTypedArrayByteLength(ctx, view, nil)
+    guard length <= maximum else { return nil }
+    guard length > 0 else { return Data() }
+    let offset = JSObjectGetTypedArrayByteOffset(ctx, view, nil)
+    guard let buffer = JSObjectGetTypedArrayBuffer(ctx, view, nil),
+      let base = JSObjectGetArrayBufferBytesPtr(ctx, buffer, nil)
+    else { return nil }
+    return Data(bytes: base + offset, count: length)
+  }
+
+  private func uint8Array(_ data: Data) -> JSValue? {
+    guard let context else { return nil }
+    let ctx = context.jsGlobalContextRef
+    guard let array = JSObjectMakeTypedArray(ctx, kJSTypedArrayTypeUint8Array, data.count, nil)
+    else { return nil }
+    if !data.isEmpty {
+      guard let target = JSObjectGetTypedArrayBytesPtr(ctx, array, nil) else { return nil }
+      data.copyBytes(to: target.assumingMemoryBound(to: UInt8.self), count: data.count)
     }
-    return data
+    return JSValue(jsValueRef: array, in: context)
   }
 
   @discardableResult
   private func enqueue(_ event: Data) -> Bool {
-    eventLock.lock()
     let accepted =
       terminalEvents.isEmpty
       && event.count <= maximumEventBytes
@@ -421,50 +390,66 @@ private final class JSCFFIEngine: @unchecked Sendable {
     if accepted {
       events.append(event)
       queuedEventBytes += event.count
+      notify?(userData)
     }
-    eventLock.unlock()
-    if accepted { notify?(userData) }
     return accepted
   }
 
-  private func rejectNow(_ reject: JSValue, _ message: String, code: String) {
-    _ = reject.call(withArguments: [Self.errorObject(message, code: code, context: context)])
-  }
-
-  private static func errorObject(_ message: String, code: String, context: JSContext?) -> Any {
+  private func reject(_ reject: JSValue, _ message: String, code: String) {
     guard let context, let error = JSValue(newErrorFromMessage: message, in: context) else {
-      return message
+      _ = reject.call(withArguments: [message])
+      return
     }
     error.setValue(code, forProperty: "code")
-    return error
+    _ = reject.call(withArguments: [error])
   }
 
-  private func exactUInt64(_ value: Double) -> UInt64? {
-    guard value.isFinite, value >= 0, value <= 9_007_199_254_740_991,
+  /// Builds one `ZJE1` event; host requests also carry their operation code.
+  private static func event(kind: UInt16, id: UInt64, operation: UInt16? = nil, payload: Data)
+    -> Data
+  {
+    var event = Data("ZJE1".utf8)
+    append(UInt16(1), to: &event)
+    append(kind, to: &event)
+    append(id, to: &event)
+    if let operation { append(operation, to: &event) }
+    append(UInt32(payload.count), to: &event)
+    event.append(payload)
+    return event
+  }
+
+  private static func exceptionPayload(name: String, message: String) -> Data {
+    let name = name.utf8.count <= Int(UInt16.max) ? name : "Error"
+    var payload = Data()
+    append(UInt16(name.utf8.count), to: &payload)
+    payload.append(contentsOf: name.utf8)
+    payload.append(contentsOf: message.utf8)
+    return payload
+  }
+
+  /// Splits a failure completion into its code and message.
+  private static func failure(_ payload: Data) -> (String, String)? {
+    let bytes = [UInt8](payload)
+    guard bytes.count >= 2 else { return nil }
+    let codeEnd = 2 + (Int(bytes[0]) << 8 | Int(bytes[1]))
+    guard bytes.count >= codeEnd,
+      let code = String(bytes: bytes[2..<codeEnd], encoding: .utf8),
+      let message = String(bytes: bytes[codeEnd...], encoding: .utf8)
+    else { return nil }
+    return (code, message)
+  }
+
+  private static func exactUInt64(_ value: Double) -> UInt64? {
+    guard value.isFinite, value >= 0, value <= Double(maximumSafeInteger),
       value.rounded(.down) == value
     else { return nil }
     return UInt64(value)
   }
 
-  private func appendUInt16(_ value: UInt16, to data: inout Data) {
-    data.append(UInt8(value >> 8))
-    data.append(UInt8(value & 0xFF))
+  private static func append<T: FixedWidthInteger>(_ value: T, to data: inout Data) {
+    withUnsafeBytes(of: value.bigEndian) { data.append(contentsOf: $0) }
   }
 
-  private func appendUInt32(_ value: UInt32, to data: inout Data) {
-    for shift in stride(from: 24, through: 0, by: -8) {
-      data.append(UInt8((value >> UInt32(shift)) & 0xFF))
-    }
-  }
-
-  private func appendUInt64(_ value: UInt64, to data: inout Data) {
-    for shift in stride(from: 56, through: 0, by: -8) {
-      data.append(UInt8((value >> UInt64(shift)) & 0xFF))
-    }
-  }
-
-  private let eventLock = NSLock()
-  private let stateLock = NSLock()
   private let maximumEvaluations: Int
   private let maximumHostRequests: Int
   private let maximumSourceBytes: Int
@@ -475,134 +460,14 @@ private final class JSCFFIEngine: @unchecked Sendable {
   private var context: JSContext?
   private var bridge: JSValue?
   private var promises: [UInt64: PendingPromise] = [:]
-  private var pendingHostIDs = Set<UInt64>()
-  private var pendingEvaluations = Set<UInt64>()
-  private var cancelledEvaluations = Set<UInt64>()
+  /// Maps private settlement tokens to public evaluation IDs.
+  private var pendingEvaluations: [UInt64: UInt64] = [:]
+  private var nextEvaluationToken: UInt64 = 1
   private var nextHostID: UInt64 = 1
   private var shuttingDown = false
   private var events: [Data] = []
   private var terminalEvents: [Data] = []
   private var queuedEventBytes = 0
-
-  private static let bootstrap = #"""
-    (() => {
-      "use strict";
-      const evaluationDone = globalThis.__zintlEvaluationDone;
-      const invokeNative = globalThis.__zintlInvoke;
-      const sleepNative = globalThis.__zintlSleep;
-      const readFileNative = globalThis.__zintlReadFile;
-      const mountOperationNative = globalThis.__zintlMountOperation;
-      const consoleNative = globalThis.__zintlConsole;
-      for (const name of ["__zintlEvaluationDone", "__zintlInvoke", "__zintlSleep",
-        "__zintlReadFile", "__zintlMountOperation", "__zintlConsole"]) delete globalThis[name];
-      const error = (message, code) => Object.assign(new Error(message), { code });
-      const invoke = (name, input = new Uint8Array()) => new Promise((resolve, reject) => {
-        if (typeof name !== "string" || !(input instanceof Uint8Array)) return reject(error("Invalid input", "InvalidRequest"));
-        invokeNative(name, Array.from(input), resolve, reject);
-      }).then(bytes => new Uint8Array(bytes));
-      const sleep = ms => new Promise((resolve, reject) => sleepNative(ms, resolve, reject));
-      const decodeUtf8 = bytes => {
-        let output = "";
-        let codePoints = [];
-        const append = value => {
-          codePoints.push(value);
-          if (codePoints.length === 1024) {
-            output += String.fromCodePoint(...codePoints);
-            codePoints = [];
-          }
-        };
-        const continuation = value => (value & 0xc0) === 0x80;
-        for (let index = 0; index < bytes.length;) {
-          const first = bytes[index++];
-          if (first <= 0x7f) { append(first); continue; }
-          if (first >= 0xc2 && first <= 0xdf && index < bytes.length) {
-            const second = bytes[index++];
-            if (continuation(second)) { append(((first & 0x1f) << 6) | (second & 0x3f)); continue; }
-          } else if (first >= 0xe0 && first <= 0xef && index + 1 < bytes.length) {
-            const second = bytes[index++], third = bytes[index++];
-            const validSecond = continuation(second) && (first !== 0xe0 || second >= 0xa0)
-              && (first !== 0xed || second <= 0x9f);
-            if (validSecond && continuation(third)) {
-              append(((first & 0x0f) << 12) | ((second & 0x3f) << 6) | (third & 0x3f)); continue;
-            }
-          } else if (first >= 0xf0 && first <= 0xf4 && index + 2 < bytes.length) {
-            const second = bytes[index++], third = bytes[index++], fourth = bytes[index++];
-            const validSecond = continuation(second) && (first !== 0xf0 || second >= 0x90)
-              && (first !== 0xf4 || second <= 0x8f);
-            if (validSecond && continuation(third) && continuation(fourth)) {
-              append(((first & 0x07) << 18) | ((second & 0x3f) << 12)
-                | ((third & 0x3f) << 6) | (fourth & 0x3f)); continue;
-            }
-          }
-          throw error("Invalid UTF-8", "InvalidData");
-        }
-        if (codePoints.length) output += String.fromCodePoint(...codePoints);
-        return output;
-      };
-      const encodeUtf8 = value => {
-        const output = [];
-        for (const character of value) {
-          const point = character.codePointAt(0);
-          if (point <= 0x7f) output.push(point);
-          else if (point <= 0x7ff) output.push(0xc0 | (point >> 6), 0x80 | (point & 0x3f));
-          else if (point <= 0xffff) output.push(0xe0 | (point >> 12),
-            0x80 | ((point >> 6) & 0x3f), 0x80 | (point & 0x3f));
-          else output.push(0xf0 | (point >> 18), 0x80 | ((point >> 12) & 0x3f),
-            0x80 | ((point >> 6) & 0x3f), 0x80 | (point & 0x3f));
-        }
-        return new Uint8Array(output);
-      };
-      const readFile = (url, encoding) => new Promise((resolve, reject) => {
-        if (typeof url !== "string" || (encoding !== undefined && encoding !== "utf8")) {
-          return reject(error("Invalid mount URI or encoding", "InvalidRequest"));
-        }
-        readFileNative(url, 4 * 1024 * 1024, resolve, reject);
-      }).then(bytes => {
-        const value = new Uint8Array(bytes);
-        return encoding === "utf8" ? decodeUtf8(value) : value;
-      });
-      const mutateMount = (kind, first, second = null) => new Promise((resolve, reject) => {
-        if (typeof first !== "string") return reject(error("Invalid mount URI", "InvalidRequest"));
-        mountOperationNative(kind, first, second, resolve, reject);
-      });
-      const writeFile = (url, data) => {
-        let bytes;
-        if (typeof data === "string") bytes = encodeUtf8(data);
-        else if (data instanceof Uint8Array) bytes = data;
-        else return Promise.reject(error("Expected string or Uint8Array", "InvalidRequest"));
-        return mutateMount(11, url, Array.from(bytes));
-      };
-      const mkdir = url => mutateMount(12, url);
-      const removeFile = url => mutateMount(13, url);
-      const removeDirectory = url => mutateMount(14, url);
-      const rename = (from, to) => {
-        if (typeof to !== "string") return Promise.reject(error("Invalid mount URI", "InvalidRequest"));
-        return mutateMount(15, from, to);
-      };
-      Object.defineProperty(globalThis, "Zintl", {
-        value:Object.freeze({
-          invoke, sleep, readFile, writeFile, mkdir, removeFile, removeDirectory, rename
-        }), configurable:false
-      });
-      const formatConsoleValue = value => {
-        if (typeof value === "string") return value;
-        try { const encoded = JSON.stringify(value); if (encoded !== undefined) return encoded; } catch (_) {}
-        try { return String(value); } catch (_) { return "<unprintable>"; }
-      };
-      const emitConsole = (...values) => consoleNative(values.map(formatConsoleValue).join(" "));
-      Object.defineProperty(globalThis, "console", {value:Object.freeze({
-        debug:emitConsole, log:emitConsole, info:emitConsole, warn:emitConsole, error:emitConsole
-      }), configurable:false});
-      const encode = value => JSON.stringify(value instanceof Uint8Array
-        ? {type:"bytes", value:Array.from(value)} : {type:"value", value:value === undefined ? null : value});
-      const evaluate = (id, source) => {
-        let result; try { result = (0, eval)(source); } catch (e) { evaluationDone(id, false, `${e.name}: ${e.message}`); return; }
-        Promise.resolve(result).then(value => evaluationDone(id, true, encode(value)),
-          e => evaluationDone(id, false, `${e?.name ?? "Error"}: ${e?.message ?? e}`));
-      };
-      return Object.freeze({evaluate});
-    })()
-    """#
 }
 
 private func engine(_ pointer: UnsafeMutableRawPointer?) -> JSCFFIEngine? {
@@ -629,8 +494,14 @@ public func zjscEngineNew(
 }
 
 @_cdecl("zjsc_engine_start")
-public func zjscEngineStart(_ pointer: UnsafeMutableRawPointer?) -> UInt32 {
-  engine(pointer)?.start() ?? invalidArgument
+public func zjscEngineStart(
+  _ pointer: UnsafeMutableRawPointer?, _ script: UnsafePointer<UInt8>?, _ length: Int
+) -> UInt32 {
+  guard let engine = engine(pointer), let script, length > 0,
+    let bootstrap = String(
+      bytes: UnsafeBufferPointer(start: script, count: length), encoding: .utf8)
+  else { return invalidArgument }
+  return engine.start(bootstrap: bootstrap)
 }
 
 @_cdecl("zjsc_engine_submit")

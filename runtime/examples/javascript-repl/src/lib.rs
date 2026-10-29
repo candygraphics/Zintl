@@ -23,7 +23,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
-use zintl_host::{ZjsHost, ZjsHostBuilder};
+use zintl_host::{DriveBudget, ZjsHost, ZjsHostBuilder};
 use zintl_io_mounts::{
     BoundaryResolve, DirResolve, MountConfig, MountError, MountService, Source as MountSource,
     SymlinkPolicy,
@@ -210,7 +210,7 @@ impl IoMessageHandler<IoMessage> for IoHandler {
                 let completion = match result {
                     Ok(IoValue::Unit) => HostCompletion::Unit,
                     Ok(IoValue::Bytes(bytes)) => HostCompletion::Bytes(bytes),
-                    Err(error) => HostCompletion::Failed(mount_failure(error)),
+                    Err(error) => HostCompletion::Failed(mount_failure(&error)),
                 };
                 let _ = self.main_sender.send(MainMessage::IoCompleted {
                     request_id,
@@ -254,7 +254,7 @@ fn run_mount_request(
     }
 }
 
-fn mount_failure(error: MountError) -> HostFailure {
+fn mount_failure(error: &MountError) -> HostFailure {
     let (code, message) = match error {
         MountError::MalformedUri
         | MountError::EmptyMountName
@@ -305,6 +305,12 @@ struct MainHandler {
 }
 
 impl MainHandler {
+    /// Work drained per engine wake-up before yielding to other messages.
+    const DRIVE_BUDGET: DriveBudget = match DriveBudget::new(64, 4 * 1024 * 1024) {
+        Ok(budget) => budget,
+        Err(_) => panic!("drive budget limits are nonzero"),
+    };
+
     fn send_io(&self, message: IoMessage) -> io::Result<()> {
         self.io_sender
             .lock()
@@ -319,7 +325,7 @@ impl MainHandler {
         let Some(js) = self.js.as_mut() else {
             return Ok(());
         };
-        let turn = js.drain_events(64, 4 * 1024 * 1024).map_err(engine_io)?;
+        let turn = js.drain_events(Self::DRIVE_BUDGET).map_err(engine_io)?;
         while let Some(event) = self.js.as_mut().and_then(ZjsHost::next_event) {
             match event {
                 EngineEvent::EvaluationSettled { outcome, .. } => {
@@ -391,11 +397,20 @@ impl MainHandler {
             .next_evaluation
             .checked_add(1)
             .ok_or_else(|| io::Error::other("evaluation IDs exhausted"))?;
-        self.js
+        let submitted = self
+            .js
             .as_mut()
             .ok_or_else(|| io::Error::other("JavaScript host unavailable"))?
-            .evaluate(EvaluationRequest { id, source })
-            .map_err(engine_io)?;
+            .evaluate(EvaluationRequest { id, source });
+        // A rejected submission is reported without ending the session.
+        if let Err(error) = submitted {
+            eprintln!("error: {error}");
+            if self.interactive {
+                print!("js> ");
+                io::stdout().flush()?;
+            }
+            return Ok(());
+        }
         self.pending_evaluations += 1;
         Ok(())
     }
@@ -588,6 +603,14 @@ pub fn run() -> Result<(), ReplError> {
         .name("zintl-io-loop".into())
         .spawn(move || io_loop.run())?;
     let main_result = main_loop.run();
+    // The main loop can fail before sending `Stop`; stop IO so the join below returns.
+    if let Some(io_sender) = io_slot
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take()
+    {
+        let _ = io_sender.send(IoMessage::Stop);
+    }
     let io_result = io_thread
         .join()
         .map_err(|_| io::Error::other("IO loop panicked"))?;
@@ -682,11 +705,11 @@ mod tests {
     #[test]
     // Verifies mount failures retain useful detail without exposing a native path.
     fn sanitizes_mount_failure_for_javascript() {
-        let failure = mount_failure(MountError::MountNotFound);
+        let failure = mount_failure(&MountError::MountNotFound);
         assert_eq!(failure.code, HostErrorCode::InvalidRequest);
         assert_eq!(failure.message, "Mount not found");
 
-        let failure = mount_failure(MountError::BoundaryViolation);
+        let failure = mount_failure(&MountError::BoundaryViolation);
         assert_eq!(failure.code, HostErrorCode::PermissionDenied);
         assert_eq!(
             failure.message,
