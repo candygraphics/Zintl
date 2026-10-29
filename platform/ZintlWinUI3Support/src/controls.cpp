@@ -23,6 +23,16 @@ struct ControlState {
   double x{};
   double y{};
   std::string navigation_id;
+  /* An offset waiting until the scroll viewer can reach it. */
+  bool scroll_pending{};
+
+  /* Applies a pending offset once the extent allows it. */
+  void apply_pending_scroll(ScrollViewer const& scroll) {
+    if (!scroll_pending || !scroll.IsLoaded()) return;
+    if (scroll.ScrollableWidth() < x - 0.5 || scroll.ScrollableHeight() < y - 0.5) return;
+    scroll_pending = false;
+    scroll.ChangeView(Windows::Foundation::IReference<double>(x), Windows::Foundation::IReference<double>(y), nullptr, true);
+  }
 
   void emit(zpd_winui3_event const& event) const {
     if (invoke && callback.data) invoke(callback.data, &event);
@@ -364,6 +374,15 @@ FrameworkElement make_control(ControlElement*& element, int32_t kind) {
       scroll.Content(document);
       element = new ControlElement(kind, scroll);
       element->document = document;
+      // A restored offset waits until the viewer is loaded and measured.
+      scroll.Loaded([state = weak(element)](IInspectable const& sender, RoutedEventArgs const&) {
+        if (auto locked = state.lock()) locked->apply_pending_scroll(sender.as<ScrollViewer>());
+      });
+      document.SizeChanged([state = weak(element), scroll = make_weak(scroll)](IInspectable const&, SizeChangedEventArgs const&) {
+        auto locked = state.lock();
+        auto viewer = scroll.get();
+        if (locked && viewer) locked->apply_pending_scroll(viewer);
+      });
       scroll.ViewChanged([state = weak(element)](IInspectable const& sender, ScrollViewerViewChangedEventArgs const& args) {
         auto locked = state.lock();
         if (!locked || args.IsIntermediate()) return;
@@ -799,7 +818,8 @@ int32_t zpd_winui3_scroll_viewer_scroll_to(zpd_winui3_element* target, double x,
     auto element = control(target);
     element->state->x = x;
     element->state->y = y;
-    element->value.as<ScrollViewer>().ChangeView(Windows::Foundation::IReference<double>(x), Windows::Foundation::IReference<double>(y), nullptr, true);
+    element->state->scroll_pending = true;
+    element->state->apply_pending_scroll(element->value.as<ScrollViewer>());
   });
 }
 

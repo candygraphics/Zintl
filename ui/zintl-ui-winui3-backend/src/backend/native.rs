@@ -116,24 +116,47 @@ impl NativeNode {
         self.control.kind() == Self::control_kind(kind)
     }
 
-    /// Raises declared minimums to the sizes WinUI templates need.
+    /// Raises declared minimums to the sizes compact WinUI templates need.
+    ///
+    /// Declared sizes follow AppKit's 13-point system font, which is narrower
+    /// than WinUI's 14-pixel Segoe UI.
     pub(super) fn minimum_size(kind: &ViewKind, declared: Size) -> Size {
+        let text = |value: &str| value.chars().count() as f32 * Self::CHARACTER_WIDTH;
+        let longest = |items: &[String]| items.iter().map(|item| text(item)).fold(0.0, f32::max);
         let (width, height) = match kind {
-            ViewKind::Button(button) if button.bezel == Some(BezelStyle::Help) => (32.0, 32.0),
-            ViewKind::Button(_)
-            | ViewKind::TextField { editable: true, .. }
+            ViewKind::Button(button) if button.bezel == Some(BezelStyle::Help) => (28.0, 28.0),
+            ViewKind::Button(button) => {
+                let icon = if button.system_image.is_some() {
+                    24.0
+                } else {
+                    0.0
+                };
+                (text(&button.title) + icon + 24.0, 28.0)
+            }
+            ViewKind::TextField {
+                editable: false,
+                value,
+                multiline: false,
+                ..
+            } => (text(value) + 8.0, 20.0),
+            ViewKind::TextField { editable: true, .. }
             | ViewKind::Slider { .. }
-            | ViewKind::PopUpButton { .. }
             | ViewKind::ComboBox { .. }
-            | ViewKind::SearchField { .. } => (0.0, 32.0),
-            ViewKind::NumberField { .. } => (100.0, 32.0),
-            ViewKind::Switch { .. } => (44.0, 32.0),
-            ViewKind::ColorWell { .. } => (44.0, 32.0),
-            ViewKind::SegmentedControl { segments, .. } => (segments.len() as f32 * 64.0, 40.0),
+            | ViewKind::SearchField { .. } => (0.0, 28.0),
+            ViewKind::PopUpButton { items, .. } => (longest(items) + 64.0, 28.0),
+            ViewKind::NumberField { .. } => (100.0, 28.0),
+            ViewKind::Switch { .. } | ViewKind::ColorWell { .. } => (44.0, 28.0),
+            ViewKind::SegmentedControl { segments, .. } => (
+                segments.iter().map(|segment| text(segment) + 28.0).sum(),
+                40.0,
+            ),
             _ => (0.0, 0.0),
         };
         Size::new(declared.width.max(width), declared.height.max(height))
     }
+
+    /// The average Segoe UI glyph width at 14 pixels.
+    const CHARACTER_WIDTH: f32 = 8.0;
 
     /// Creates a control, applies every property of `kind`, and routes its events.
     pub(super) fn create(

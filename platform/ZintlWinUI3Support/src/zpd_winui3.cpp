@@ -36,7 +36,6 @@ Windows::System::VirtualKey key_from(zpd_winui3_string key) {
     char character = static_cast<char>(std::toupper(static_cast<unsigned char>(value[0])));
     if (character >= 'A' && character <= 'Z') return static_cast<Windows::System::VirtualKey>(character);
     if (character >= '0' && character <= '9') return static_cast<Windows::System::VirtualKey>(character);
-    if (character == ',') return static_cast<Windows::System::VirtualKey>(VK_OEM_COMMA);
   }
   if (value == "enter") return Windows::System::VirtualKey::Enter;
   if (value == "escape") return Windows::System::VirtualKey::Escape;
@@ -228,6 +227,13 @@ struct NativeApplication : ApplicationT<NativeApplication, IXamlMetadataProvider
   NativeApplication() {
     Hosting::WindowsXamlManager::InitializeForCurrentThread();
     Resources().MergedDictionaries().Append(XamlControlsResources());
+    // Compact density keeps control heights close to the declared desktop metrics.
+    try {
+      ResourceDictionary compact;
+      compact.Source(Windows::Foundation::Uri(L"ms-appx:///Microsoft.UI.Xaml/DensityStyles/Compact.xaml"));
+      Resources().MergedDictionaries().Append(compact);
+    } catch (...) {
+    }
   }
 
   void OnLaunched(LaunchActivatedEventArgs const&) {
@@ -310,6 +316,10 @@ int32_t zpd_winui3_application_run(const void* data, zpd_winui3_launch_fn launch
 zpd_winui3_dispatcher* zpd_winui3_app_dispatcher(const zpd_winui3_app_context* context) {
   if (!context) return nullptr;
   return create<zpd_winui3_dispatcher>([&] { return new zpd_winui3_dispatcher{context->queue}; });
+}
+
+zpd_winui3_string zpd_winui3_last_error() {
+  return {reinterpret_cast<uint8_t const*>(last_error.data()), last_error.size()};
 }
 
 int32_t zpd_winui3_application_exit() {
@@ -443,7 +453,9 @@ int32_t zpd_winui3_window_move_and_resize(zpd_winui3_window* window, double x, d
   return status([&] {
     double scale = GetDpiForWindow(window->hwnd()) / 96.0;
     auto pixels = [scale](double value) { return static_cast<int32_t>(value * scale + 0.5); };
-    window->window.AppWindow().MoveAndResize({pixels(x), pixels(y), pixels(width), pixels(height)});
+    // Declared bounds describe the content area, as on macOS.
+    window->window.AppWindow().Move({pixels(x), pixels(y)});
+    window->window.AppWindow().ResizeClient({pixels(width), pixels(height)});
   });
 }
 

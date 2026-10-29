@@ -209,8 +209,10 @@ fn editing_roles_and_shortcuts_map_to_native_values() {
     copy.modifiers = vec![CommandModifier::Cmd, CommandModifier::Shift];
     let mut arrow = command("Next", "next");
     arrow.key = Some("\u{F703}".into());
+    let mut settings = command("Settings", "settings");
+    settings.key = Some(",".into());
 
-    let items = Menus::items(&[copy, arrow]);
+    let items = Menus::items(&[copy, arrow, settings]);
 
     let MenuFlyoutItemBase::Item(copy) = &items[0] else {
         panic!("Copy must be an item");
@@ -223,13 +225,17 @@ fn editing_roles_and_shortcuts_map_to_native_values() {
         accelerator.modifiers,
         VirtualKeyModifiers::CONTROL | VirtualKeyModifiers::SHIFT
     );
-    let MenuFlyoutItemBase::Item(arrow) = &items[1] else {
-        panic!("Next must be an item");
-    };
-    assert!(
-        arrow.keyboard_accelerator.is_none(),
-        "unsupported keys are dropped"
-    );
+    // WinUI crashes when a menu shows an OEM-key accelerator, so these are dropped.
+    for item in &items[1..] {
+        let MenuFlyoutItemBase::Item(item) = item else {
+            panic!("shortcut items must be kept");
+        };
+        assert!(
+            item.keyboard_accelerator.is_none(),
+            "{} keeps no shortcut",
+            item.text
+        );
+    }
 }
 
 #[test]
@@ -360,7 +366,7 @@ fn control_minimums_fit_winui_templates() {
     let switch = ViewKind::Switch { on: false };
     assert_eq!(
         NativeNode::minimum_size(&switch, Size::new(38.0, 22.0)),
-        Size::new(44.0, 32.0)
+        Size::new(44.0, 28.0)
     );
     assert_eq!(
         NativeNode::minimum_size(&ViewKind::Container, Size::new(10.0, 10.0)),

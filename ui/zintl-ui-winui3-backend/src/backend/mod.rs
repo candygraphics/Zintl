@@ -38,7 +38,11 @@ const POPOVER_PADDING: f32 = 12.0;
 #[derive(Debug)]
 pub enum AppError {
     Application(ApplicationCreateError),
-    WinUI(zpd_winui3::Error),
+    /// A native call failed; `message` is the description WinUI gave.
+    WinUI {
+        error: zpd_winui3::Error,
+        message: String,
+    },
     Layout(LayoutError),
     MessageLoop(MessageLoopError),
     NoWindow,
@@ -49,7 +53,8 @@ impl fmt::Display for AppError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Application(error) => error.fmt(formatter),
-            Self::WinUI(error) => error.fmt(formatter),
+            Self::WinUI { error, message } if message.is_empty() => error.fmt(formatter),
+            Self::WinUI { error, message } => write!(formatter, "{error}: {message}"),
             Self::Layout(error) => error.fmt(formatter),
             Self::MessageLoop(error) => error.fmt(formatter),
             Self::NoWindow => formatter.write_str("the rendered tree does not contain a window"),
@@ -62,7 +67,7 @@ impl Error for AppError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Application(error) => Some(error),
-            Self::WinUI(error) => Some(error),
+            Self::WinUI { error, .. } => Some(error),
             Self::Layout(error) => Some(error),
             Self::MessageLoop(error) => Some(error),
             Self::NoWindow | Self::InvalidTree => None,
@@ -72,7 +77,10 @@ impl Error for AppError {
 
 impl From<zpd_winui3::Error> for AppError {
     fn from(error: zpd_winui3::Error) -> Self {
-        Self::WinUI(error)
+        Self::WinUI {
+            error,
+            message: zpd_winui3::Error::last_message(),
+        }
     }
 }
 
@@ -420,8 +428,10 @@ impl<R: AppKitRenderNode> WinUI3Backend<R> {
                     let _ = sender.send(Message::Event { route, event });
                 }
             })?;
-            navigation.set_children(&[state.canvas.as_element()])?;
+            // WinUI moves an element only within one XAML tree, so the
+            // navigation view joins the window before it adopts the canvas.
             state.native.set_content(Some(&navigation))?;
+            navigation.set_children(&[state.canvas.as_element()])?;
             state.navigation = Some(navigation);
         }
         let navigation = state.navigation.as_ref().expect("created above");

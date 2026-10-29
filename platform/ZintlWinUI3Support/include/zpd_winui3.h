@@ -228,6 +228,8 @@ int32_t zpd_winui3_application_run(
     zpd_winui3_release_fn release);
 
 zpd_winui3_dispatcher* zpd_winui3_app_dispatcher(const zpd_winui3_app_context* context);
+/* Describes the last failure on this thread; empty after a success. */
+zpd_winui3_string zpd_winui3_last_error(void);
 int32_t zpd_winui3_application_exit(void);
 
 zpd_winui3_dispatcher* zpd_winui3_dispatcher_clone(const zpd_winui3_dispatcher* dispatcher);
@@ -343,7 +345,7 @@ int32_t zpd_winui3_element_set_context_menu(
 int32_t zpd_winui3_element_clear_context_menu(zpd_winui3_element* element);
 
 zpd_winui3_window* zpd_winui3_window_create_styled(int32_t style);
-/* Moves and resizes the window in device-independent pixels. */
+/* Moves the window and sizes its client area in device-independent pixels. */
 int32_t zpd_winui3_window_move_and_resize(
     zpd_winui3_window* window, double x, double y, double width, double height);
 /* Invokes `invoke` after the user or the app closed the window. */

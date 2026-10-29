@@ -150,6 +150,7 @@ unsafe extern "C" {
         release: ReleaseFn,
     ) -> i32;
     pub fn zpd_winui3_app_dispatcher(context: *const AppContext) -> *mut DispatcherQueue;
+    pub fn zpd_winui3_last_error() -> StringRef;
     pub fn zpd_winui3_application_exit() -> i32;
     pub fn zpd_winui3_dispatcher_clone(dispatcher: *const DispatcherQueue) -> *mut DispatcherQueue;
     pub fn zpd_winui3_dispatcher_release(dispatcher: *mut DispatcherQueue);

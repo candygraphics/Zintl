@@ -39,6 +39,17 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+impl Error {
+    /// Describes the last native failure on the calling thread.
+    ///
+    /// Read it right after an operation fails; later calls replace it.
+    #[must_use]
+    pub fn last_message() -> String {
+        // SAFETY: The thread-local native string stays valid until the next call on this thread.
+        unsafe { string_from_ref(ffi::zpd_winui3_last_error()) }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -420,7 +431,7 @@ impl Window {
         check(unsafe { ffi::zpd_winui3_window_clear_menu_bar(self.raw.as_ptr()) })
     }
 
-    /// Moves and resizes the outer window in device-independent pixels.
+    /// Moves the window and sizes its client area in device-independent pixels.
     pub fn move_and_resize(&self, x: f64, y: f64, width: f64, height: f64) -> Result<()> {
         // SAFETY: The window is live on the UI thread.
         check(unsafe {

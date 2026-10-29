@@ -111,13 +111,15 @@ impl Menus {
         }
     }
 
-    /// Maps a shortcut; Command becomes Control, and unsupported keys are dropped.
+    /// Maps a shortcut; Command becomes Control.
+    ///
+    /// Only letters and digits are kept: WinUI fails while opening a menu
+    /// whose accelerator uses an OEM key such as the comma.
     fn accelerator(item: &CommandItem) -> Option<KeyboardAccelerator> {
         let key = item.key.as_deref()?;
         let mut characters = key.chars();
         let character = characters.next()?;
-        let supported =
-            characters.next().is_none() && (character.is_ascii_alphanumeric() || character == ',');
+        let supported = characters.next().is_none() && character.is_ascii_alphanumeric();
         if !supported {
             return None;
         }
