@@ -61,22 +61,24 @@ private final class JSCFFIEngine: @unchecked Sendable {
       stateLock.unlock()
       return invalidState
     }
+    guard !pendingEvaluations.values.contains(evaluationID) else {
+      stateLock.unlock()
+      return invalidArgument
+    }
     eventLock.lock()
     let terminalCapacityAvailable = terminalEvents.count < maximumEvaluations
     eventLock.unlock()
-    guard terminalCapacityAvailable else {
-      stateLock.unlock()
-      return quotaExceeded
-    }
-    guard pendingEvaluations.insert(evaluationID).inserted,
-      pendingEvaluations.count <= maximumEvaluations
+    guard terminalCapacityAvailable, pendingEvaluations.count < maximumEvaluations,
+      nextEvaluationToken <= maximumSafeInteger
     else {
-      pendingEvaluations.remove(evaluationID)
       stateLock.unlock()
       return quotaExceeded
     }
+    let token = nextEvaluationToken
+    nextEvaluationToken += 1
+    pendingEvaluations[token] = evaluationID
     stateLock.unlock()
-    evaluate(evaluationID: evaluationID, source: source)
+    evaluate(token: token, source: source)
     return ok
   }
 
@@ -129,12 +131,10 @@ private final class JSCFFIEngine: @unchecked Sendable {
 
   func cancel(evaluationID: UInt64) -> UInt32 {
     stateLock.lock()
-    guard pendingEvaluations.contains(evaluationID) else {
-      stateLock.unlock()
-      return invalidArgument
-    }
-    cancelledEvaluations.insert(evaluationID)
+    let token = pendingEvaluations.first { $0.value == evaluationID }?.key
     stateLock.unlock()
+    guard let token else { return invalidArgument }
+    settle(token: token, kind: 3, payload: Data())
     return ok
   }
 
@@ -157,16 +157,20 @@ private final class JSCFFIEngine: @unchecked Sendable {
     stateLock.lock()
     pendingHostIDs.removeAll()
     pendingEvaluations.removeAll()
-    cancelledEvaluations.removeAll()
     stateLock.unlock()
     return ok
   }
 
   private func installCallbacks(in context: JSContext) {
-    typealias EvaluationDone = @convention(block) (Double, Bool, NSString) -> Void
-    let evaluationDone: EvaluationDone = { [weak self] identifier, succeeded, value in
-      self?.finishEvaluation(
-        evaluationID: UInt64(identifier), succeeded: succeeded, value: value as String)
+    typealias EvaluationDone = @convention(block) (Double, NSString) -> Void
+    let evaluationDone: EvaluationDone = { [weak self] token, value in
+      guard let token = self?.exactUInt64(token) else { return }
+      self?.settle(token: token, kind: 1, payload: Data((value as String).utf8))
+    }
+    typealias EvaluationFailed = @convention(block) (Double, NSString, NSString) -> Void
+    let evaluationFailed: EvaluationFailed = { [weak self] token, name, message in
+      guard let token = self?.exactUInt64(token) else { return }
+      self?.fail(token: token, name: name as String, message: message as String)
     }
     typealias Invoke = @convention(block) (NSString, JSValue, JSValue, JSValue) -> Void
     let invoke: Invoke = { [weak self] name, bytes, resolve, reject in
@@ -194,6 +198,7 @@ private final class JSCFFIEngine: @unchecked Sendable {
       self?.emitConsole(message as String)
     }
     context.setObject(evaluationDone, forKeyedSubscript: "__zintlEvaluationDone" as NSString)
+    context.setObject(evaluationFailed, forKeyedSubscript: "__zintlEvaluationFailed" as NSString)
     context.setObject(invoke, forKeyedSubscript: "__zintlInvoke" as NSString)
     context.setObject(sleep, forKeyedSubscript: "__zintlSleep" as NSString)
     context.setObject(readFile, forKeyedSubscript: "__zintlReadFile" as NSString)
@@ -216,49 +221,58 @@ private final class JSCFFIEngine: @unchecked Sendable {
     enqueue(event)
   }
 
-  private func evaluate(evaluationID: UInt64, source: String) {
+  /// Runs the bridge with a private settlement token, never the public evaluation ID.
+  private func evaluate(token: UInt64, source: String) {
     guard let bridge, !shuttingDown else {
-      finishEvaluation(
-        evaluationID: evaluationID, succeeded: false, value: "Error: Runtime is shutting down")
+      fail(token: token, name: "Error", message: "Runtime is shutting down")
       return
     }
-    _ = bridge.invokeMethod("evaluate", withArguments: [Double(evaluationID), source])
-    if let exception = context?.exception {
+    _ = bridge.invokeMethod("evaluate", withArguments: [Double(token), source])
+    if context?.exception != nil {
       context?.exception = nil
-      finishEvaluation(
-        evaluationID: evaluationID, succeeded: false,
-        value: "Error: \(exception.toString() ?? "JavaScript evaluation failed")")
+      fail(token: token, name: "Error", message: "JavaScript evaluation failed")
     }
   }
 
-  private func finishEvaluation(evaluationID: UInt64, succeeded: Bool, value: String) {
-    stateLock.lock()
-    let wasPending = pendingEvaluations.remove(evaluationID) != nil
-    let cancelled = cancelledEvaluations.remove(evaluationID) != nil
-    stateLock.unlock()
-    guard wasPending else { return }
+  private func fail(token: UInt64, name: String, message: String) {
+    settle(token: token, kind: 2, payload: exceptionPayload(name: name, message: message))
+  }
+
+  private func exceptionPayload(name: String, message: String) -> Data {
+    let name = name.utf8.count <= Int(UInt16.max) ? name : "Error"
     var payload = Data()
-    payload.append(contentsOf: [0x5A, 0x4A, 0x45, 0x31])
-    appendUInt16(1, to: &payload)
-    appendUInt16(cancelled ? 3 : (succeeded ? 1 : 2), to: &payload)
-    appendUInt64(evaluationID, to: &payload)
-    let bytes = Data(value.utf8)
-    appendUInt32(UInt32(bytes.count), to: &payload)
-    payload.append(bytes)
-    if !enqueue(payload) {
-      var fallback = Data()
-      fallback.append(contentsOf: [0x5A, 0x4A, 0x45, 0x31])
-      appendUInt16(1, to: &fallback)
-      appendUInt16(2, to: &fallback)
-      appendUInt64(evaluationID, to: &fallback)
-      let message = Data("QuotaExceeded: Engine event queue exhausted".utf8)
-      appendUInt32(UInt32(message.count), to: &fallback)
-      fallback.append(message)
+    appendUInt16(UInt16(name.utf8.count), to: &payload)
+    payload.append(Data(name.utf8))
+    payload.append(Data(message.utf8))
+    return payload
+  }
+
+  /// Emits one settlement event for `token`; stale tokens are ignored.
+  private func settle(token: UInt64, kind: UInt16, payload: Data) {
+    stateLock.lock()
+    let evaluationID = pendingEvaluations.removeValue(forKey: token)
+    stateLock.unlock()
+    guard let evaluationID else { return }
+    if !enqueue(evaluationEvent(kind: kind, evaluationID: evaluationID, payload: payload)) {
+      let fallback = evaluationEvent(
+        kind: 2, evaluationID: evaluationID,
+        payload: exceptionPayload(name: "QuotaExceeded", message: "Engine event queue exhausted"))
       eventLock.lock()
       if terminalEvents.count < maximumEvaluations { terminalEvents.append(fallback) }
       eventLock.unlock()
       notify?(userData)
     }
+  }
+
+  private func evaluationEvent(kind: UInt16, evaluationID: UInt64, payload: Data) -> Data {
+    var event = Data()
+    event.append(contentsOf: [0x5A, 0x4A, 0x45, 0x31])
+    appendUInt16(1, to: &event)
+    appendUInt16(kind, to: &event)
+    appendUInt64(evaluationID, to: &event)
+    appendUInt32(UInt32(payload.count), to: &event)
+    event.append(payload)
+    return event
   }
 
   private func submitInvoke(name: String, bytes: JSValue, resolve: JSValue, reject: JSValue) {
@@ -366,8 +380,7 @@ private final class JSCFFIEngine: @unchecked Sendable {
     }
   }
 
-  private func finishHostRequest(requestID: UInt64, kind: UInt32, objectID _: UInt64, payload: Data)
-  {
+  private func finishHostRequest(requestID: UInt64, kind: UInt32, objectID: UInt64, payload: Data) {
     stateLock.lock()
     pendingHostIDs.remove(requestID)
     stateLock.unlock()
@@ -377,6 +390,17 @@ private final class JSCFFIEngine: @unchecked Sendable {
       _ = promise.resolve.call(withArguments: [])
     case 1:
       _ = promise.resolve.call(withArguments: [Array(payload)])
+    case 2, 3:
+      // Completion kinds 2 and 3 carry Directory and File objects; the shim brands them 1 and 2.
+      guard let context,
+        let object = rtjsc_host_object_make(
+          context.jsGlobalContextRef, runtimeID, objectID, kind - 1),
+        let value = JSValue(jsValueRef: object, in: context)
+      else {
+        rejectNow(promise.reject, "Host operation failed", code: "OperationFailed")
+        return
+      }
+      _ = promise.resolve.call(withArguments: [value])
     default:
       let fallbackCode = "OperationFailed"
       let fallbackMessage = "Host operation failed"
@@ -476,131 +500,283 @@ private final class JSCFFIEngine: @unchecked Sendable {
   private var bridge: JSValue?
   private var promises: [UInt64: PendingPromise] = [:]
   private var pendingHostIDs = Set<UInt64>()
-  private var pendingEvaluations = Set<UInt64>()
-  private var cancelledEvaluations = Set<UInt64>()
+  /// Maps private settlement tokens to public evaluation IDs.
+  private var pendingEvaluations: [UInt64: UInt64] = [:]
+  private var nextEvaluationToken: UInt64 = 1
   private var nextHostID: UInt64 = 1
   private var shuttingDown = false
   private var events: [Data] = []
   private var terminalEvents: [Data] = []
   private var queuedEventBytes = 0
 
+  // Keep identical to crates/runtime-v8/src/bootstrap.js.
   private static let bootstrap = #"""
     (() => {
       "use strict";
       const evaluationDone = globalThis.__zintlEvaluationDone;
+      const evaluationFailed = globalThis.__zintlEvaluationFailed;
       const invokeNative = globalThis.__zintlInvoke;
       const sleepNative = globalThis.__zintlSleep;
       const readFileNative = globalThis.__zintlReadFile;
       const mountOperationNative = globalThis.__zintlMountOperation;
       const consoleNative = globalThis.__zintlConsole;
-      for (const name of ["__zintlEvaluationDone", "__zintlInvoke", "__zintlSleep",
-        "__zintlReadFile", "__zintlMountOperation", "__zintlConsole"]) delete globalThis[name];
-      const error = (message, code) => Object.assign(new Error(message), { code });
-      const invoke = (name, input = new Uint8Array()) => new Promise((resolve, reject) => {
-        if (typeof name !== "string" || !(input instanceof Uint8Array)) return reject(error("Invalid input", "InvalidRequest"));
-        invokeNative(name, Array.from(input), resolve, reject);
-      }).then(bytes => new Uint8Array(bytes));
-      const sleep = ms => new Promise((resolve, reject) => sleepNative(ms, resolve, reject));
-      const decodeUtf8 = bytes => {
+      for (const name of [
+        "__zintlEvaluationDone",
+        "__zintlEvaluationFailed",
+        "__zintlInvoke",
+        "__zintlSleep",
+        "__zintlReadFile",
+        "__zintlMountOperation",
+        "__zintlConsole",
+      ]) delete globalThis[name];
+
+      // Captured intrinsics keep the bridge working after user code replaces globals.
+      const PromiseConstructor = Promise;
+      const promiseThen = PromiseConstructor.prototype.then;
+      const apply = Reflect.apply;
+      const indirectEval = eval;
+      const stringify = JSON.stringify;
+      const arrayFrom = Array.from;
+      const ByteArray = Uint8Array;
+      const ErrorConstructor = Error;
+      const toString = String;
+      const fromCodePoint = String.fromCodePoint;
+      const assign = Object.assign;
+      const freeze = Object.freeze;
+      const defineProperty = Object.defineProperty;
+
+      const newPromise = (executor) => new PromiseConstructor(executor);
+      const then = (promise, onFulfilled, onRejected) =>
+        apply(promiseThen, promise, [onFulfilled, onRejected]);
+      const error = (message, code) => assign(new ErrorConstructor(message), { code });
+      const invoke = (name, input = new ByteArray()) =>
+        then(
+          newPromise((resolve, reject) => {
+            if (typeof name !== "string" || !(input instanceof ByteArray)) {
+              return reject(error("Invalid input", "InvalidRequest"));
+            }
+            invokeNative(name, arrayFrom(input), resolve, reject);
+          }),
+          (bytes) => new ByteArray(bytes),
+        );
+      const sleep = (ms) =>
+        newPromise((resolve, reject) => sleepNative(ms, resolve, reject));
+
+      const decodeUtf8 = (bytes) => {
         let output = "";
         let codePoints = [];
-        const append = value => {
+        const append = (value) => {
           codePoints.push(value);
           if (codePoints.length === 1024) {
-            output += String.fromCodePoint(...codePoints);
+            output += apply(fromCodePoint, undefined, codePoints);
             codePoints = [];
           }
         };
-        const continuation = value => (value & 0xc0) === 0x80;
-        for (let index = 0; index < bytes.length;) {
+        const continuation = (value) => (value & 0xc0) === 0x80;
+        for (let index = 0; index < bytes.length; ) {
           const first = bytes[index++];
-          if (first <= 0x7f) { append(first); continue; }
+          if (first <= 0x7f) {
+            append(first);
+            continue;
+          }
           if (first >= 0xc2 && first <= 0xdf && index < bytes.length) {
             const second = bytes[index++];
-            if (continuation(second)) { append(((first & 0x1f) << 6) | (second & 0x3f)); continue; }
+            if (continuation(second)) {
+              append(((first & 0x1f) << 6) | (second & 0x3f));
+              continue;
+            }
           } else if (first >= 0xe0 && first <= 0xef && index + 1 < bytes.length) {
-            const second = bytes[index++], third = bytes[index++];
-            const validSecond = continuation(second) && (first !== 0xe0 || second >= 0xa0)
-              && (first !== 0xed || second <= 0x9f);
+            const second = bytes[index++];
+            const third = bytes[index++];
+            const validSecond =
+              continuation(second) &&
+              (first !== 0xe0 || second >= 0xa0) &&
+              (first !== 0xed || second <= 0x9f);
             if (validSecond && continuation(third)) {
-              append(((first & 0x0f) << 12) | ((second & 0x3f) << 6) | (third & 0x3f)); continue;
+              append(((first & 0x0f) << 12) | ((second & 0x3f) << 6) | (third & 0x3f));
+              continue;
             }
           } else if (first >= 0xf0 && first <= 0xf4 && index + 2 < bytes.length) {
-            const second = bytes[index++], third = bytes[index++], fourth = bytes[index++];
-            const validSecond = continuation(second) && (first !== 0xf0 || second >= 0x90)
-              && (first !== 0xf4 || second <= 0x8f);
+            const second = bytes[index++];
+            const third = bytes[index++];
+            const fourth = bytes[index++];
+            const validSecond =
+              continuation(second) &&
+              (first !== 0xf0 || second >= 0x90) &&
+              (first !== 0xf4 || second <= 0x8f);
             if (validSecond && continuation(third) && continuation(fourth)) {
-              append(((first & 0x07) << 18) | ((second & 0x3f) << 12)
-                | ((third & 0x3f) << 6) | (fourth & 0x3f)); continue;
+              append(
+                ((first & 0x07) << 18) |
+                  ((second & 0x3f) << 12) |
+                  ((third & 0x3f) << 6) |
+                  (fourth & 0x3f),
+              );
+              continue;
             }
           }
           throw error("Invalid UTF-8", "InvalidData");
         }
-        if (codePoints.length) output += String.fromCodePoint(...codePoints);
+        if (codePoints.length) output += apply(fromCodePoint, undefined, codePoints);
         return output;
       };
-      const encodeUtf8 = value => {
+
+      const encodeUtf8 = (value) => {
         const output = [];
         for (const character of value) {
-          const point = character.codePointAt(0);
+          let point = character.codePointAt(0);
+          // Lone surrogates have no UTF-8 form; encode them as U+FFFD like TextEncoder.
+          if (point >= 0xd800 && point <= 0xdfff) point = 0xfffd;
           if (point <= 0x7f) output.push(point);
-          else if (point <= 0x7ff) output.push(0xc0 | (point >> 6), 0x80 | (point & 0x3f));
-          else if (point <= 0xffff) output.push(0xe0 | (point >> 12),
-            0x80 | ((point >> 6) & 0x3f), 0x80 | (point & 0x3f));
-          else output.push(0xf0 | (point >> 18), 0x80 | ((point >> 12) & 0x3f),
-            0x80 | ((point >> 6) & 0x3f), 0x80 | (point & 0x3f));
+          else if (point <= 0x7ff)
+            output.push(0xc0 | (point >> 6), 0x80 | (point & 0x3f));
+          else if (point <= 0xffff)
+            output.push(
+              0xe0 | (point >> 12),
+              0x80 | ((point >> 6) & 0x3f),
+              0x80 | (point & 0x3f),
+            );
+          else
+            output.push(
+              0xf0 | (point >> 18),
+              0x80 | ((point >> 12) & 0x3f),
+              0x80 | ((point >> 6) & 0x3f),
+              0x80 | (point & 0x3f),
+            );
         }
-        return new Uint8Array(output);
+        return new ByteArray(output);
       };
-      const readFile = (url, encoding) => new Promise((resolve, reject) => {
-        if (typeof url !== "string" || (encoding !== undefined && encoding !== "utf8")) {
-          return reject(error("Invalid mount URI or encoding", "InvalidRequest"));
-        }
-        readFileNative(url, 4 * 1024 * 1024, resolve, reject);
-      }).then(bytes => {
-        const value = new Uint8Array(bytes);
-        return encoding === "utf8" ? decodeUtf8(value) : value;
-      });
-      const mutateMount = (kind, first, second = null) => new Promise((resolve, reject) => {
-        if (typeof first !== "string") return reject(error("Invalid mount URI", "InvalidRequest"));
-        mountOperationNative(kind, first, second, resolve, reject);
-      });
+
+      const readFile = (url, encoding) =>
+        then(
+          newPromise((resolve, reject) => {
+            if (typeof url !== "string" || (encoding !== undefined && encoding !== "utf8")) {
+              return reject(error("Invalid mount URI or encoding", "InvalidRequest"));
+            }
+            readFileNative(url, 4 * 1024 * 1024, resolve, reject);
+          }),
+          (bytes) => {
+            const value = new ByteArray(bytes);
+            return encoding === "utf8" ? decodeUtf8(value) : value;
+          },
+        );
+      const mutateMount = (kind, first, second = null) =>
+        newPromise((resolve, reject) => {
+          if (typeof first !== "string") {
+            return reject(error("Invalid mount URI", "InvalidRequest"));
+          }
+          mountOperationNative(kind, first, second, resolve, reject);
+        });
+      const rejected = (reason) => newPromise((_, reject) => reject(reason));
       const writeFile = (url, data) => {
         let bytes;
         if (typeof data === "string") bytes = encodeUtf8(data);
-        else if (data instanceof Uint8Array) bytes = data;
-        else return Promise.reject(error("Expected string or Uint8Array", "InvalidRequest"));
-        return mutateMount(11, url, Array.from(bytes));
+        else if (data instanceof ByteArray) bytes = data;
+        else return rejected(error("Expected string or Uint8Array", "InvalidRequest"));
+        return mutateMount(11, url, arrayFrom(bytes));
       };
-      const mkdir = url => mutateMount(12, url);
-      const removeFile = url => mutateMount(13, url);
-      const removeDirectory = url => mutateMount(14, url);
+      const mkdir = (url) => mutateMount(12, url);
+      const removeFile = (url) => mutateMount(13, url);
+      const removeDirectory = (url) => mutateMount(14, url);
       const rename = (from, to) => {
-        if (typeof to !== "string") return Promise.reject(error("Invalid mount URI", "InvalidRequest"));
+        if (typeof to !== "string") {
+          return rejected(error("Invalid mount URI", "InvalidRequest"));
+        }
         return mutateMount(15, from, to);
       };
-      Object.defineProperty(globalThis, "Zintl", {
-        value:Object.freeze({
-          invoke, sleep, readFile, writeFile, mkdir, removeFile, removeDirectory, rename
-        }), configurable:false
+      defineProperty(globalThis, "Zintl", {
+        value: freeze({
+          invoke,
+          sleep,
+          readFile,
+          writeFile,
+          mkdir,
+          removeFile,
+          removeDirectory,
+          rename,
+        }),
+        configurable: false,
       });
-      const formatConsoleValue = value => {
+
+      const formatConsoleValue = (value) => {
         if (typeof value === "string") return value;
-        try { const encoded = JSON.stringify(value); if (encoded !== undefined) return encoded; } catch (_) {}
-        try { return String(value); } catch (_) { return "<unprintable>"; }
+        try {
+          const encoded = stringify(value);
+          if (encoded !== undefined) return encoded;
+        } catch (_) {}
+        try {
+          return toString(value);
+        } catch (_) {
+          return "<unprintable>";
+        }
       };
-      const emitConsole = (...values) => consoleNative(values.map(formatConsoleValue).join(" "));
-      Object.defineProperty(globalThis, "console", {value:Object.freeze({
-        debug:emitConsole, log:emitConsole, info:emitConsole, warn:emitConsole, error:emitConsole
-      }), configurable:false});
-      const encode = value => JSON.stringify(value instanceof Uint8Array
-        ? {type:"bytes", value:Array.from(value)} : {type:"value", value:value === undefined ? null : value});
-      const evaluate = (id, source) => {
-        let result; try { result = (0, eval)(source); } catch (e) { evaluationDone(id, false, `${e.name}: ${e.message}`); return; }
-        Promise.resolve(result).then(value => evaluationDone(id, true, encode(value)),
-          e => evaluationDone(id, false, `${e?.name ?? "Error"}: ${e?.message ?? e}`));
+      const emitConsole = (...values) =>
+        consoleNative(values.map(formatConsoleValue).join(" "));
+      defineProperty(globalThis, "console", {
+        value: freeze({
+          debug: emitConsole,
+          log: emitConsole,
+          info: emitConsole,
+          warn: emitConsole,
+          error: emitConsole,
+        }),
+        configurable: false,
+      });
+
+      const encode = (value) =>
+        stringify(
+          value instanceof ByteArray
+            ? { type: "bytes", value: arrayFrom(value) }
+            : { type: "value", value: value === undefined ? null : value },
+        );
+      // Reads `name` and `message` without letting a hostile thrown value escape.
+      const describe = (exception) => {
+        try {
+          if (
+            exception !== null &&
+            (typeof exception === "object" || typeof exception === "function")
+          ) {
+            const name = exception.name;
+            const message = exception.message;
+            return {
+              name: typeof name === "string" ? name : "Error",
+              message: typeof message === "string" ? message : toString(exception),
+            };
+          }
+          return { name: "Error", message: toString(exception) };
+        } catch (_) {
+          return { name: "Error", message: "Uncaught exception" };
+        }
       };
-      return Object.freeze({evaluate});
+      const fail = (token, exception) => {
+        const { name, message } = describe(exception);
+        evaluationFailed(token, name, message);
+      };
+      const succeed = (token, value) => {
+        let encoded;
+        try {
+          encoded = encode(value);
+        } catch (exception) {
+          fail(token, exception);
+          return;
+        }
+        evaluationDone(token, encoded);
+      };
+      // `token` is a backend-private settlement key, not the public evaluation ID.
+      const evaluate = (token, source) => {
+        let result;
+        try {
+          result = indirectEval(source);
+        } catch (exception) {
+          fail(token, exception);
+          return;
+        }
+        then(
+          newPromise((resolve) => resolve(result)),
+          (value) => succeed(token, value),
+          (exception) => fail(token, exception),
+        );
+      };
+      return freeze({ evaluate });
     })()
     """#
 }

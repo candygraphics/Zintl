@@ -1,6 +1,7 @@
 (() => {
   "use strict";
   const evaluationDone = globalThis.__zintlEvaluationDone;
+  const evaluationFailed = globalThis.__zintlEvaluationFailed;
   const invokeNative = globalThis.__zintlInvoke;
   const sleepNative = globalThis.__zintlSleep;
   const readFileNative = globalThis.__zintlReadFile;
@@ -8,6 +9,7 @@
   const consoleNative = globalThis.__zintlConsole;
   for (const name of [
     "__zintlEvaluationDone",
+    "__zintlEvaluationFailed",
     "__zintlInvoke",
     "__zintlSleep",
     "__zintlReadFile",
@@ -15,16 +17,37 @@
     "__zintlConsole",
   ]) delete globalThis[name];
 
-  const error = (message, code) => Object.assign(new Error(message), { code });
-  const invoke = (name, input = new Uint8Array()) =>
-    new Promise((resolve, reject) => {
-      if (typeof name !== "string" || !(input instanceof Uint8Array)) {
-        return reject(error("Invalid input", "InvalidRequest"));
-      }
-      invokeNative(name, Array.from(input), resolve, reject);
-    }).then((bytes) => new Uint8Array(bytes));
+  // Captured intrinsics keep the bridge working after user code replaces globals.
+  const PromiseConstructor = Promise;
+  const promiseThen = PromiseConstructor.prototype.then;
+  const apply = Reflect.apply;
+  const indirectEval = eval;
+  const stringify = JSON.stringify;
+  const arrayFrom = Array.from;
+  const ByteArray = Uint8Array;
+  const ErrorConstructor = Error;
+  const toString = String;
+  const fromCodePoint = String.fromCodePoint;
+  const assign = Object.assign;
+  const freeze = Object.freeze;
+  const defineProperty = Object.defineProperty;
+
+  const newPromise = (executor) => new PromiseConstructor(executor);
+  const then = (promise, onFulfilled, onRejected) =>
+    apply(promiseThen, promise, [onFulfilled, onRejected]);
+  const error = (message, code) => assign(new ErrorConstructor(message), { code });
+  const invoke = (name, input = new ByteArray()) =>
+    then(
+      newPromise((resolve, reject) => {
+        if (typeof name !== "string" || !(input instanceof ByteArray)) {
+          return reject(error("Invalid input", "InvalidRequest"));
+        }
+        invokeNative(name, arrayFrom(input), resolve, reject);
+      }),
+      (bytes) => new ByteArray(bytes),
+    );
   const sleep = (ms) =>
-    new Promise((resolve, reject) => sleepNative(ms, resolve, reject));
+    newPromise((resolve, reject) => sleepNative(ms, resolve, reject));
 
   const decodeUtf8 = (bytes) => {
     let output = "";
@@ -32,7 +55,7 @@
     const append = (value) => {
       codePoints.push(value);
       if (codePoints.length === 1024) {
-        output += String.fromCodePoint(...codePoints);
+        output += apply(fromCodePoint, undefined, codePoints);
         codePoints = [];
       }
     };
@@ -80,14 +103,16 @@
       }
       throw error("Invalid UTF-8", "InvalidData");
     }
-    if (codePoints.length) output += String.fromCodePoint(...codePoints);
+    if (codePoints.length) output += apply(fromCodePoint, undefined, codePoints);
     return output;
   };
 
   const encodeUtf8 = (value) => {
     const output = [];
     for (const character of value) {
-      const point = character.codePointAt(0);
+      let point = character.codePointAt(0);
+      // Lone surrogates have no UTF-8 form; encode them as U+FFFD like TextEncoder.
+      if (point >= 0xd800 && point <= 0xdfff) point = 0xfffd;
       if (point <= 0x7f) output.push(point);
       else if (point <= 0x7ff)
         output.push(0xc0 | (point >> 6), 0x80 | (point & 0x3f));
@@ -105,44 +130,48 @@
           0x80 | (point & 0x3f),
         );
     }
-    return new Uint8Array(output);
+    return new ByteArray(output);
   };
 
   const readFile = (url, encoding) =>
-    new Promise((resolve, reject) => {
-      if (typeof url !== "string" || (encoding !== undefined && encoding !== "utf8")) {
-        return reject(error("Invalid mount URI or encoding", "InvalidRequest"));
-      }
-      readFileNative(url, 4 * 1024 * 1024, resolve, reject);
-    }).then((bytes) => {
-      const value = new Uint8Array(bytes);
-      return encoding === "utf8" ? decodeUtf8(value) : value;
-    });
+    then(
+      newPromise((resolve, reject) => {
+        if (typeof url !== "string" || (encoding !== undefined && encoding !== "utf8")) {
+          return reject(error("Invalid mount URI or encoding", "InvalidRequest"));
+        }
+        readFileNative(url, 4 * 1024 * 1024, resolve, reject);
+      }),
+      (bytes) => {
+        const value = new ByteArray(bytes);
+        return encoding === "utf8" ? decodeUtf8(value) : value;
+      },
+    );
   const mutateMount = (kind, first, second = null) =>
-    new Promise((resolve, reject) => {
+    newPromise((resolve, reject) => {
       if (typeof first !== "string") {
         return reject(error("Invalid mount URI", "InvalidRequest"));
       }
       mountOperationNative(kind, first, second, resolve, reject);
     });
+  const rejected = (reason) => newPromise((_, reject) => reject(reason));
   const writeFile = (url, data) => {
     let bytes;
     if (typeof data === "string") bytes = encodeUtf8(data);
-    else if (data instanceof Uint8Array) bytes = data;
-    else return Promise.reject(error("Expected string or Uint8Array", "InvalidRequest"));
-    return mutateMount(11, url, Array.from(bytes));
+    else if (data instanceof ByteArray) bytes = data;
+    else return rejected(error("Expected string or Uint8Array", "InvalidRequest"));
+    return mutateMount(11, url, arrayFrom(bytes));
   };
   const mkdir = (url) => mutateMount(12, url);
   const removeFile = (url) => mutateMount(13, url);
   const removeDirectory = (url) => mutateMount(14, url);
   const rename = (from, to) => {
     if (typeof to !== "string") {
-      return Promise.reject(error("Invalid mount URI", "InvalidRequest"));
+      return rejected(error("Invalid mount URI", "InvalidRequest"));
     }
     return mutateMount(15, from, to);
   };
-  Object.defineProperty(globalThis, "Zintl", {
-    value: Object.freeze({
+  defineProperty(globalThis, "Zintl", {
+    value: freeze({
       invoke,
       sleep,
       readFile,
@@ -158,19 +187,19 @@
   const formatConsoleValue = (value) => {
     if (typeof value === "string") return value;
     try {
-      const encoded = JSON.stringify(value);
+      const encoded = stringify(value);
       if (encoded !== undefined) return encoded;
     } catch (_) {}
     try {
-      return String(value);
+      return toString(value);
     } catch (_) {
       return "<unprintable>";
     }
   };
   const emitConsole = (...values) =>
     consoleNative(values.map(formatConsoleValue).join(" "));
-  Object.defineProperty(globalThis, "console", {
-    value: Object.freeze({
+  defineProperty(globalThis, "console", {
+    value: freeze({
       debug: emitConsole,
       log: emitConsole,
       info: emitConsole,
@@ -181,28 +210,58 @@
   });
 
   const encode = (value) =>
-    JSON.stringify(
-      value instanceof Uint8Array
-        ? { type: "bytes", value: Array.from(value) }
+    stringify(
+      value instanceof ByteArray
+        ? { type: "bytes", value: arrayFrom(value) }
         : { type: "value", value: value === undefined ? null : value },
     );
-  const evaluate = (id, source) => {
-    let result;
+  // Reads `name` and `message` without letting a hostile thrown value escape.
+  const describe = (exception) => {
     try {
-      result = (0, eval)(source);
+      if (
+        exception !== null &&
+        (typeof exception === "object" || typeof exception === "function")
+      ) {
+        const name = exception.name;
+        const message = exception.message;
+        return {
+          name: typeof name === "string" ? name : "Error",
+          message: typeof message === "string" ? message : toString(exception),
+        };
+      }
+      return { name: "Error", message: toString(exception) };
+    } catch (_) {
+      return { name: "Error", message: "Uncaught exception" };
+    }
+  };
+  const fail = (token, exception) => {
+    const { name, message } = describe(exception);
+    evaluationFailed(token, name, message);
+  };
+  const succeed = (token, value) => {
+    let encoded;
+    try {
+      encoded = encode(value);
     } catch (exception) {
-      evaluationDone(id, false, `${exception.name}: ${exception.message}`);
+      fail(token, exception);
       return;
     }
-    Promise.resolve(result).then(
-      (value) => evaluationDone(id, true, encode(value)),
-      (exception) =>
-        evaluationDone(
-          id,
-          false,
-          `${exception?.name ?? "Error"}: ${exception?.message ?? exception}`,
-        ),
+    evaluationDone(token, encoded);
+  };
+  // `token` is a backend-private settlement key, not the public evaluation ID.
+  const evaluate = (token, source) => {
+    let result;
+    try {
+      result = indirectEval(source);
+    } catch (exception) {
+      fail(token, exception);
+      return;
+    }
+    then(
+      newPromise((resolve) => resolve(result)),
+      (value) => succeed(token, value),
+      (exception) => fail(token, exception),
     );
   };
-  return Object.freeze({ evaluate });
+  return freeze({ evaluate });
 })()

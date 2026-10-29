@@ -104,8 +104,11 @@ impl ZjsHost {
 
     /// Moves a bounded number of already-produced engine events into host state.
     ///
+    /// An event larger than `maximum_bytes` is delivered alone in its own turn,
+    /// so the byte budget never drops an event.
+    ///
     /// # Errors
-    /// Rejects zero limits, quota overflow, or malformed backend events.
+    /// Rejects zero limits or malformed backend events.
     pub fn drain_events(
         &mut self,
         maximum_events: usize,
@@ -125,10 +128,7 @@ impl ZjsHost {
                 break;
             };
             let bytes = event.payload_len();
-            if bytes > maximum_bytes {
-                return Err(EngineError::QuotaExceeded);
-            }
-            if turn.payload_bytes > maximum_bytes - bytes {
+            if turn.events > 0 && bytes.saturating_add(turn.payload_bytes) > maximum_bytes {
                 self.deferred = Some(event);
                 turn.has_more = true;
                 break;
@@ -182,6 +182,7 @@ mod tests {
     #[derive(Default)]
     struct TraceBackend {
         trace: Arc<Mutex<Vec<&'static str>>>,
+        events: VecDeque<EngineEvent>,
     }
 
     impl JavaScriptEngineBackend for TraceBackend {
@@ -198,7 +199,7 @@ mod tests {
             Ok(())
         }
         fn next_event(&mut self) -> Result<Option<EngineEvent>, EngineError> {
-            Ok(None)
+            Ok(self.events.pop_front())
         }
         fn complete_host_request(
             &mut self,
@@ -227,6 +228,7 @@ mod tests {
         let trace = Arc::new(Mutex::new(Vec::new()));
         let backend = TraceBackend {
             trace: trace.clone(),
+            events: VecDeque::new(),
         };
         let mut host = ZjsHostBuilder::new(Box::new(backend), Arc::new(NoopNotifier))
             .build()
@@ -242,5 +244,33 @@ mod tests {
             *trace.lock().unwrap(),
             vec!["start", "evaluate", "microtasks", "complete", "microtasks"]
         );
+    }
+
+    #[test]
+    fn oversized_event_is_delivered_alone_instead_of_dropped() {
+        // Verifies an event over the byte budget still reaches the host, one per turn.
+        let console = |text: &str| EngineEvent::ConsoleOutput(text.as_bytes().to_vec());
+        let backend = TraceBackend {
+            events: VecDeque::from([console("small"), console(&"x".repeat(100)), console("tail")]),
+            ..TraceBackend::default()
+        };
+        let mut host = ZjsHostBuilder::new(Box::new(backend), Arc::new(NoopNotifier))
+            .build()
+            .unwrap();
+
+        let turn = host.drain_events(8, 10).unwrap();
+        assert_eq!((turn.events, turn.has_more), (1, true));
+        assert_eq!(host.next_event(), Some(console("small")));
+
+        let turn = host.drain_events(8, 10).unwrap();
+        assert_eq!(
+            (turn.events, turn.payload_bytes, turn.has_more),
+            (1, 100, true)
+        );
+        assert_eq!(host.next_event(), Some(console(&"x".repeat(100))));
+
+        let turn = host.drain_events(8, 10).unwrap();
+        assert_eq!((turn.events, turn.has_more), (1, false));
+        assert_eq!(host.next_event(), Some(console("tail")));
     }
 }

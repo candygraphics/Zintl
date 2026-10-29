@@ -9,7 +9,7 @@ use runtime_engine::{
     HostRequestId, JavaScriptEngineBackend, JavaScriptException, MountRequest,
 };
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::{Arc, Once};
@@ -39,9 +39,10 @@ struct BackendState {
     events: VecDeque<EngineEvent>,
     terminal_events: VecDeque<EngineEvent>,
     queued_event_bytes: usize,
-    pending_evaluations: HashSet<u64>,
-    cancelled_evaluations: HashSet<u64>,
+    /// Maps backend-private settlement tokens to public evaluation IDs.
+    pending_evaluations: HashMap<u64, u64>,
     pending_promises: HashMap<u64, PendingPromise>,
+    next_evaluation_token: u64,
     next_host_id: u64,
     shutting_down: bool,
 }
@@ -54,9 +55,9 @@ impl BackendState {
             events: VecDeque::new(),
             terminal_events: VecDeque::new(),
             queued_event_bytes: 0,
-            pending_evaluations: HashSet::new(),
-            cancelled_evaluations: HashSet::new(),
+            pending_evaluations: HashMap::new(),
             pending_promises: HashMap::new(),
+            next_evaluation_token: 1,
             next_host_id: 1,
             shutting_down: false,
         }
@@ -75,13 +76,20 @@ impl BackendState {
         accepted
     }
 
-    fn settle_evaluation(&mut self, id: u64, mut outcome: EvaluationOutcome) {
-        if !self.pending_evaluations.remove(&id) {
-            return;
+    fn token_for(&self, id: u64) -> Option<u64> {
+        self.pending_evaluations
+            .iter()
+            .find_map(|(token, pending)| (*pending == id).then_some(*token))
+    }
+
+    /// Settles the evaluation behind `token`; stale tokens are ignored.
+    fn settle_token(&mut self, token: u64, outcome: EvaluationOutcome) {
+        if let Some(id) = self.pending_evaluations.remove(&token) {
+            self.push_settlement(id, outcome);
         }
-        if self.cancelled_evaluations.remove(&id) {
-            outcome = EvaluationOutcome::Cancelled;
-        }
+    }
+
+    fn push_settlement(&mut self, id: u64, outcome: EvaluationOutcome) {
         let event = EngineEvent::EvaluationSettled {
             id: EvaluationId(id),
             outcome,
@@ -170,6 +178,7 @@ impl JavaScriptEngineBackend for V8Backend {
             let context_global = v8::Global::new(handle_scope, context);
             let scope = &mut v8::ContextScope::new(handle_scope, context);
             install_callback(scope, "__zintlEvaluationDone", evaluation_done)?;
+            install_callback(scope, "__zintlEvaluationFailed", evaluation_failed)?;
             install_callback(scope, "__zintlInvoke", invoke)?;
             install_callback(scope, "__zintlSleep", sleep)?;
             install_callback(scope, "__zintlReadFile", read_file)?;
@@ -200,6 +209,11 @@ impl JavaScriptEngineBackend for V8Backend {
     }
 
     fn submit_evaluation(&mut self, request: EvaluationRequest) -> Result<(), EngineError> {
+        let evaluate = self
+            .evaluate
+            .as_ref()
+            .ok_or(EngineError::InvalidState)?
+            .clone();
         let configuration = self.state.borrow().configuration;
         if request.id.0 == 0
             || request.id.0 > MAXIMUM_SAFE_INTEGER
@@ -207,50 +221,51 @@ impl JavaScriptEngineBackend for V8Backend {
         {
             return Err(EngineError::InvalidRequest);
         }
-        {
+        let token = {
             let mut state = self.state.borrow_mut();
             if state.shutting_down {
                 return Err(EngineError::InvalidState);
             }
-            if state.pending_evaluations.contains(&request.id.0) {
+            if state.token_for(request.id.0).is_some() {
                 return Err(EngineError::InvalidRequest);
             }
             if state.pending_evaluations.len() >= configuration.maximum_pending_evaluations
                 || state.terminal_events.len() >= configuration.maximum_pending_evaluations
+                || state.next_evaluation_token > MAXIMUM_SAFE_INTEGER
             {
                 return Err(EngineError::QuotaExceeded);
             }
-            state.pending_evaluations.insert(request.id.0);
-        }
+            let token = state.next_evaluation_token;
+            state.next_evaluation_token += 1;
+            state.pending_evaluations.insert(token, request.id.0);
+            token
+        };
 
-        let evaluate = self
-            .evaluate
-            .as_ref()
-            .ok_or(EngineError::InvalidState)?
-            .clone();
-        let id = request.id.0;
-        let result = self.enter(|scope| {
-            let evaluate = v8::Local::new(scope, &evaluate);
-            let receiver = v8::undefined(scope).into();
-            let id_value = safe_integer_number(scope, id).into();
-            let source = v8::String::new(scope, &request.source)
+        let entered = self.enter(|scope| {
+            v8::tc_scope!(let try_catch, scope);
+            let evaluate = v8::Local::new(try_catch, &evaluate);
+            let receiver = v8::undefined(try_catch).into();
+            let token_value = safe_integer_number(try_catch, token).into();
+            let source = v8::String::new(try_catch, &request.source)
                 .ok_or(EngineError::Backend)?
                 .into();
             evaluate
-                .call(scope, receiver, &[id_value, source])
+                .call(try_catch, receiver, &[token_value, source])
                 .ok_or(EngineError::Backend)?;
             Ok(())
         });
-        if result.is_err() {
-            self.state.borrow_mut().settle_evaluation(
-                id,
+        // The evaluation was accepted, so a bridge failure settles it instead of
+        // being reported twice.
+        if entered.is_err() {
+            self.state.borrow_mut().settle_token(
+                token,
                 EvaluationOutcome::Exception(JavaScriptException {
                     name: "Error".to_owned(),
                     message: "JavaScript evaluation failed".to_owned(),
                 }),
             );
         }
-        result
+        Ok(())
     }
 
     fn next_event(&mut self) -> Result<Option<EngineEvent>, EngineError> {
@@ -291,10 +306,10 @@ impl JavaScriptEngineBackend for V8Backend {
 
     fn cancel_evaluation(&mut self, evaluation_id: EvaluationId) -> Result<(), EngineError> {
         let mut state = self.state.borrow_mut();
-        if !state.pending_evaluations.contains(&evaluation_id.0) {
-            return Err(EngineError::InvalidRequest);
-        }
-        state.cancelled_evaluations.insert(evaluation_id.0);
+        let token = state
+            .token_for(evaluation_id.0)
+            .ok_or(EngineError::InvalidRequest)?;
+        state.settle_token(token, EvaluationOutcome::Cancelled);
         Ok(())
     }
 
@@ -307,7 +322,6 @@ impl JavaScriptEngineBackend for V8Backend {
             state.shutting_down = true;
             state.pending_promises.clear();
             state.pending_evaluations.clear();
-            state.cancelled_evaluations.clear();
             state.notifier = None;
         }
         self.evaluate.take();
@@ -377,24 +391,39 @@ fn evaluation_done(
     arguments: v8::FunctionCallbackArguments,
     _: v8::ReturnValue,
 ) {
-    let Some(id) = exact_u64(scope, arguments.get(0)) else {
+    let Some(token) = exact_u64(scope, arguments.get(0)) else {
         return;
     };
-    let succeeded = arguments.get(1).boolean_value(scope);
-    let Some(value) = rust_string(scope, arguments.get(2)) else {
-        return;
-    };
-    let outcome = if succeeded {
-        EvaluationOutcome::Value(value.into_bytes())
-    } else {
-        let (name, message) = value.split_once(':').unwrap_or(("Error", &value));
-        EvaluationOutcome::Exception(JavaScriptException {
-            name: name.trim().to_owned(),
-            message: message.trim().to_owned(),
-        })
-    };
+    let outcome = rust_string(scope, arguments.get(1)).map_or_else(
+        || {
+            EvaluationOutcome::Exception(JavaScriptException {
+                name: "Error".to_owned(),
+                message: "Unprintable evaluation result".to_owned(),
+            })
+        },
+        |value| EvaluationOutcome::Value(value.into_bytes()),
+    );
     if let Some(state) = callback_state(scope) {
-        state.borrow_mut().settle_evaluation(id, outcome);
+        state.borrow_mut().settle_token(token, outcome);
+    }
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn evaluation_failed(
+    scope: &mut v8::PinScope<'_, '_>,
+    arguments: v8::FunctionCallbackArguments,
+    _: v8::ReturnValue,
+) {
+    let Some(token) = exact_u64(scope, arguments.get(0)) else {
+        return;
+    };
+    let name = rust_string(scope, arguments.get(1)).unwrap_or_else(|| "Error".to_owned());
+    let message = rust_string(scope, arguments.get(2)).unwrap_or_default();
+    if let Some(state) = callback_state(scope) {
+        state.borrow_mut().settle_token(
+            token,
+            EvaluationOutcome::Exception(JavaScriptException { name, message }),
+        );
     }
 }
 
@@ -803,8 +832,10 @@ const fn host_error_name(error: HostErrorCode) -> &'static str {
 mod tests {
     use super::V8Backend;
     use runtime_engine::{
-        EngineConfiguration, EngineEvent, EngineNotifier, EvaluationId, EvaluationOutcome,
-        EvaluationRequest, HostCompletion, HostErrorCode, HostFailure, JavaScriptEngineBackend,
+        EngineConfiguration, EngineError, EngineEvent, EngineNotifier, EngineObjectId,
+        EngineObjectKind, EvaluationId, EvaluationOutcome, EvaluationRequest, HostCompletion,
+        HostErrorCode, HostFailure, HostRequest, HostRequestId, JavaScriptEngineBackend,
+        JavaScriptException, MountRequest,
     };
     use std::sync::Arc;
 
@@ -812,6 +843,238 @@ mod tests {
 
     impl EngineNotifier for NoopNotifier {
         fn notify(&self) {}
+    }
+
+    fn started() -> V8Backend {
+        let mut backend = V8Backend::new();
+        backend
+            .start(EngineConfiguration::default(), Arc::new(NoopNotifier))
+            .expect("start");
+        backend
+    }
+
+    fn submit(backend: &mut V8Backend, id: u64, source: &str) -> Result<(), EngineError> {
+        backend.submit_evaluation(EvaluationRequest {
+            id: EvaluationId(id),
+            source: source.to_owned(),
+        })
+    }
+
+    fn drain(backend: &mut V8Backend) -> Vec<EngineEvent> {
+        backend.perform_microtask_checkpoint().expect("checkpoint");
+        std::iter::from_fn(|| backend.next_event().expect("event")).collect()
+    }
+
+    fn settled(id: u64, outcome: EvaluationOutcome) -> EngineEvent {
+        EngineEvent::EvaluationSettled {
+            id: EvaluationId(id),
+            outcome,
+        }
+    }
+
+    fn exception(name: &str, message: &str) -> EvaluationOutcome {
+        EvaluationOutcome::Exception(JavaScriptException {
+            name: name.to_owned(),
+            message: message.to_owned(),
+        })
+    }
+
+    fn host_request(events: &[EngineEvent]) -> (HostRequestId, HostRequest) {
+        events
+            .iter()
+            .find_map(|event| match event {
+                EngineEvent::HostRequest { id, request } => Some((*id, request.clone())),
+                _ => None,
+            })
+            .expect("host request")
+    }
+
+    #[test]
+    // Verifies non-Error thrown values settle once as exceptions instead of failing submission.
+    fn thrown_primitives_settle_as_exceptions() {
+        let mut backend = started();
+        submit(&mut backend, 1, "throw null").expect("submit");
+        submit(&mut backend, 2, "throw 'boom'").expect("submit");
+        submit(&mut backend, 3, "Promise.reject(undefined)").expect("submit");
+        assert_eq!(
+            drain(&mut backend),
+            vec![
+                settled(1, exception("Error", "null")),
+                settled(2, exception("Error", "boom")),
+                settled(3, exception("Error", "undefined")),
+            ]
+        );
+    }
+
+    #[test]
+    // Verifies a colon in an exception message is not mistaken for the name separator.
+    fn exception_message_keeps_colons() {
+        let mut backend = started();
+        submit(&mut backend, 1, "throw new TypeError('see http://x')").expect("submit");
+        assert_eq!(
+            drain(&mut backend),
+            vec![settled(1, exception("TypeError", "see http://x"))]
+        );
+    }
+
+    #[test]
+    // Verifies results JSON cannot encode still settle instead of leaking a pending slot.
+    fn unserializable_results_settle_as_exceptions() {
+        let mut backend = started();
+        submit(&mut backend, 1, "1n").expect("submit");
+        submit(&mut backend, 2, "const a = {}; a.self = a; a").expect("submit");
+        let events = drain(&mut backend);
+        assert_eq!(events.len(), 2);
+        for event in events {
+            assert!(matches!(
+                event,
+                EngineEvent::EvaluationSettled {
+                    outcome: EvaluationOutcome::Exception(JavaScriptException { ref name, .. }),
+                    ..
+                } if name == "TypeError"
+            ));
+        }
+    }
+
+    #[test]
+    // Verifies user code replacing globals cannot stop later evaluations from settling.
+    fn replaced_globals_do_not_break_the_bridge() {
+        let mut backend = started();
+        submit(
+            &mut backend,
+            1,
+            "Promise.resolve = () => ({ then() {} }); JSON.stringify = () => { throw 1 }; \
+             Array.from = null; globalThis.eval = null; Uint8Array = null; 0",
+        )
+        .expect("submit");
+        submit(&mut backend, 2, "Zintl.invoke('dev.zintl.echo')").expect("submit");
+        let events = drain(&mut backend);
+        assert!(events.contains(&settled(
+            1,
+            EvaluationOutcome::Value(br#"{"type":"value","value":0}"#.to_vec())
+        )));
+        let (request_id, _) = host_request(&events);
+        backend
+            .complete_host_request(request_id, HostCompletion::Bytes(vec![7]))
+            .expect("complete");
+        assert_eq!(
+            drain(&mut backend),
+            vec![settled(
+                2,
+                EvaluationOutcome::Value(br#"{"type":"bytes","value":[7]}"#.to_vec())
+            )]
+        );
+    }
+
+    #[test]
+    // Verifies a duplicate ID is rejected without disturbing the evaluation that owns it.
+    fn duplicate_id_keeps_the_original_evaluation() {
+        let mut backend = started();
+        submit(&mut backend, 7, "Zintl.sleep(1).then(() => 'first')").expect("submit");
+        assert_eq!(
+            submit(&mut backend, 7, "'second'"),
+            Err(EngineError::InvalidRequest)
+        );
+        let (request_id, _) = host_request(&drain(&mut backend));
+        backend
+            .complete_host_request(request_id, HostCompletion::Unit)
+            .expect("complete");
+        assert_eq!(
+            drain(&mut backend),
+            vec![settled(
+                7,
+                EvaluationOutcome::Value(br#"{"type":"value","value":"first"}"#.to_vec())
+            )]
+        );
+    }
+
+    #[test]
+    // Verifies cancellation settles immediately and a late JavaScript result cannot reach a reused ID.
+    fn cancel_settles_immediately_and_ignores_late_results() {
+        let mut backend = started();
+        submit(&mut backend, 1, "new Promise(() => {})").expect("submit");
+        backend.cancel_evaluation(EvaluationId(1)).expect("cancel");
+        assert_eq!(
+            drain(&mut backend),
+            vec![settled(1, EvaluationOutcome::Cancelled)]
+        );
+        assert_eq!(
+            backend.cancel_evaluation(EvaluationId(1)),
+            Err(EngineError::InvalidRequest)
+        );
+
+        submit(&mut backend, 2, "Zintl.sleep(1).then(() => 'late')").expect("submit");
+        let (request_id, _) = host_request(&drain(&mut backend));
+        backend.cancel_evaluation(EvaluationId(2)).expect("cancel");
+        submit(&mut backend, 2, "new Promise(() => {})").expect("reuse");
+        backend
+            .complete_host_request(request_id, HostCompletion::Unit)
+            .expect("complete");
+        assert_eq!(
+            drain(&mut backend),
+            vec![settled(2, EvaluationOutcome::Cancelled)]
+        );
+    }
+
+    #[test]
+    // Verifies submitting before start fails without reserving the evaluation ID.
+    fn submit_before_start_does_not_reserve_the_id() {
+        let mut backend = V8Backend::new();
+        assert_eq!(submit(&mut backend, 1, "1"), Err(EngineError::InvalidState));
+        backend
+            .start(EngineConfiguration::default(), Arc::new(NoopNotifier))
+            .expect("start");
+        submit(&mut backend, 1, "1").expect("submit");
+        assert_eq!(drain(&mut backend).len(), 1);
+    }
+
+    #[test]
+    // Verifies an opaque object completion resolves the JavaScript Promise.
+    fn object_completion_resolves() {
+        let mut backend = started();
+        submit(
+            &mut backend,
+            1,
+            "Zintl.invoke('x').then(() => 'resolved', e => e.code)",
+        )
+        .expect("submit");
+        let (request_id, _) = host_request(&drain(&mut backend));
+        backend
+            .complete_host_request(
+                request_id,
+                HostCompletion::Object {
+                    id: EngineObjectId(5),
+                    kind: EngineObjectKind::File,
+                },
+            )
+            .expect("complete");
+        assert_eq!(
+            drain(&mut backend),
+            vec![settled(
+                1,
+                EvaluationOutcome::Value(br#"{"type":"value","value":"resolved"}"#.to_vec())
+            )]
+        );
+    }
+
+    #[test]
+    // Verifies a lone surrogate is written as U+FFFD instead of invalid UTF-8.
+    fn write_file_replaces_lone_surrogates() {
+        let mut backend = started();
+        submit(
+            &mut backend,
+            1,
+            "Zintl.writeFile('mount://p/a', 'a\\uD800b')",
+        )
+        .expect("submit");
+        let (_, request) = host_request(&drain(&mut backend));
+        assert_eq!(
+            request,
+            HostRequest::Mount(MountRequest::WriteFile {
+                url: "mount://p/a".to_owned(),
+                bytes: "a\u{FFFD}b".as_bytes().to_vec(),
+            })
+        );
     }
 
     #[test]
