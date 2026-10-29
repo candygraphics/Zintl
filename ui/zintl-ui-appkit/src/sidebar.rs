@@ -163,25 +163,25 @@ impl Sidebar {
 }
 
 impl SidebarState {
-    pub(crate) fn backend(&self) -> zintl_ui_appkit_backend::Sidebar {
-        zintl_ui_appkit_backend::Sidebar {
+    pub(crate) fn backend(&self) -> zintl_ui_backend_core::Sidebar {
+        zintl_ui_backend_core::Sidebar {
             selected_id: self.selected_id.clone(),
             search: self
                 .search
                 .as_ref()
-                .map(|search| zintl_ui_appkit_backend::SidebarSearch {
+                .map(|search| zintl_ui_backend_core::SidebarSearch {
                     value: search.value.clone(),
                     placeholder: search.placeholder.clone(),
                 }),
             sections: self
                 .sections
                 .iter()
-                .map(|section| zintl_ui_appkit_backend::SidebarSection {
+                .map(|section| zintl_ui_backend_core::SidebarSection {
                     title: section.title.clone(),
                     items: section
                         .items
                         .iter()
-                        .map(|item| zintl_ui_appkit_backend::SidebarItem {
+                        .map(|item| zintl_ui_backend_core::SidebarItem {
                             id: item.id.clone(),
                             title: item.title.clone(),
                             system_image: item.system_image.clone(),

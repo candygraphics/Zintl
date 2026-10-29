@@ -805,7 +805,7 @@ impl View for MainMenu {
 
 mod backend {
     use super::*;
-    use zintl_ui_appkit_backend as native;
+    use zintl_ui_backend_core as native;
 
     impl StandardAction {
         fn backend(self) -> native::CommandRole {

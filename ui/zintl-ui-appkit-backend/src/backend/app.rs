@@ -8,6 +8,7 @@ use zpd_appkit::actor::{WindowEvent, WindowEventKind};
 use zpd_appkit::runloop::Application;
 
 use super::{AppError, AppKitBackend};
+use crate::convert::Shared;
 use crate::{AppKitEvent, AppKitRenderNode, MainTask};
 
 pub(super) enum Message {
@@ -100,7 +101,7 @@ where
                     self.composer.backend_mut().mark_window_closed(event.window);
                 }
                 if let Some(route) = event.route {
-                    self.dispatch(EventRouteId::from_raw(route.get()), event.kind);
+                    self.dispatch(EventRouteId::from_raw(route.get()), event.kind.shared());
                 }
                 if action != WindowEventAction::WaitForClose {
                     self.synchronize(cx);

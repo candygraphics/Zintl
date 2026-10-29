@@ -3,9 +3,9 @@ use std::rc::Rc;
 
 use messageloop_dispatcherqueue::Sender;
 use zintl_ui::event::EventRouteId;
-use zintl_ui_appkit_backend::layout::{HostLayout, LayoutNative, LayoutSnapshot};
-use zintl_ui_appkit_backend::tree::ErrorSlot;
-use zintl_ui_appkit_backend::{AppKitEvent, BezelStyle, ButtonType, Color, ViewKind};
+use zintl_ui_backend_core::layout::{HostLayout, LayoutNative, LayoutSnapshot};
+use zintl_ui_backend_core::tree::ErrorSlot;
+use zintl_ui_backend_core::{AppKitEvent, BezelStyle, ButtonType, Color, ViewKind};
 use zintl_ui_layout::{LayoutStyle, Rect as LayoutRect, Size};
 use zpd_winui3::{
     AsElement, BoolProperty, Control, ControlEvent, ControlKind, NumberProperty, TextProperty,
@@ -224,7 +224,7 @@ impl NativeNode {
                     Some(ViewKind::Button(old)) => Some(old),
                     _ => None,
                 };
-                let changed = |field: fn(&zintl_ui_appkit_backend::Button) -> bool| {
+                let changed = |field: fn(&zintl_ui_backend_core::Button) -> bool| {
                     old.is_none_or(|old| field(old) != field(button))
                 };
                 if old.is_none_or(|old| old.title != button.title) {

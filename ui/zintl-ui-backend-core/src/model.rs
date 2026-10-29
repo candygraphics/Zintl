@@ -1,7 +1,4 @@
-//! Plain UI descriptions that compile on every platform.
-//!
-//! Native AppKit types consume these values on macOS; other backends read
-//! the same descriptions.
+//! Plain UI descriptions that every native backend reads.
 
 /// Rectangle in logical points / DIP.
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -47,7 +47,8 @@ pub use zintl_ui_layout::{LayoutStyle, Size};
 pub type Context<'a> = <RenderNode as zintl_ui::renderer::RenderNode>::Context<'a>;
 
 #[cfg(target_os = "macos")]
-pub use zintl_ui_appkit_backend::{AppError, AppKitBackend, NodeId, run_composer};
+pub use zintl_ui_appkit_backend::{AppError, AppKitBackend, run_composer};
+pub use zintl_ui_backend_core::NodeId;
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
@@ -57,7 +58,7 @@ mod tests {
     use zintl_ui::composer::Composer;
     use zintl_ui::renderer::{RenderBackend, RenderNode as _};
     use zintl_ui::view::View as ViewTrait;
-    use zintl_ui_appkit_backend::AppKitRenderNode;
+    use zintl_ui_backend_core::AppKitRenderNode;
     use zintl_ui_layout::{Axis, LayoutStyle};
 
     use super::*;
@@ -180,24 +181,24 @@ mod tests {
 
         assert!(matches!(
             nodes[0].appkit_node(),
-            zintl_ui_appkit_backend::NodeKind::View {
-                kind: zintl_ui_appkit_backend::ViewKind::Container,
+            zintl_ui_backend_core::NodeKind::View {
+                kind: zintl_ui_backend_core::ViewKind::Container,
                 id: Some(id),
                 ..
             } if id == "content"
         ));
         assert!(matches!(
             nodes[1].appkit_node(),
-            zintl_ui_appkit_backend::NodeKind::View {
-                kind: zintl_ui_appkit_backend::ViewKind::Button(title),
+            zintl_ui_backend_core::NodeKind::View {
+                kind: zintl_ui_backend_core::ViewKind::Button(title),
                 id: Some(id),
                 ..
             } if title.title == "Save" && id == "save"
         ));
         assert!(matches!(
             nodes[2].appkit_node(),
-            zintl_ui_appkit_backend::NodeKind::View {
-                kind: zintl_ui_appkit_backend::ViewKind::TextField { editable: true, .. },
+            zintl_ui_backend_core::NodeKind::View {
+                kind: zintl_ui_backend_core::ViewKind::TextField { editable: true, .. },
                 id: Some(id),
                 ..
             } if id == "name"
@@ -228,8 +229,8 @@ mod tests {
         ));
         assert!(matches!(
             multiline.appkit_node(),
-            zintl_ui_appkit_backend::NodeKind::View {
-                kind: zintl_ui_appkit_backend::ViewKind::TextField {
+            zintl_ui_backend_core::NodeKind::View {
+                kind: zintl_ui_backend_core::ViewKind::TextField {
                     multiline: true,
                     ..
                 },
@@ -264,14 +265,14 @@ mod tests {
         ));
         assert!(matches!(
             normal.appkit_node(),
-            zintl_ui_appkit_backend::NodeKind::Window {
+            zintl_ui_backend_core::NodeKind::Window {
                 full_size_content_view: false,
                 ..
             }
         ));
         assert!(matches!(
             full_size.appkit_node(),
-            zintl_ui_appkit_backend::NodeKind::Window {
+            zintl_ui_backend_core::NodeKind::Window {
                 full_size_content_view: true,
                 ..
             }

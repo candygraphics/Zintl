@@ -1,4 +1,4 @@
-use zintl_ui_appkit_backend::{CommandItem, CommandModifier, CommandRole, CommandSet, MenuRole};
+use zintl_ui_backend_core::{CommandItem, CommandModifier, CommandRole, CommandSet, MenuRole};
 use zpd_winui3::{
     KeyboardAccelerator, MenuBar, MenuBarItem, MenuFlyoutItem, MenuFlyoutItemBase,
     MenuFlyoutSubItem, MenuItemRole, VirtualKeyModifiers,

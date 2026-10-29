@@ -9,9 +9,92 @@ use zpd_objc::{Id, Strong};
 use super::UiError;
 use super::callback;
 
-pub use crate::model::{
-    CommandItem, CommandMenu, CommandModifier, CommandRole, CommandSet, MenuRole, WindowAppMenu,
-};
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CommandSet {
+    pub app_menu: Option<WindowAppMenu>,
+    pub menus: Vec<CommandMenu>,
+}
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct WindowAppMenu {
+    pub items: Vec<CommandItem>,
+}
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CommandMenu {
+    pub title: String,
+    pub items: Vec<CommandItem>,
+    /// Registers the menu with `NSApp` so AppKit can manage its contents.
+    pub role: Option<MenuRole>,
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct CommandItem {
+    pub id: Option<String>,
+    pub title: String,
+    pub role: Option<CommandRole>,
+    pub key: Option<String>,
+    pub modifiers: Vec<CommandModifier>,
+    pub enabled: bool,
+    pub checked: bool,
+    pub submenu: Option<CommandMenu>,
+}
+impl CommandItem {
+    /// Creates an enabled item with no action.
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            id: None,
+            title: title.into(),
+            role: None,
+            key: None,
+            modifiers: Vec::new(),
+            enabled: true,
+            checked: false,
+            submenu: None,
+        }
+    }
+    pub fn separator() -> Self {
+        Self {
+            role: Some(CommandRole::Separator),
+            ..Self::new("")
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CommandModifier {
+    Cmd,
+    Ctrl,
+    Alt,
+    Shift,
+}
+/// Standard actions delivered through the AppKit responder chain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CommandRole {
+    About,
+    Quit,
+    Hide,
+    HideOthers,
+    ShowAll,
+    Close,
+    Undo,
+    Redo,
+    Cut,
+    Copy,
+    Paste,
+    Delete,
+    SelectAll,
+    ToggleSidebar,
+    ToggleFullScreen,
+    Minimize,
+    Zoom,
+    BringAllToFront,
+    Help,
+    Separator,
+}
+/// Menus that `NSApp` fills or decorates itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MenuRole {
+    Services,
+    Windows,
+    Help,
+}
 
 impl CommandRole {
     fn selector(self) -> Option<zpd_objc::Sel> {

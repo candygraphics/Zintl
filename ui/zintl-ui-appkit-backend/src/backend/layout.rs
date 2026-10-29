@@ -2,8 +2,8 @@ use zintl_ui_layout::{Rect as LayoutRect, Size};
 
 use super::AppError;
 use super::native::NativeNode;
-use crate::Rect;
-use crate::layout::{HostLayout, LayoutNative, LayoutSnapshot};
+use zintl_ui_backend_core::layout::{HostLayout, LayoutNative, LayoutSnapshot};
+use zpd_appkit::geometry::Rect;
 
 impl LayoutNative for NativeNode {
     type Error = AppError;

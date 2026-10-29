@@ -7,9 +7,9 @@ use messageloop_dispatcherqueue::{MessageLoopError, Sender};
 use zintl_ui::event::EventRouteId;
 use zintl_ui::renderer::RenderBackend;
 use zintl_ui::view::StoreContext;
-use zintl_ui_appkit_backend::layout::{HostLayout, LayoutSnapshot};
-use zintl_ui_appkit_backend::tree::{ErrorSlot, MainTasks, NodeTree};
-use zintl_ui_appkit_backend::{
+use zintl_ui_backend_core::layout::{HostLayout, LayoutSnapshot};
+use zintl_ui_backend_core::tree::{ErrorSlot, MainTasks, NodeTree};
+use zintl_ui_backend_core::{
     AlertButtonRole, AlertConfig, AppKitEvent, AppKitRenderNode, Color, CommandSet,
     FileDialogConfig, FileDialogMode, MainTask, NodeId, NodeKind, PopoverEdge, Rect, Sidebar,
     ViewKind, WindowStyle,

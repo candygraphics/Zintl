@@ -1,8 +1,24 @@
 use zpd_objc::Id;
 
-pub use crate::model::Color;
+/// An sRGB color with components in `0.0..=1.0`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Color {
+    pub red: f64,
+    pub green: f64,
+    pub blue: f64,
+    pub alpha: f64,
+}
 
 impl Color {
+    pub const fn new(red: f64, green: f64, blue: f64, alpha: f64) -> Self {
+        Self {
+            red,
+            green,
+            blue,
+            alpha,
+        }
+    }
+
     /// Returns an autoreleased `NSColor` in the sRGB color space.
     pub(crate) fn native(self) -> Id {
         // SAFETY: The NSColor factory accepts CGFloat components and returns an autoreleased object.

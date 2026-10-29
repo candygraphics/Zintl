@@ -350,7 +350,14 @@ impl ComboBox {
     }
 }
 
-pub use crate::model::NumberFormat;
+/// Numeric bounds and formatting for [`NumberField`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NumberFormat {
+    pub minimum: f64,
+    pub maximum: f64,
+    pub step: f64,
+    pub fraction_digits: usize,
+}
 
 /// A number-only `NSTextField` paired with an `NSStepper`.
 pub struct NumberField {

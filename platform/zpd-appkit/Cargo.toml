@@ -6,7 +6,7 @@ license.workspace = true
 [features]
 wgpu = []
 
-[target.'cfg(target_os = "macos")'.dependencies]
+[dependencies]
 zpd-corefoundation = { path = "../zpd-corefoundation" }
 zpd-objc = { path = "../zpd-objc" }
 

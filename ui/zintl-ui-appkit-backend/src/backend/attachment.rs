@@ -7,7 +7,7 @@ use zpd_appkit::ui::{
 };
 
 use super::NativeNode;
-use crate::layout::HostLayout;
+use zintl_ui_backend_core::layout::HostLayout;
 
 /// Native state of a node presented outside its parent's layout.
 pub(super) enum Attachment {

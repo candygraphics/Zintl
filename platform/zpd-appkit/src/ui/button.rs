@@ -10,12 +10,39 @@ use super::UiError;
 use super::callback;
 use super::view::{AsView, ViewActor, ViewRef};
 
-pub use crate::model::{BezelStyle, ButtonType};
+/// Mirrors `NSButtonType` values used by declarative buttons.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u64)]
+pub enum ButtonType {
+    #[default]
+    MomentaryPushIn = 7,
+    PushOnPushOff = 1,
+    Checkbox = 3,
+    Radio = 4,
+}
 
 impl ButtonType {
     fn is_stateful(self) -> bool {
         self != Self::MomentaryPushIn
     }
+}
+
+/// Mirrors `NSBezelStyle` values that are valid on current macOS releases.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u64)]
+pub enum BezelStyle {
+    #[default]
+    Push = 1,
+    FlexiblePush = 2,
+    Disclosure = 5,
+    Circular = 7,
+    Help = 9,
+    SmallSquare = 10,
+    Toolbar = 11,
+    AccessoryBarAction = 12,
+    AccessoryBar = 13,
+    PushDisclosure = 14,
+    Badge = 15,
 }
 
 pub struct Button {

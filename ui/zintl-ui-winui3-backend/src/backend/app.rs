@@ -7,7 +7,7 @@ use messageloop_dispatcherqueue::{
 };
 use zintl_ui::composer::Composer;
 use zintl_ui::event::EventRouteId;
-use zintl_ui_appkit_backend::{AppKitEvent, AppKitRenderNode, MainTask, NodeId};
+use zintl_ui_backend_core::{AppKitEvent, AppKitRenderNode, MainTask, NodeId};
 use zpd_winui3::Application;
 
 use super::menu::Menus;

@@ -137,6 +137,7 @@ version = "0.0.0"
 dependencies = [
  "zintl-ui",
  "zintl-ui-appkit-backend",
+ "zintl-ui-backend-core",
  "zintl-ui-desktop",
  "zintl-ui-layout",
 ]
@@ -147,8 +148,17 @@ version = "0.0.0"
 dependencies = [
  "messageloop-appkit",
  "zintl-ui",
+ "zintl-ui-backend-core",
  "zintl-ui-layout",
  "zpd-appkit",
+]
+
+[[package]]
+name = "zintl-ui-backend-core"
+version = "0.0.0"
+dependencies = [
+ "zintl-ui",
+ "zintl-ui-layout",
 ]
 
 [[package]]
@@ -181,7 +191,7 @@ version = "0.0.0"
 dependencies = [
  "messageloop-dispatcherqueue",
  "zintl-ui",
- "zintl-ui-appkit-backend",
+ "zintl-ui-backend-core",
  "zintl-ui-layout",
  "zpd-winui3",
 ]

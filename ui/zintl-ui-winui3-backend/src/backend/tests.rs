@@ -1,7 +1,7 @@
 use zintl_ui::event::EventRouteId;
 use zintl_ui::renderer::{RenderBackend, RenderNode};
 use zintl_ui::view::{Context as ContextTrait, StoreContext};
-use zintl_ui_appkit_backend::{
+use zintl_ui_backend_core::{
     AlertButton, AlertButtonRole, AlertConfig, Button, ButtonType, CommandItem, CommandMenu,
     CommandModifier, CommandRole, CommandSet, FileDialogConfig, MainTaskSender, MenuRole,
     WindowAppMenu,

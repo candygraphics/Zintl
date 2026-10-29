@@ -6,7 +6,10 @@ use zpd_appkit::ui::{
     SegmentedControl, Slider, Switch, TabView, TextField, UiError, View, ViewRef,
 };
 
-use crate::{ButtonType, Rect, ViewKind};
+use zpd_appkit::geometry::Rect;
+
+use crate::convert::Native;
+use crate::{ButtonType, ViewKind};
 
 /// A native view created for a [`ViewKind`].
 pub(super) enum NativeNode {
@@ -99,7 +102,7 @@ impl NativeNode {
                     native.set_title(&button.title)?;
                 }
                 if old.is_none_or(|old| old.button_type != button.button_type) {
-                    native.set_button_type(button.button_type)?;
+                    native.set_button_type(button.button_type.native())?;
                 }
                 let two_state =
                     matches!(button.button_type, ButtonType::Checkbox | ButtonType::Radio);
@@ -111,7 +114,7 @@ impl NativeNode {
                     match button.bezel {
                         Some(style) => {
                             native.set_bordered(true)?;
-                            native.set_bezel_style(style)?;
+                            native.set_bezel_style(style.native())?;
                         }
                         None => native.set_bordered(false)?,
                     }
@@ -231,7 +234,7 @@ impl NativeNode {
             (Self::NumberField(field), ViewKind::NumberField { value, format }) => {
                 if !matches!(old, Some(ViewKind::NumberField { format: old, .. }) if old == format)
                 {
-                    field.set_format(*format)?;
+                    field.set_format(format.native())?;
                 }
                 if field.value()? != *value || old.is_none() {
                     field.set_value(*value)?;
@@ -245,12 +248,12 @@ impl NativeNode {
             }
             (Self::ColorWell(well), ViewKind::ColorWell { color }) => {
                 if !matches!(old, Some(ViewKind::ColorWell { color: old }) if old == color) {
-                    well.set_color(*color)?;
+                    well.set_color(color.native())?;
                 }
             }
             (Self::ScrollView(scroll, restore), ViewKind::ScrollView { axes, offset }) => {
                 if !matches!(old, Some(ViewKind::ScrollView { axes: old, .. }) if old == axes) {
-                    scroll.set_axes(*axes)?;
+                    scroll.set_axes(axes.native())?;
                 }
                 // Later offsets echo the user's scrolling, so only a new view restores one.
                 if old.is_none() {

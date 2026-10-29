@@ -24,12 +24,14 @@ pub use app::run_composer;
 use attachment::Attachment;
 use native::NativeNode;
 
-use super::layout::{HostLayout, LayoutSnapshot};
-use super::tree::{ErrorSlot, MainTasks, NodeTree};
+use crate::convert::{Native, Shared};
+
 use super::{
     AppKitRenderNode, Color, CommandSet, MainTask, NodeId, NodeKind, Rect, Sidebar, ViewKind,
     WindowStyle,
 };
+use zintl_ui_backend_core::layout::{HostLayout, LayoutSnapshot};
+use zintl_ui_backend_core::tree::{ErrorSlot, MainTasks, NodeTree};
 
 /// Inset between a popover's edge and its content.
 const POPOVER_PADDING: f32 = 12.0;
@@ -254,7 +256,7 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
         let commands = self.tree.main_menu();
         if self.main_menu.as_ref() != Some(&commands) {
             let sender = cx.sender();
-            application.set_commands(&commands, move |id| {
+            application.set_commands(&commands.native(), move |id| {
                 let _ = sender.send(Message::Command(id.into()));
             })?;
             self.main_menu = Some(commands);
@@ -295,7 +297,7 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
             .is_none_or(|state| !cx.contains_window(state.native));
         if new_window {
             let route = self.event_route(window_id).map(route_token);
-            let native = cx.create_styled_window(route, style)?;
+            let native = cx.create_styled_window(route, style.native())?;
             let layout = Rc::new(RefCell::new(HostLayout::default()));
             let callback_layout = layout.clone();
             let callback_error = self.pending_error.clone();
@@ -341,13 +343,13 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
                 window.set_full_size_content_view(full_size_content_view)?;
             }
             if apply_bounds {
-                window.set_bounds(bounds)?;
+                window.set_bounds(bounds.native())?;
             }
             window.set_title(&title)?;
             window.set_identifier(id.as_deref())?;
             if apply_sidebar {
                 match &sidebar {
-                    Some(sidebar) => window.update_sidebar(sidebar)?,
+                    Some(sidebar) => window.update_sidebar(&sidebar.native())?,
                     None => window.clear_sidebar()?,
                 }
             }
@@ -568,7 +570,8 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
                 if self.state(id).attachment.is_none() || applied.as_ref() != Some(&kind) {
                     // Drop the old menu first so its teardown cannot clear the new one.
                     self.state_mut(id).attachment = None;
-                    let menu = ContextMenu::install(anchor.as_view(), items, route)?;
+                    let items = items.iter().map(Native::native).collect::<Vec<_>>();
+                    let menu = ContextMenu::install(anchor.as_view(), &items, route)?;
                     self.state_mut(id).attachment = Some(Attachment::ContextMenu(menu));
                 }
             }
@@ -618,7 +621,7 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
                     popover.content_view().set_needs_layout(true)?;
                 }
                 if *presented && (created || !was_presented) && !popover.is_shown() {
-                    popover.show(*edge)?;
+                    popover.show(edge.native())?;
                 } else if !*presented && popover.is_shown() {
                     popover.close()?;
                 }
@@ -627,7 +630,9 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
                 if *presented && !was_presented {
                     self.state_mut(id).attachment = None;
                     let sheet = cx
-                        .with_window(window, |window| AlertSheet::present(window, config, route))
+                        .with_window(window, |window| {
+                            AlertSheet::present(window, &config.native(), route)
+                        })
                         .ok_or(UiError::Closed)??;
                     self.state_mut(id).attachment = Some(Attachment::Alert(Some(sheet)));
                 } else if !*presented {
@@ -640,7 +645,7 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
                     self.state_mut(id).attachment = None;
                     let sheet = cx
                         .with_window(window, |window| {
-                            FileDialogSheet::present(window, config, route)
+                            FileDialogSheet::present(window, &config.native(), route)
                         })
                         .ok_or(UiError::Closed)??;
                     self.state_mut(id).attachment = Some(Attachment::FileDialog(Some(sheet)));
@@ -657,15 +662,15 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
                     self.state_mut(id).attachment = None;
                     let session = cx
                         .with_window(window, |window| {
-                            ColorPanelSession::present(window, *color, *shows_alpha, route)
+                            ColorPanelSession::present(window, color.native(), *shows_alpha, route)
                         })
                         .ok_or(UiError::Closed)??;
                     self.state_mut(id).attachment = Some(Attachment::ColorPanel(Some(session)));
                 } else if *presented {
                     if let Some(Attachment::ColorPanel(Some(session))) = &self.state(id).attachment
-                        && !colors_match(session.color()?, *color)
+                        && !colors_match(session.color()?.shared(), *color)
                     {
-                        session.set_color(*color)?;
+                        session.set_color(color.native())?;
                     }
                 } else {
                     self.state_mut(id).attachment = None;

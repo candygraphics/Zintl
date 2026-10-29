@@ -203,16 +203,16 @@ impl RenderNodeTrait for RenderNode {
     }
 }
 
-impl zintl_ui_appkit_backend::AppKitRenderNode for RenderNode {
+impl zintl_ui_backend_core::AppKitRenderNode for RenderNode {
     fn create_context<'a>(
         store_context: zintl_ui::view::StoreContext<'a>,
-        perform_main: Option<&'a zintl_ui_appkit_backend::MainTaskSender>,
+        perform_main: Option<&'a zintl_ui_backend_core::MainTaskSender>,
     ) -> Self::Context<'a> {
         crate::AppKitContext::new(store_context, perform_main)
     }
 
-    fn appkit_node(&self) -> zintl_ui_appkit_backend::NodeKind {
-        use zintl_ui_appkit_backend::{NodeKind, ViewKind};
+    fn appkit_node(&self) -> zintl_ui_backend_core::NodeKind {
+        use zintl_ui_backend_core::{NodeKind, ViewKind};
 
         let view = |kind: ViewKind, layout: &LayoutStyle, id: &Option<String>, enabled: bool| {
             NodeKind::View {
@@ -232,7 +232,7 @@ impl zintl_ui_appkit_backend::AppKitRenderNode for RenderNode {
                 style,
             } => NodeKind::Window {
                 sidebar: sidebar.as_ref().map(SidebarState::backend),
-                bounds: zintl_ui_appkit_backend::Rect::new(
+                bounds: zintl_ui_backend_core::Rect::new(
                     bounds.x,
                     bounds.y,
                     bounds.width,
@@ -256,7 +256,7 @@ impl zintl_ui_appkit_backend::AppKitRenderNode for RenderNode {
                 layout,
                 id,
             } => view(
-                ViewKind::Button(zintl_ui_appkit_backend::Button {
+                ViewKind::Button(zintl_ui_backend_core::Button {
                     title: title.clone(),
                     button_type: button_type.backend(),
                     bezel: bezel.map(BezelStyle::backend),
@@ -379,7 +379,7 @@ impl zintl_ui_appkit_backend::AppKitRenderNode for RenderNode {
             } => view(
                 ViewKind::NumberField {
                     value: *value,
-                    format: zintl_ui_appkit_backend::NumberFormat {
+                    format: zintl_ui_backend_core::NumberFormat {
                         minimum: *minimum,
                         maximum: *maximum,
                         step: *step,
@@ -463,11 +463,11 @@ impl zintl_ui_appkit_backend::AppKitRenderNode for RenderNode {
             },
             Self::NSOpenPanel { presented, panel } => NodeKind::FileDialog {
                 presented: *presented,
-                config: panel.backend(zintl_ui_appkit_backend::FileDialogMode::Open),
+                config: panel.backend(zintl_ui_backend_core::FileDialogMode::Open),
             },
             Self::NSSavePanel { presented, panel } => NodeKind::FileDialog {
                 presented: *presented,
-                config: panel.backend(zintl_ui_appkit_backend::FileDialogMode::Save),
+                config: panel.backend(zintl_ui_backend_core::FileDialogMode::Save),
             },
             Self::NSColorPanel {
                 presented,
@@ -482,8 +482,8 @@ impl zintl_ui_appkit_backend::AppKitRenderNode for RenderNode {
         }
     }
 
-    fn appkit_event(event: zintl_ui_appkit_backend::AppKitEvent) -> Self::Event {
-        use zintl_ui_appkit_backend::AppKitEvent;
+    fn appkit_event(event: zintl_ui_backend_core::AppKitEvent) -> Self::Event {
+        use zintl_ui_backend_core::AppKitEvent;
 
         match event {
             AppKitEvent::SidebarSelectionChanged { id } => Event::SidebarSelectionChanged { id },
@@ -511,17 +511,17 @@ impl zintl_ui_appkit_backend::AppKitRenderNode for RenderNode {
         }
     }
 
-    fn default_main_menu() -> Option<zintl_ui_appkit_backend::CommandSet> {
+    fn default_main_menu() -> Option<zintl_ui_backend_core::CommandSet> {
         let menus = crate::MainMenu::standard().resolve(&mut Default::default());
         Some(MenuState::backend_menu_bar(&menus))
     }
 }
 
 impl AlertState {
-    fn backend(&self) -> zintl_ui_appkit_backend::AlertConfig {
-        use zintl_ui_appkit_backend::{AlertButton, AlertButtonRole};
+    fn backend(&self) -> zintl_ui_backend_core::AlertConfig {
+        use zintl_ui_backend_core::{AlertButton, AlertButtonRole};
 
-        zintl_ui_appkit_backend::AlertConfig {
+        zintl_ui_backend_core::AlertConfig {
             style: self.style.backend(),
             title: self.title.clone(),
             message: self.message.clone(),
@@ -546,9 +546,9 @@ impl AlertState {
 impl FileDialogState {
     fn backend(
         &self,
-        mode: zintl_ui_appkit_backend::FileDialogMode,
-    ) -> zintl_ui_appkit_backend::FileDialogConfig {
-        zintl_ui_appkit_backend::FileDialogConfig {
+        mode: zintl_ui_backend_core::FileDialogMode,
+    ) -> zintl_ui_backend_core::FileDialogConfig {
+        zintl_ui_backend_core::FileDialogConfig {
             mode,
             title: self.title.clone(),
             message: self.message.clone(),

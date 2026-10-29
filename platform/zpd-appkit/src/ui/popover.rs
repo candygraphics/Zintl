@@ -7,7 +7,15 @@ use super::UiError;
 use super::callback;
 use super::view::{self, ViewRef};
 
-pub use crate::model::PopoverEdge;
+/// The side of the anchor view where a [`Popover`] prefers to appear.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PopoverEdge {
+    Leading,
+    Trailing,
+    Top,
+    #[default]
+    Bottom,
+}
 
 impl PopoverEdge {
     /// Converts to `NSRectEdge`, whose Y edges follow the anchor's flippedness.
