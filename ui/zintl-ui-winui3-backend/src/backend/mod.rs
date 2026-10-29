@@ -10,9 +10,9 @@ use zintl_ui::view::StoreContext;
 use zintl_ui_backend_core::layout::{HostLayout, LayoutSnapshot};
 use zintl_ui_backend_core::tree::{ErrorSlot, MainTasks, NodeTree};
 use zintl_ui_backend_core::{
-    AlertButtonRole, AlertConfig, AppKitEvent, AppKitRenderNode, Color, CommandSet,
-    FileDialogConfig, FileDialogMode, MainTask, NodeId, NodeKind, PopoverEdge, Rect, Sidebar,
-    ViewKind, WindowStyle,
+    AlertButtonRole, AlertConfig, Color, CommandSet, FileDialogConfig, FileDialogMode, MainTask,
+    NativeEvent, NativeRenderNode, NodeId, NodeKind, PopoverEdge, Rect, Sidebar, ViewKind,
+    WindowStyle,
 };
 use zintl_ui_layout::{LayoutError, Size};
 use zpd_winui3::{
@@ -127,7 +127,7 @@ impl NodeState {
     }
 }
 
-pub struct WinUI3Backend<R: AppKitRenderNode> {
+pub struct WinUI3Backend<R: NativeRenderNode> {
     tree: NodeTree<R, NodeState>,
     structure_dirty: bool,
     layout_dirty: bool,
@@ -140,13 +140,13 @@ pub struct WinUI3Backend<R: AppKitRenderNode> {
     opened_window: bool,
 }
 
-impl<R: AppKitRenderNode> Default for WinUI3Backend<R> {
+impl<R: NativeRenderNode> Default for WinUI3Backend<R> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<R: AppKitRenderNode> WinUI3Backend<R> {
+impl<R: NativeRenderNode> WinUI3Backend<R> {
     pub fn new() -> Self {
         Self {
             tree: NodeTree::new(),
@@ -588,7 +588,7 @@ impl<R: AppKitRenderNode> WinUI3Backend<R> {
         let report = {
             let sender = sender.clone();
             let route = route.clone();
-            move |event: AppKitEvent| {
+            move |event: NativeEvent| {
                 if let Some(route) = route.get() {
                     let _ = sender.send(Message::Event { route, event });
                 }
@@ -617,7 +617,7 @@ impl<R: AppKitRenderNode> WinUI3Backend<R> {
                     anchor
                         .control
                         .set_context_menu(&Menus::items(items), move |id| {
-                            report(AppKitEvent::MenuItemSelected { id: id.into() });
+                            report(NativeEvent::MenuItemSelected { id: id.into() });
                         })?;
                     self.state_mut(id).attachment = Some(Attachment::ContextMenu {
                         _menu: ContextMenu { anchor },
@@ -637,7 +637,7 @@ impl<R: AppKitRenderNode> WinUI3Backend<R> {
                     let content = Control::new(ControlKind::Canvas)?;
                     let host = CanvasHost::new(self.pending_error.clone());
                     let popover =
-                        Popover::new(&content, move || report(AppKitEvent::PopoverClosed))?;
+                        Popover::new(&content, move || report(NativeEvent::PopoverClosed))?;
                     self.state_mut(id).attachment = Some(Attachment::Popover {
                         popover,
                         content,
@@ -689,7 +689,7 @@ impl<R: AppKitRenderNode> WinUI3Backend<R> {
                                     DialogResult::Close => indices[2],
                                     DialogResult::None => None,
                                 };
-                                report(AppKitEvent::AlertResponse { button });
+                                report(NativeEvent::AlertResponse { button });
                             })?;
                     self.state_mut(id).attachment = Some(Attachment::Alert { _dialog: native });
                 } else if !*presented {
@@ -702,7 +702,7 @@ impl<R: AppKitRenderNode> WinUI3Backend<R> {
                     self.window_native(window).show_file_dialog(
                         &Self::file_dialog(config),
                         move |paths| {
-                            report(AppKitEvent::FileDialogCompleted { paths });
+                            report(NativeEvent::FileDialogCompleted { paths });
                         },
                     )?;
                     self.state_mut(id).attachment = Some(Attachment::FileDialog);
@@ -807,7 +807,7 @@ impl<R: AppKitRenderNode> WinUI3Backend<R> {
         application: &ApplicationContext,
         color: Color,
         shows_alpha: bool,
-        report: impl Fn(AppKitEvent) + 'static,
+        report: impl Fn(NativeEvent) + 'static,
     ) -> Result<Attachment, AppError> {
         let report = Rc::new(report);
         let window = application.create_styled_window(zpd_winui3::WindowStyle::Panel)?;
@@ -818,12 +818,12 @@ impl<R: AppKitRenderNode> WinUI3Backend<R> {
         picker.set_color(Self::native_color(color))?;
         let changed = report.clone();
         picker.set_event_handler(move |event| {
-            if let Some(event @ AppKitEvent::ColorChanged { .. }) = NativeNode::event(event) {
+            if let Some(event @ NativeEvent::ColorChanged { .. }) = NativeNode::event(event) {
                 changed(event);
             }
         })?;
         window.set_content(Some(&picker))?;
-        window.set_closed(move || report(AppKitEvent::ColorPanelClosed))?;
+        window.set_closed(move || report(NativeEvent::ColorPanelClosed))?;
         window.activate()?;
         Ok(Attachment::ColorPanel {
             _window: window,
@@ -890,7 +890,7 @@ impl<R: AppKitRenderNode> WinUI3Backend<R> {
     }
 }
 
-impl<R: AppKitRenderNode> RenderBackend<R> for WinUI3Backend<R> {
+impl<R: NativeRenderNode> RenderBackend<R> for WinUI3Backend<R> {
     type NodeId = NodeId;
 
     fn create_context<'a>(&'a self, store_context: StoreContext<'a>) -> R::Context<'a> {
@@ -909,7 +909,7 @@ impl<R: AppKitRenderNode> RenderBackend<R> for WinUI3Backend<R> {
 
     fn update(&mut self, id: Self::NodeId, value: &R) {
         let old = self.kind(id);
-        let new = value.appkit_node();
+        let new = value.node_kind();
         if let Err(error) = self.update_native(id, &old, &new) {
             self.pending_error.record(error);
         }

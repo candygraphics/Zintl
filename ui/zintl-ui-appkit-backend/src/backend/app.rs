@@ -9,7 +9,7 @@ use zpd_appkit::runloop::Application;
 
 use super::{AppError, AppKitBackend};
 use crate::convert::Shared;
-use crate::{AppKitEvent, AppKitRenderNode, MainTask};
+use crate::{MainTask, NativeEvent, NativeRenderNode};
 
 pub(super) enum Message {
     Window(WindowEvent),
@@ -44,7 +44,7 @@ impl WindowEventAction {
 
 struct AppHandler<'application, R>
 where
-    R: AppKitRenderNode,
+    R: NativeRenderNode,
 {
     application: &'application Application,
     composer: Composer<R, AppKitBackend<R>>,
@@ -53,7 +53,7 @@ where
 
 impl<R> AppHandler<'_, R>
 where
-    R: AppKitRenderNode,
+    R: NativeRenderNode,
 {
     fn synchronize(&mut self, cx: &MessageContext<'_, '_, Message>) {
         let backend = self.composer.backend_mut();
@@ -67,14 +67,14 @@ where
         }
     }
 
-    fn dispatch(&mut self, route: EventRouteId, event: AppKitEvent) {
-        self.composer.dispatch_event(route, R::appkit_event(event));
+    fn dispatch(&mut self, route: EventRouteId, event: NativeEvent) {
+        self.composer.dispatch_event(route, R::native_event(event));
     }
 }
 
 impl<R> MessageLoopHandler<Message> for AppHandler<'_, R>
 where
-    R: AppKitRenderNode,
+    R: NativeRenderNode,
 {
     fn init(&mut self, cx: &MessageContext<'_, '_, Message>) {
         let sender = cx.sender();
@@ -91,7 +91,7 @@ where
             Message::PerformMain(task) => task(),
             Message::Command(id) => {
                 if let Some(route) = self.composer.backend().main_menu_route() {
-                    self.dispatch(route, AppKitEvent::MenuItemSelected { id });
+                    self.dispatch(route, NativeEvent::MenuItemSelected { id });
                 }
                 self.synchronize(cx);
             }
@@ -113,7 +113,7 @@ where
 
 pub fn run_composer<R>(composer: Composer<R, AppKitBackend<R>>) -> Result<(), AppError>
 where
-    R: AppKitRenderNode,
+    R: NativeRenderNode,
 {
     let application = Application::new().map_err(AppError::Application)?;
     let error = Rc::new(RefCell::new(None));

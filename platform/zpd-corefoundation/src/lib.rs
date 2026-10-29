@@ -1,5 +1,7 @@
 //! Safe wrappers for Core Foundation facilities used by ZPD.
 
+#![cfg(target_os = "macos")]
+
 use std::cell::RefCell;
 use std::ffi::{c_long, c_void};
 use std::marker::PhantomData;

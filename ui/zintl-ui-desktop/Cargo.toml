@@ -6,6 +6,10 @@ edition = "2024"
 zintl-ui = { path = "../zintl-ui" }
 zintl-ui-layout = { path = "../zintl-ui-layout" }
 zintl-ui-appkit = { path = "../zintl-ui-appkit" }
+zintl-ui-backend-core = { path = "../zintl-ui-backend-core" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+zintl-ui-appkit-backend = { path = "../zintl-ui-appkit-backend" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 zintl-ui-winui3-backend = { path = "../zintl-ui-winui3-backend" }

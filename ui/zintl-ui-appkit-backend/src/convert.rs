@@ -242,10 +242,10 @@ impl Native for core::FileDialogConfig {
 }
 
 impl Shared for zpd_appkit::actor::WindowEventKind {
-    type Output = core::AppKitEvent;
+    type Output = core::NativeEvent;
 
-    fn shared(self) -> core::AppKitEvent {
-        use core::AppKitEvent as Shared;
+    fn shared(self) -> core::NativeEvent {
+        use core::NativeEvent as Shared;
         use zpd_appkit::actor::WindowEventKind as Native;
 
         match self {

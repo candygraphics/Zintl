@@ -19,7 +19,7 @@ pub use attach::{Attach, Attachments, NativeView};
 pub use button::Button;
 pub use containers::{ScrollView, TabView, TabViewItem};
 #[doc(hidden)]
-pub use context::AppKitContext;
+pub use context::NativeContext;
 pub use controls::{
     ColorWell, ComboBox, NumberField, PopUpButton, SearchField, SegmentedControl, Slider, Switch,
 };
@@ -45,12 +45,9 @@ pub use zintl_ui::store::Store;
 pub use zintl_ui_layout::{LayoutStyle, Size};
 
 pub type Context<'a> = <RenderNode as zintl_ui::renderer::RenderNode>::Context<'a>;
-
-#[cfg(target_os = "macos")]
-pub use zintl_ui_appkit_backend::{AppError, AppKitBackend, run_composer};
 pub use zintl_ui_backend_core::NodeId;
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
@@ -58,21 +55,21 @@ mod tests {
     use zintl_ui::composer::Composer;
     use zintl_ui::renderer::{RenderBackend, RenderNode as _};
     use zintl_ui::view::View as ViewTrait;
-    use zintl_ui_backend_core::AppKitRenderNode;
+    use zintl_ui_backend_core::{HeadlessBackend, NativeRenderNode};
     use zintl_ui_layout::{Axis, LayoutStyle};
 
     use super::*;
 
-    fn composer<E>(root: E) -> Composer<RenderNode, AppKitBackend<RenderNode>>
+    fn composer<E>(root: E) -> Composer<RenderNode, HeadlessBackend<RenderNode>>
     where
         E: IntoElement<Output = RenderNode>,
     {
-        let mut composer = Composer::new(AppKitBackend::new());
+        let mut composer = Composer::new(HeadlessBackend::new());
         composer.mount(root);
         composer
     }
 
-    fn root_id(composer: &Composer<RenderNode, AppKitBackend<RenderNode>>) -> NodeId {
+    fn root_id(composer: &Composer<RenderNode, HeadlessBackend<RenderNode>>) -> NodeId {
         let backend = composer.backend();
         *backend
             .children(backend.root())
@@ -180,7 +177,7 @@ mod tests {
         ];
 
         assert!(matches!(
-            nodes[0].appkit_node(),
+            nodes[0].node_kind(),
             zintl_ui_backend_core::NodeKind::View {
                 kind: zintl_ui_backend_core::ViewKind::Container,
                 id: Some(id),
@@ -188,7 +185,7 @@ mod tests {
             } if id == "content"
         ));
         assert!(matches!(
-            nodes[1].appkit_node(),
+            nodes[1].node_kind(),
             zintl_ui_backend_core::NodeKind::View {
                 kind: zintl_ui_backend_core::ViewKind::Button(title),
                 id: Some(id),
@@ -196,7 +193,7 @@ mod tests {
             } if title.title == "Save" && id == "save"
         ));
         assert!(matches!(
-            nodes[2].appkit_node(),
+            nodes[2].node_kind(),
             zintl_ui_backend_core::NodeKind::View {
                 kind: zintl_ui_backend_core::ViewKind::TextField { editable: true, .. },
                 id: Some(id),
@@ -228,7 +225,7 @@ mod tests {
             }
         ));
         assert!(matches!(
-            multiline.appkit_node(),
+            multiline.node_kind(),
             zintl_ui_backend_core::NodeKind::View {
                 kind: zintl_ui_backend_core::ViewKind::TextField {
                     multiline: true,
@@ -264,14 +261,14 @@ mod tests {
             }
         ));
         assert!(matches!(
-            normal.appkit_node(),
+            normal.node_kind(),
             zintl_ui_backend_core::NodeKind::Window {
                 full_size_content_view: false,
                 ..
             }
         ));
         assert!(matches!(
-            full_size.appkit_node(),
+            full_size.node_kind(),
             zintl_ui_backend_core::NodeKind::Window {
                 full_size_content_view: true,
                 ..
@@ -282,7 +279,7 @@ mod tests {
     #[test]
     fn text_binding_and_button_action_route_through_appkit_views() {
         // Verifies AppKit controls connect native events to Store updates and actions.
-        let mut composer = Composer::new(AppKitBackend::new());
+        let mut composer = Composer::new(HeadlessBackend::new());
         let value = composer.context(|cx: &mut Context<'_>| cx.store(String::new()));
         let changes = Rc::new(Cell::new(0));
         let received = changes.clone();
@@ -313,7 +310,7 @@ mod tests {
     #[test]
     fn sidebar_binding_filters_unknown_native_ids() {
         // Verifies AppKit sidebar selection updates only for declared items.
-        let mut composer = Composer::new(AppKitBackend::new());
+        let mut composer = Composer::new(HeadlessBackend::new());
         let selection = composer.context(|cx: &mut Context<'_>| cx.store(None::<String>));
         composer.mount(
             Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Navigation").sidebar(

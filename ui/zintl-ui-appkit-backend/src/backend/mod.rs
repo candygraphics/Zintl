@@ -27,7 +27,7 @@ use native::NativeNode;
 use crate::convert::{Native, Shared};
 
 use super::{
-    AppKitRenderNode, Color, CommandSet, MainTask, NodeId, NodeKind, Rect, Sidebar, ViewKind,
+    Color, CommandSet, MainTask, NativeRenderNode, NodeId, NodeKind, Rect, Sidebar, ViewKind,
     WindowStyle,
 };
 use zintl_ui_backend_core::layout::{HostLayout, LayoutSnapshot};
@@ -112,7 +112,7 @@ impl NodeState {
     }
 }
 
-pub struct AppKitBackend<R: AppKitRenderNode> {
+pub struct AppKitBackend<R: NativeRenderNode> {
     tree: NodeTree<R, NodeState>,
     retired_windows: Vec<ActorId>,
     structure_dirty: bool,
@@ -123,13 +123,13 @@ pub struct AppKitBackend<R: AppKitRenderNode> {
     opened_window: bool,
 }
 
-impl<R: AppKitRenderNode> Default for AppKitBackend<R> {
+impl<R: NativeRenderNode> Default for AppKitBackend<R> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<R: AppKitRenderNode> AppKitBackend<R> {
+impl<R: NativeRenderNode> AppKitBackend<R> {
     pub fn new() -> Self {
         Self {
             tree: NodeTree::new(),
@@ -714,7 +714,7 @@ impl<R: AppKitRenderNode> AppKitBackend<R> {
     }
 }
 
-impl<R: AppKitRenderNode> RenderBackend<R> for AppKitBackend<R> {
+impl<R: NativeRenderNode> RenderBackend<R> for AppKitBackend<R> {
     type NodeId = NodeId;
 
     fn create_context<'a>(&'a self, store_context: StoreContext<'a>) -> R::Context<'a> {
@@ -733,7 +733,7 @@ impl<R: AppKitRenderNode> RenderBackend<R> for AppKitBackend<R> {
 
     fn update(&mut self, id: Self::NodeId, value: &R) {
         let old = self.kind(id);
-        let new = value.appkit_node();
+        let new = value.node_kind();
         if let Err(error) = self.update_native(id, &old, &new) {
             self.record_error(error);
         }

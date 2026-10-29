@@ -196,22 +196,22 @@ pub enum RenderNode {
 
 impl RenderNodeTrait for RenderNode {
     type Event = Event;
-    type Context<'a> = crate::AppKitContext<'a>;
+    type Context<'a> = crate::NativeContext<'a>;
 
     fn same_kind(&self, other: &Self) -> bool {
         std::mem::discriminant(self) == std::mem::discriminant(other)
     }
 }
 
-impl zintl_ui_backend_core::AppKitRenderNode for RenderNode {
+impl zintl_ui_backend_core::NativeRenderNode for RenderNode {
     fn create_context<'a>(
         store_context: zintl_ui::view::StoreContext<'a>,
         perform_main: Option<&'a zintl_ui_backend_core::MainTaskSender>,
     ) -> Self::Context<'a> {
-        crate::AppKitContext::new(store_context, perform_main)
+        crate::NativeContext::new(store_context, perform_main)
     }
 
-    fn appkit_node(&self) -> zintl_ui_backend_core::NodeKind {
+    fn node_kind(&self) -> zintl_ui_backend_core::NodeKind {
         use zintl_ui_backend_core::{NodeKind, ViewKind};
 
         let view = |kind: ViewKind, layout: &LayoutStyle, id: &Option<String>, enabled: bool| {
@@ -482,32 +482,32 @@ impl zintl_ui_backend_core::AppKitRenderNode for RenderNode {
         }
     }
 
-    fn appkit_event(event: zintl_ui_backend_core::AppKitEvent) -> Self::Event {
-        use zintl_ui_backend_core::AppKitEvent;
+    fn native_event(event: zintl_ui_backend_core::NativeEvent) -> Self::Event {
+        use zintl_ui_backend_core::NativeEvent;
 
         match event {
-            AppKitEvent::SidebarSelectionChanged { id } => Event::SidebarSelectionChanged { id },
-            AppKitEvent::SidebarSearchChanged { value } => Event::SidebarSearchChanged { value },
-            AppKitEvent::Created => Event::WindowCreated,
-            AppKitEvent::DidResize => Event::WindowDidResize,
-            AppKitEvent::WillClose => Event::WindowWillClose,
-            AppKitEvent::DidClose => Event::WindowDidClose,
-            AppKitEvent::ButtonClicked => Event::Activated,
-            AppKitEvent::TextChanged { value } => Event::TextChanged { value },
-            AppKitEvent::StateChanged { on } => Event::StateChanged { on },
-            AppKitEvent::ValueChanged { value } => Event::ValueChanged { value },
-            AppKitEvent::SelectionChanged { index } => Event::SelectionChanged { index },
-            AppKitEvent::ColorChanged { color } => Event::ColorChanged {
+            NativeEvent::SidebarSelectionChanged { id } => Event::SidebarSelectionChanged { id },
+            NativeEvent::SidebarSearchChanged { value } => Event::SidebarSearchChanged { value },
+            NativeEvent::Created => Event::WindowCreated,
+            NativeEvent::DidResize => Event::WindowDidResize,
+            NativeEvent::WillClose => Event::WindowWillClose,
+            NativeEvent::DidClose => Event::WindowDidClose,
+            NativeEvent::ButtonClicked => Event::Activated,
+            NativeEvent::TextChanged { value } => Event::TextChanged { value },
+            NativeEvent::StateChanged { on } => Event::StateChanged { on },
+            NativeEvent::ValueChanged { value } => Event::ValueChanged { value },
+            NativeEvent::SelectionChanged { index } => Event::SelectionChanged { index },
+            NativeEvent::ColorChanged { color } => Event::ColorChanged {
                 color: Color::from_backend(color),
             },
-            AppKitEvent::Scrolled { x, y } => Event::Scrolled { x, y },
-            AppKitEvent::MenuItemSelected { id } => Event::MenuItemSelected { id },
-            AppKitEvent::PopoverClosed => Event::PopoverClosed,
-            AppKitEvent::AlertResponse { button } => Event::AlertResponse { button },
-            AppKitEvent::FileDialogCompleted { paths } => Event::FileDialogCompleted {
+            NativeEvent::Scrolled { x, y } => Event::Scrolled { x, y },
+            NativeEvent::MenuItemSelected { id } => Event::MenuItemSelected { id },
+            NativeEvent::PopoverClosed => Event::PopoverClosed,
+            NativeEvent::AlertResponse { button } => Event::AlertResponse { button },
+            NativeEvent::FileDialogCompleted { paths } => Event::FileDialogCompleted {
                 paths: paths.map(|paths| paths.into_iter().map(PathBuf::from).collect()),
             },
-            AppKitEvent::ColorPanelClosed => Event::ColorPanelClosed,
+            NativeEvent::ColorPanelClosed => Event::ColorPanelClosed,
         }
     }
 

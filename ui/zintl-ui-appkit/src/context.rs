@@ -6,12 +6,12 @@ pub type MainTask = Box<dyn FnOnce() + Send + 'static>;
 
 pub type MainTaskSender = dyn Fn(MainTask) -> bool + Send + Sync;
 
-pub struct AppKitContext<'a> {
+pub struct NativeContext<'a> {
     store_context: StoreContext<'a>,
     perform_main: Option<&'a MainTaskSender>,
 }
 
-impl<'a> AppKitContext<'a> {
+impl<'a> NativeContext<'a> {
     #[doc(hidden)]
     pub fn new(store_context: StoreContext<'a>, perform_main: Option<&'a MainTaskSender>) -> Self {
         Self {
@@ -61,7 +61,7 @@ impl<'a> AppKitContext<'a> {
     }
 }
 
-impl<'a> ContextTrait<'a> for AppKitContext<'a> {
+impl<'a> ContextTrait<'a> for NativeContext<'a> {
     fn store_context<'context>(&'context self) -> &'context StoreContext<'a> {
         &self.store_context
     }

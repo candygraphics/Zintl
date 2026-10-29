@@ -1,5 +1,7 @@
 //! Safe, main-thread-aware Rust ownership wrappers for AppKit.
 
+#![cfg(target_os = "macos")]
+
 #[cfg(all(target_os = "macos", not(target_arch = "aarch64")))]
 compile_error!("zpd-appkit supports Apple Silicon macOS only");
 

@@ -21,9 +21,9 @@ impl Rect {
     }
 }
 
-/// Semantic AppKit events supported by the Actor tree.
+/// A user change or window lifecycle event reported by a native backend.
 #[derive(Clone, Debug, PartialEq)]
-pub enum WindowEventKind {
+pub enum NativeEvent {
     Created,
     DidResize,
     WillClose,
@@ -93,33 +93,31 @@ impl Color {
     }
 }
 
-/// Mirrors `NSButtonType` values used by declarative buttons.
+/// How a button responds to clicks.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[repr(u64)]
 pub enum ButtonType {
     #[default]
-    MomentaryPushIn = 7,
-    PushOnPushOff = 1,
-    Checkbox = 3,
-    Radio = 4,
+    MomentaryPushIn,
+    PushOnPushOff,
+    Checkbox,
+    Radio,
 }
 
-/// Mirrors `NSBezelStyle` values that are valid on current macOS releases.
+/// The shape drawn around a button.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[repr(u64)]
 pub enum BezelStyle {
     #[default]
-    Push = 1,
-    FlexiblePush = 2,
-    Disclosure = 5,
-    Circular = 7,
-    Help = 9,
-    SmallSquare = 10,
-    Toolbar = 11,
-    AccessoryBarAction = 12,
-    AccessoryBar = 13,
-    PushDisclosure = 14,
-    Badge = 15,
+    Push,
+    FlexiblePush,
+    Disclosure,
+    Circular,
+    Help,
+    SmallSquare,
+    Toolbar,
+    AccessoryBarAction,
+    AccessoryBar,
+    PushDisclosure,
+    Badge,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -137,7 +135,7 @@ pub struct WindowAppMenu {
 pub struct CommandMenu {
     pub title: String,
     pub items: Vec<CommandItem>,
-    /// Registers the menu with `NSApp` so AppKit can manage its contents.
+    /// Marks a menu the platform fills or decorates itself.
     pub role: Option<MenuRole>,
 }
 
@@ -184,7 +182,7 @@ pub enum CommandModifier {
     Shift,
 }
 
-/// Standard actions delivered through the AppKit responder chain.
+/// Standard actions the platform performs itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CommandRole {
     About,
@@ -209,7 +207,7 @@ pub enum CommandRole {
     Separator,
 }
 
-/// Menus that `NSApp` fills or decorates itself.
+/// Menus the platform fills or decorates itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuRole {
     Services,
@@ -217,14 +215,13 @@ pub enum MenuRole {
     Help,
 }
 
-/// Mirrors `NSAlertStyle`.
+/// The severity an alert conveys.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[repr(u64)]
 pub enum AlertStyle {
     #[default]
-    Warning = 0,
-    Informational = 1,
-    Critical = 2,
+    Warning,
+    Informational,
+    Critical,
 }
 
 /// How an alert button behaves when the user presses a key.

@@ -80,7 +80,7 @@ impl RenderNode for TestNode {
     }
 }
 
-impl AppKitRenderNode for TestNode {
+impl NativeRenderNode for TestNode {
     fn create_context<'a>(
         store_context: StoreContext<'a>,
         perform_main: Option<&'a MainTaskSender>,
@@ -91,11 +91,11 @@ impl AppKitRenderNode for TestNode {
         }
     }
 
-    fn appkit_node(&self) -> NodeKind {
+    fn node_kind(&self) -> NodeKind {
         self.0.clone()
     }
 
-    fn appkit_event(_event: crate::AppKitEvent) -> Self::Event {
+    fn native_event(_event: crate::NativeEvent) -> Self::Event {
         TestEvent
     }
 }

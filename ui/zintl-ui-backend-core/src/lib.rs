@@ -5,15 +5,17 @@
 
 mod model;
 
+pub mod headless;
 pub mod layout;
 pub mod tree;
 
-pub use model::WindowEventKind as AppKitEvent;
+pub use headless::HeadlessBackend;
+
 pub use model::{
     AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, Color,
     CommandItem, CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig,
-    FileDialogMode, MenuRole, NumberFormat, PopoverEdge, Rect, ScrollAxes, Sidebar, SidebarItem,
-    SidebarSearch, SidebarSection, WindowAppMenu, WindowStyle,
+    FileDialogMode, MenuRole, NativeEvent, NumberFormat, PopoverEdge, Rect, ScrollAxes, Sidebar,
+    SidebarItem, SidebarSearch, SidebarSection, WindowAppMenu, WindowStyle,
 };
 use zintl_ui::renderer::RenderNode;
 use zintl_ui::view::StoreContext;
@@ -155,13 +157,13 @@ impl NodeKind {
     }
 }
 
-pub trait AppKitRenderNode: RenderNode {
+pub trait NativeRenderNode: RenderNode {
     fn create_context<'a>(
         store_context: StoreContext<'a>,
         perform_main: Option<&'a MainTaskSender>,
     ) -> Self::Context<'a>;
-    fn appkit_node(&self) -> NodeKind;
-    fn appkit_event(event: AppKitEvent) -> Self::Event;
+    fn node_kind(&self) -> NodeKind;
+    fn native_event(event: NativeEvent) -> Self::Event;
 
     /// Returns the main menu installed while the tree declares none.
     fn default_main_menu() -> Option<CommandSet> {

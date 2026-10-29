@@ -136,9 +136,7 @@ name = "zintl-ui-appkit"
 version = "0.0.0"
 dependencies = [
  "zintl-ui",
- "zintl-ui-appkit-backend",
  "zintl-ui-backend-core",
- "zintl-ui-desktop",
  "zintl-ui-layout",
 ]
 
@@ -167,6 +165,8 @@ version = "0.0.0"
 dependencies = [
  "zintl-ui",
  "zintl-ui-appkit",
+ "zintl-ui-appkit-backend",
+ "zintl-ui-backend-core",
  "zintl-ui-layout",
  "zintl-ui-winui3-backend",
 ]

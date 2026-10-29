@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use zintl_ui::event::EventRouteId;
 
 use crate::{
-    AppKitRenderNode, CommandItem, CommandModifier, CommandRole, CommandSet, MainTask,
-    MainTaskSender, NodeId, NodeKind, WindowAppMenu, WindowStyle,
+    CommandItem, CommandModifier, CommandRole, CommandSet, MainTask, MainTaskSender,
+    NativeRenderNode, NodeId, NodeKind, WindowAppMenu, WindowStyle,
 };
 
 /// A rendered node and the backend's native state `S` for it.
@@ -25,13 +25,13 @@ pub struct NodeTree<R, S> {
     nodes: Vec<Option<TreeNode<R, S>>>,
 }
 
-impl<R: AppKitRenderNode, S: Default> Default for NodeTree<R, S> {
+impl<R: NativeRenderNode, S: Default> Default for NodeTree<R, S> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<R: AppKitRenderNode, S: Default> NodeTree<R, S> {
+impl<R: NativeRenderNode, S: Default> NodeTree<R, S> {
     pub const ROOT: NodeId = NodeId(0);
 
     pub fn new() -> Self {
@@ -89,7 +89,7 @@ impl<R: AppKitRenderNode, S: Default> NodeTree<R, S> {
     pub fn kind(&self, id: NodeId) -> NodeKind {
         self.value(id)
             .expect("render nodes have values")
-            .appkit_node()
+            .node_kind()
     }
 
     pub fn states_mut(&mut self) -> impl Iterator<Item = &mut S> {

@@ -19,7 +19,7 @@ pub use controls::{
 };
 use zintl_ui::composer::Composer;
 pub use zintl_ui::element::{Element, ElementFactory, IntoElement};
-#[cfg(any(not(any(target_os = "macos", target_os = "windows")), test))]
+#[cfg(test)]
 use zintl_ui::event::EventRouteId;
 use zintl_ui::renderer::RenderBackend;
 pub use zintl_ui::store::Store;
@@ -465,134 +465,21 @@ impl NativeView for VStack {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-struct Node {
-    value: Option<RenderNode>,
-    parent: Option<usize>,
-    children: Vec<usize>,
-    event_route: Option<EventRouteId>,
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-struct TreeBackend {
-    nodes: Vec<Option<Node>>,
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-impl TreeBackend {
-    fn new() -> Self {
-        Self {
-            nodes: vec![Some(Node {
-                value: None,
-                parent: None,
-                children: Vec::new(),
-                event_route: None,
-            })],
-        }
-    }
-
-    fn node(&self, id: usize) -> &Node {
-        self.nodes[id].as_ref().unwrap()
-    }
-
-    fn node_mut(&mut self, id: usize) -> &mut Node {
-        self.nodes[id].as_mut().unwrap()
-    }
-
-    fn value(&self, id: usize) -> Option<&RenderNode> {
-        self.node(id).value.as_ref()
-    }
-
-    fn children(&self, id: usize) -> &[usize] {
-        &self.node(id).children
-    }
-
-    #[cfg(test)]
-    fn event_route(&self, id: usize) -> Option<EventRouteId> {
-        self.node(id).event_route
-    }
-
-    fn detach(&mut self, child: usize) {
-        let Some(parent) = self.node(child).parent else {
-            return;
-        };
-        self.node_mut(parent)
-            .children
-            .retain(|candidate| *candidate != child);
-        self.node_mut(child).parent = None;
-    }
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-impl RenderBackend<RenderNode> for TreeBackend {
-    type NodeId = usize;
-
-    fn create_context<'a>(
-        &'a self,
-        store_context: zintl_ui::view::StoreContext<'a>,
-    ) -> Context<'a> {
-        zintl_ui_appkit::AppKitContext::new(store_context, None)
-    }
-
-    fn root(&self) -> Self::NodeId {
-        0
-    }
-
-    fn create(&mut self, value: &RenderNode, event_route: Option<EventRouteId>) -> Self::NodeId {
-        let id = self.nodes.len();
-        self.nodes.push(Some(Node {
-            value: Some(value.clone()),
-            parent: None,
-            children: Vec::new(),
-            event_route,
-        }));
-        id
-    }
-
-    fn update(&mut self, node: Self::NodeId, value: &RenderNode) {
-        self.node_mut(node).value = Some(value.clone());
-    }
-
-    fn set_event_route(&mut self, node: Self::NodeId, event_route: Option<EventRouteId>) {
-        self.node_mut(node).event_route = event_route;
-    }
-
-    fn insert_child(&mut self, parent: Self::NodeId, index: usize, child: Self::NodeId) {
-        self.detach(child);
-        let index = index.min(self.node(parent).children.len());
-        self.node_mut(parent).children.insert(index, child);
-        self.node_mut(child).parent = Some(parent);
-    }
-
-    fn remove(&mut self, node: Self::NodeId) {
-        self.detach(node);
-        self.nodes[node] = None;
-    }
-
-    fn move_child(&mut self, parent: Self::NodeId, index: usize, child: Self::NodeId) {
-        if self.node(child).parent == Some(parent)
-            && self.node(parent).children.get(index) == Some(&child)
-        {
-            return;
-        }
-        self.insert_child(parent, index, child);
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderedNode {
     pub value: RenderNode,
     pub children: Vec<RenderedNode>,
 }
 
-#[cfg(target_os = "macos")]
-type DesktopBackend = zintl_ui_appkit::AppKitBackend<RenderNode>;
+// Tests use the headless backend everywhere so they behave alike on every platform.
+#[cfg(all(target_os = "macos", not(test)))]
+type DesktopBackend = zintl_ui_appkit_backend::AppKitBackend<RenderNode>;
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", not(test)))]
 type DesktopBackend = zintl_ui_winui3_backend::WinUI3Backend<RenderNode>;
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-type DesktopBackend = TreeBackend;
+#[cfg(any(test, not(any(target_os = "macos", target_os = "windows"))))]
+type DesktopBackend = zintl_ui_backend_core::HeadlessBackend<RenderNode>;
 
 type DesktopNodeId = <DesktopBackend as RenderBackend<RenderNode>>::NodeId;
 
@@ -640,12 +527,12 @@ impl App {
         }
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", not(test)))]
     pub fn run(self) -> Result<(), AppError> {
-        zintl_ui_appkit::run_composer(self.composer)
+        zintl_ui_appkit_backend::run_composer(self.composer)
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(all(target_os = "windows", not(test)))]
     pub fn run(self) -> Result<(), AppError> {
         zintl_ui_winui3_backend::run_composer(self.composer)
     }
@@ -697,7 +584,7 @@ impl App {
 }
 
 #[cfg(target_os = "macos")]
-pub use zintl_ui_appkit::AppError;
+pub use zintl_ui_appkit_backend::AppError;
 #[cfg(target_os = "windows")]
 pub use zintl_ui_winui3_backend::AppError;
 

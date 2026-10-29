@@ -68,7 +68,7 @@ impl RenderNode for TestNode {
     }
 }
 
-impl AppKitRenderNode for TestNode {
+impl NativeRenderNode for TestNode {
     fn create_context<'a>(
         store_context: StoreContext<'a>,
         _perform_main: Option<&'a MainTaskSender>,
@@ -76,11 +76,11 @@ impl AppKitRenderNode for TestNode {
         TestContext { store_context }
     }
 
-    fn appkit_node(&self) -> NodeKind {
+    fn node_kind(&self) -> NodeKind {
         self.0.clone()
     }
 
-    fn appkit_event(_event: AppKitEvent) -> Self::Event {
+    fn native_event(_event: NativeEvent) -> Self::Event {
         TestEvent
     }
 }
@@ -386,7 +386,7 @@ fn size_changes_stay_local_and_sidebar_events_are_routed() {
     );
     assert_eq!(
         NativeNode::event(ControlEvent::NavigationSelected("home".into())),
-        Some(AppKitEvent::SidebarSelectionChanged { id: "home".into() })
+        Some(NativeEvent::SidebarSelectionChanged { id: "home".into() })
     );
 }
 
