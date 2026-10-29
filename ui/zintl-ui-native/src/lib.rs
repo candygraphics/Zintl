@@ -1,14 +1,11 @@
-//! Declarative Zintl UI views that mirror AppKit widgets.
+//! Declarative native desktop views that render core `RenderNode` descriptions.
 
 mod attach;
 mod button;
 mod containers;
-mod context;
 mod controls;
-mod event;
 mod menu;
 mod presentation;
-mod render_node;
 mod sidebar;
 mod text_field;
 mod types;
@@ -18,38 +15,33 @@ mod window;
 pub use attach::{Attach, Attachments, NativeView};
 pub use button::Button;
 pub use containers::{ScrollView, TabView, TabViewItem};
-#[doc(hidden)]
-pub use context::AppKitContext;
 pub use controls::{
     ColorWell, ComboBox, NumberField, PopUpButton, SearchField, SegmentedControl, Slider, Switch,
 };
-pub use event::{Event, EventKind};
 pub use menu::{
     EnglishMenuLocalizer, JapaneseMenuLocalizer, MainMenu, Menu, MenuItem, MenuItemState,
     MenuLocalizer, MenuRole, MenuState, Modifier, Shortcut, StandardAction, StandardMenu,
     StandardText,
 };
 pub use presentation::{Alert, AlertButton, ColorPanel, FileDialog, Popover};
-pub use render_node::{AlertState, FileDialogState, Rect, RenderNode};
-pub use sidebar::{Sidebar, SidebarItem, SidebarSearchState, SidebarSection, SidebarState};
+pub use sidebar::{Sidebar, SidebarItem, SidebarSection};
 pub use text_field::TextField;
-pub use types::{
-    AlertStyle, BezelStyle, ButtonRole, ButtonType, Color, PopoverEdge, ScrollAxes, ScrollStatus,
-    WindowStyle,
-};
+pub use types::{ButtonRole, ScrollStatus};
 pub use view::View;
 pub use window::Window;
 pub use zintl_ui::element::{Element, IntoElement, ListFactory};
 pub use zintl_ui::list;
 pub use zintl_ui::store::Store;
+pub use zintl_ui_backend_core::{
+    AlertStyle, BezelStyle, ButtonType, Color, Event, EventKind, NodeId, PopoverEdge, Rect,
+    RenderNode, ScrollAxes, ViewKind, WindowStyle,
+};
 pub use zintl_ui_layout::{LayoutStyle, Size};
 
+/// The context views receive while rendering.
 pub type Context<'a> = <RenderNode as zintl_ui::renderer::RenderNode>::Context<'a>;
 
-#[cfg(target_os = "macos")]
-pub use zintl_ui_appkit_backend::{AppError, AppKitBackend, NodeId, run_composer};
-
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
@@ -57,21 +49,21 @@ mod tests {
     use zintl_ui::composer::Composer;
     use zintl_ui::renderer::{RenderBackend, RenderNode as _};
     use zintl_ui::view::View as ViewTrait;
-    use zintl_ui_appkit_backend::AppKitRenderNode;
+    use zintl_ui_backend_core::{HeadlessBackend, ViewKind};
     use zintl_ui_layout::{Axis, LayoutStyle};
 
     use super::*;
 
-    fn composer<E>(root: E) -> Composer<RenderNode, AppKitBackend<RenderNode>>
+    fn composer<E>(root: E) -> Composer<RenderNode, HeadlessBackend>
     where
         E: IntoElement<Output = RenderNode>,
     {
-        let mut composer = Composer::new(AppKitBackend::new());
+        let mut composer = Composer::new(HeadlessBackend::new());
         composer.mount(root);
         composer
     }
 
-    fn root_id(composer: &Composer<RenderNode, AppKitBackend<RenderNode>>) -> NodeId {
+    fn root_id(composer: &Composer<RenderNode, HeadlessBackend>) -> NodeId {
         let backend = composer.backend();
         *backend
             .children(backend.root())
@@ -82,8 +74,8 @@ mod tests {
     fn assert_view<T: ViewTrait<Output = RenderNode>>() {}
 
     #[test]
-    fn appkit_widgets_are_zintl_views() {
-        // Verifies each AppKit-shaped widget participates in declarative composition.
+    fn native_widgets_are_zintl_views() {
+        // Verifies each native widget participates in declarative composition.
         assert_view::<Button>();
         assert_view::<TextField>();
         assert_view::<View>();
@@ -91,8 +83,8 @@ mod tests {
     }
 
     #[test]
-    fn list_children_preserve_mixed_appkit_view_order() {
-        // Verifies AppKit containers accept ordered heterogeneous list children.
+    fn list_children_preserve_mixed_view_order() {
+        // Verifies containers accept ordered heterogeneous list children.
         let composer = composer(View::new(
             LayoutStyle::stack(Axis::Vertical, 8.0),
             list![Button::new("First"), TextField::new(), Button::new("Last")],
@@ -102,21 +94,24 @@ mod tests {
         assert_eq!(children.len(), 3);
         assert!(matches!(
             composer.backend().value(children[0]),
-            Some(RenderNode::NSButton { title, .. }) if title == "First"
+            Some(RenderNode::View { kind: ViewKind::Button(zintl_ui_backend_core::Button { title, .. }), .. }) if title == "First"
         ));
         assert!(matches!(
             composer.backend().value(children[1]),
-            Some(RenderNode::NSTextField { .. })
+            Some(RenderNode::View {
+                kind: ViewKind::TextField { .. },
+                ..
+            })
         ));
         assert!(matches!(
             composer.backend().value(children[2]),
-            Some(RenderNode::NSButton { title, .. }) if title == "Last"
+            Some(RenderNode::View { kind: ViewKind::Button(zintl_ui_backend_core::Button { title, .. }), .. }) if title == "Last"
         ));
     }
 
     #[test]
     fn text_field_presentations_share_one_native_kind() {
-        // Verifies labels and editable fields are configurations of one NSTextField node.
+        // Verifies labels and editable fields are configurations of one text field node.
         let label = composer(TextField::label_with_string("Label"));
         let field = composer(TextField::new());
         let label = label.backend().value(root_id(&label)).unwrap();
@@ -124,84 +119,31 @@ mod tests {
 
         assert!(matches!(
             label,
-            RenderNode::NSTextField {
-                editable: false,
-                selectable: false,
-                bordered: false,
-                draws_background: false,
+            RenderNode::View {
+                kind: ViewKind::TextField {
+                    editable: false,
+                    selectable: false,
+                    bordered: false,
+                    draws_background: false,
+                    ..
+                },
                 ..
             }
         ));
         assert!(matches!(
             field,
-            RenderNode::NSTextField {
-                editable: true,
-                selectable: true,
-                bordered: true,
-                draws_background: true,
+            RenderNode::View {
+                kind: ViewKind::TextField {
+                    editable: true,
+                    selectable: true,
+                    bordered: true,
+                    draws_background: true,
+                    ..
+                },
                 ..
             }
         ));
         assert!(label.same_kind(field));
-    }
-
-    #[test]
-    fn native_variants_translate_without_changing_widget_boundaries() {
-        // Verifies AppKit render nodes map directly to backend widget descriptions.
-        let nodes = [
-            RenderNode::NSView {
-                layout: LayoutStyle::stack(Axis::Vertical, 0.0),
-                id: Some("content".into()),
-            },
-            RenderNode::NSButton {
-                title: "Save".into(),
-                button_type: ButtonType::MomentaryPushIn,
-                bezel: Some(BezelStyle::Push),
-                on: false,
-                system_image: None,
-                key_equivalent: None,
-                destructive: false,
-                enabled: true,
-                layout: LayoutStyle::leaf(Size::new(80.0, 32.0)),
-                id: Some("save".into()),
-            },
-            RenderNode::NSTextField {
-                value: "Name".into(),
-                placeholder: Some("Your name".into()),
-                editable: true,
-                selectable: true,
-                bordered: true,
-                draws_background: true,
-                multiline: false,
-                layout: LayoutStyle::leaf(Size::new(160.0, 28.0)),
-                id: Some("name".into()),
-            },
-        ];
-
-        assert!(matches!(
-            nodes[0].appkit_node(),
-            zintl_ui_appkit_backend::NodeKind::View {
-                kind: zintl_ui_appkit_backend::ViewKind::Container,
-                id: Some(id),
-                ..
-            } if id == "content"
-        ));
-        assert!(matches!(
-            nodes[1].appkit_node(),
-            zintl_ui_appkit_backend::NodeKind::View {
-                kind: zintl_ui_appkit_backend::ViewKind::Button(title),
-                id: Some(id),
-                ..
-            } if title.title == "Save" && id == "save"
-        ));
-        assert!(matches!(
-            nodes[2].appkit_node(),
-            zintl_ui_appkit_backend::NodeKind::View {
-                kind: zintl_ui_appkit_backend::ViewKind::TextField { editable: true, .. },
-                id: Some(id),
-                ..
-            } if id == "name"
-        ));
     }
 
     #[test]
@@ -214,22 +156,18 @@ mod tests {
 
         assert!(matches!(
             single_line,
-            RenderNode::NSTextField {
-                multiline: false,
+            RenderNode::View {
+                kind: ViewKind::TextField {
+                    multiline: false,
+                    ..
+                },
                 ..
             }
         ));
         assert!(matches!(
             multiline,
-            RenderNode::NSTextField {
-                multiline: true,
-                ..
-            }
-        ));
-        assert!(matches!(
-            multiline.appkit_node(),
-            zintl_ui_appkit_backend::NodeKind::View {
-                kind: zintl_ui_appkit_backend::ViewKind::TextField {
+            RenderNode::View {
+                kind: ViewKind::TextField {
                     multiline: true,
                     ..
                 },
@@ -250,28 +188,14 @@ mod tests {
 
         assert!(matches!(
             normal,
-            RenderNode::NSWindow {
+            RenderNode::Window {
                 full_size_content_view: false,
                 ..
             }
         ));
         assert!(matches!(
             full_size,
-            RenderNode::NSWindow {
-                full_size_content_view: true,
-                ..
-            }
-        ));
-        assert!(matches!(
-            normal.appkit_node(),
-            zintl_ui_appkit_backend::NodeKind::Window {
-                full_size_content_view: false,
-                ..
-            }
-        ));
-        assert!(matches!(
-            full_size.appkit_node(),
-            zintl_ui_appkit_backend::NodeKind::Window {
+            RenderNode::Window {
                 full_size_content_view: true,
                 ..
             }
@@ -279,9 +203,9 @@ mod tests {
     }
 
     #[test]
-    fn text_binding_and_button_action_route_through_appkit_views() {
-        // Verifies AppKit controls connect native events to Store updates and actions.
-        let mut composer = Composer::new(AppKitBackend::new());
+    fn text_binding_and_button_action_route_through_views() {
+        // Verifies controls connect native events to Store updates and actions.
+        let mut composer = Composer::new(HeadlessBackend::new());
         let value = composer.context(|cx: &mut Context<'_>| cx.store(String::new()));
         let changes = Rc::new(Cell::new(0));
         let received = changes.clone();
@@ -311,8 +235,8 @@ mod tests {
 
     #[test]
     fn sidebar_binding_filters_unknown_native_ids() {
-        // Verifies AppKit sidebar selection updates only for declared items.
-        let mut composer = Composer::new(AppKitBackend::new());
+        // Verifies sidebar selection updates only for declared items.
+        let mut composer = Composer::new(HeadlessBackend::new());
         let selection = composer.context(|cx: &mut Context<'_>| cx.store(None::<String>));
         composer.mount(
             Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Navigation").sidebar(

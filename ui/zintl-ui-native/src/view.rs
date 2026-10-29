@@ -1,5 +1,6 @@
 use zintl_ui::element::{IntoElement, ListFactory};
 use zintl_ui::view::View as ViewTrait;
+use zintl_ui_backend_core::ViewKind;
 use zintl_ui_layout::LayoutStyle;
 
 use crate::attach::attachments;
@@ -33,9 +34,11 @@ impl NativeView for View {
     attachments!();
 
     fn base_element(&self, _cx: &mut Context<'_>) -> Element<RenderNode> {
-        Element::node(RenderNode::NSView {
+        Element::node(RenderNode::View {
+            kind: ViewKind::Container,
             layout: self.layout,
             id: self.id.clone(),
+            enabled: true,
         })
         .with_children([self.children.clone().into_element()])
     }

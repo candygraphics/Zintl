@@ -1,3 +1,5 @@
+#![cfg(target_os = "macos")]
+
 pub mod block;
 pub mod ffi;
 mod ivar;

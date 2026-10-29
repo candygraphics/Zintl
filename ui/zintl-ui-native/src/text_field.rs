@@ -1,6 +1,7 @@
 use zintl_ui::element::IntoElement;
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
+use zintl_ui_backend_core::ViewKind;
 use zintl_ui_layout::{LayoutStyle, Size};
 
 use crate::attach::attachments;
@@ -103,16 +104,19 @@ impl NativeView for TextField {
             .binding
             .map(|store| cx.get(store).clone())
             .unwrap_or_else(|| self.value.clone());
-        let element = Element::node(RenderNode::NSTextField {
-            value,
-            placeholder: self.placeholder.clone(),
-            editable: self.editable,
-            selectable: self.selectable,
-            bordered: self.bordered,
-            draws_background: self.draws_background,
-            multiline: self.multiline,
+        let element = Element::node(RenderNode::View {
+            kind: ViewKind::TextField {
+                value,
+                placeholder: self.placeholder.clone(),
+                editable: self.editable,
+                selectable: self.selectable,
+                bordered: self.bordered,
+                draws_background: self.draws_background,
+                multiline: self.multiline,
+            },
             layout: self.layout,
             id: self.id.clone(),
+            enabled: true,
         });
         if let Some(store) = self.binding {
             element.on_event(EventKind::TextChanged, move |cx, event| {

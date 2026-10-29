@@ -1,0 +1,7 @@
+[package]
+name = "zintl-ui-backend-core"
+edition = "2024"
+
+[dependencies]
+zintl-ui = { path = "../zintl-ui" }
+zintl-ui-layout = { path = "../zintl-ui-layout" }

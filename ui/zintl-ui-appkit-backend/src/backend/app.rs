@@ -8,7 +8,8 @@ use zpd_appkit::actor::{WindowEvent, WindowEventKind};
 use zpd_appkit::runloop::Application;
 
 use super::{AppError, AppKitBackend};
-use crate::{AppKitEvent, AppKitRenderNode, MainTask};
+use crate::convert::Shared;
+use crate::{Event, MainTask, RenderNode};
 
 pub(super) enum Message {
     Window(WindowEvent),
@@ -41,19 +42,13 @@ impl WindowEventAction {
     }
 }
 
-struct AppHandler<'application, R>
-where
-    R: AppKitRenderNode,
-{
+struct AppHandler<'application> {
     application: &'application Application,
-    composer: Composer<R, AppKitBackend<R>>,
+    composer: Composer<RenderNode, AppKitBackend>,
     error: Rc<RefCell<Option<AppError>>>,
 }
 
-impl<R> AppHandler<'_, R>
-where
-    R: AppKitRenderNode,
-{
+impl AppHandler<'_> {
     fn synchronize(&mut self, cx: &MessageContext<'_, '_, Message>) {
         let backend = self.composer.backend_mut();
         match backend.synchronize(self.application, cx) {
@@ -66,15 +61,12 @@ where
         }
     }
 
-    fn dispatch(&mut self, route: EventRouteId, event: AppKitEvent) {
-        self.composer.dispatch_event(route, R::appkit_event(event));
+    fn dispatch(&mut self, route: EventRouteId, event: Event) {
+        self.composer.dispatch_event(route, event);
     }
 }
 
-impl<R> MessageLoopHandler<Message> for AppHandler<'_, R>
-where
-    R: AppKitRenderNode,
-{
+impl MessageLoopHandler<Message> for AppHandler<'_> {
     fn init(&mut self, cx: &MessageContext<'_, '_, Message>) {
         let sender = cx.sender();
         self.composer
@@ -90,7 +82,7 @@ where
             Message::PerformMain(task) => task(),
             Message::Command(id) => {
                 if let Some(route) = self.composer.backend().main_menu_route() {
-                    self.dispatch(route, AppKitEvent::MenuItemSelected { id });
+                    self.dispatch(route, Event::MenuItemSelected { id });
                 }
                 self.synchronize(cx);
             }
@@ -100,7 +92,7 @@ where
                     self.composer.backend_mut().mark_window_closed(event.window);
                 }
                 if let Some(route) = event.route {
-                    self.dispatch(EventRouteId::from_raw(route.get()), event.kind);
+                    self.dispatch(EventRouteId::from_raw(route.get()), event.kind.shared());
                 }
                 if action != WindowEventAction::WaitForClose {
                     self.synchronize(cx);
@@ -110,10 +102,7 @@ where
     }
 }
 
-pub fn run_composer<R>(composer: Composer<R, AppKitBackend<R>>) -> Result<(), AppError>
-where
-    R: AppKitRenderNode,
-{
+pub fn run_composer(composer: Composer<RenderNode, AppKitBackend>) -> Result<(), AppError> {
     let application = Application::new().map_err(AppError::Application)?;
     let error = Rc::new(RefCell::new(None));
     let message_loop = MessageLoopAppkit::new(

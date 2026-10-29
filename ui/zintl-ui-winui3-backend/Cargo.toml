@@ -1,0 +1,12 @@
+[package]
+name = "zintl-ui-winui3-backend"
+edition = "2024"
+
+[dependencies]
+zintl-ui = { path = "../zintl-ui" }
+zintl-ui-layout = { path = "../zintl-ui-layout" }
+zintl-ui-backend-core = { path = "../zintl-ui-backend-core" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+messageloop-dispatcherqueue = { path = "../../common/messageloop/messageloop-dispatcherqueue" }
+zpd-winui3 = { path = "../../platform/zpd-winui3" }

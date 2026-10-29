@@ -73,7 +73,7 @@ fn main() -> zpd_winui3::Result<()> {
 fn menu_bar() -> zpd_winui3::MenuBar {
     use zpd_winui3::{
         KeyboardAccelerator, MenuBar, MenuBarItem, MenuFlyoutItem, MenuFlyoutItemBase,
-        MenuFlyoutSubItem, VirtualKeyModifiers,
+        MenuFlyoutSubItem, MenuItemRole, VirtualKeyModifiers,
     };
 
     MenuBar {
@@ -88,6 +88,7 @@ fn menu_bar() -> zpd_winui3::MenuBar {
                         key: "N".into(),
                         modifiers: VirtualKeyModifiers::CONTROL,
                     }),
+                    role: MenuItemRole::None,
                 }),
                 MenuFlyoutItemBase::Separator,
                 MenuFlyoutItemBase::SubItem(MenuFlyoutSubItem {
@@ -98,6 +99,7 @@ fn menu_bar() -> zpd_winui3::MenuBar {
                         text: "Example.zintl".into(),
                         is_enabled: true,
                         keyboard_accelerator: None,
+                        role: MenuItemRole::None,
                     })],
                 }),
             ],

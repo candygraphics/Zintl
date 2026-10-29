@@ -5,6 +5,7 @@ use std::rc::Rc;
 use zintl_ui::element::IntoElement;
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
+use zintl_ui_backend_core::ViewKind;
 use zintl_ui_layout::{LayoutStyle, Size};
 
 use crate::attach::attachments;
@@ -105,7 +106,7 @@ impl<T: Clone + 'static> Binding<T> {
     }
 }
 
-/// A native `NSSwitch`.
+/// A native on/off switch.
 #[derive(Clone)]
 pub struct Switch {
     on: bool,
@@ -156,11 +157,13 @@ impl NativeView for Switch {
     attachments!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let element = Element::node(RenderNode::NSSwitch {
-            on: self.store.map_or(self.on, |store| *cx.get(store)),
-            enabled: self.enabled,
+        let element = Element::node(RenderNode::View {
+            kind: ViewKind::Switch {
+                on: self.store.map_or(self.on, |store| *cx.get(store)),
+            },
             layout: self.layout,
             id: self.id.clone(),
+            enabled: self.enabled,
         });
         Binding {
             store: self.store,
@@ -173,7 +176,7 @@ impl NativeView for Switch {
     }
 }
 
-/// A continuous native `NSSlider`.
+/// A continuous native slider.
 #[derive(Clone)]
 pub struct Slider {
     value: f64,
@@ -233,15 +236,17 @@ impl NativeView for Slider {
     attachments!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let element = Element::node(RenderNode::NSSlider {
-            value: self.store.map_or(self.value, |store| *cx.get(store)),
-            minimum: self.minimum,
-            maximum: self.maximum,
-            tick_marks: self.tick_marks,
-            snaps_to_ticks: self.snaps_to_ticks,
-            enabled: self.enabled,
+        let element = Element::node(RenderNode::View {
+            kind: ViewKind::Slider {
+                value: self.store.map_or(self.value, |store| *cx.get(store)),
+                minimum: self.minimum,
+                maximum: self.maximum,
+                tick_marks: self.tick_marks,
+                snaps_to_ticks: self.snaps_to_ticks,
+            },
             layout: self.layout,
             id: self.id.clone(),
+            enabled: self.enabled,
         });
         Binding {
             store: self.store,
@@ -264,7 +269,7 @@ impl Binding<usize> {
     }
 }
 
-/// A native `NSPopUpButton` that selects one item.
+/// A native pop-up button that selects one item.
 #[derive(Clone)]
 pub struct PopUpButton {
     items: Vec<String>,
@@ -320,12 +325,14 @@ impl NativeView for PopUpButton {
     attachments!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let element = Element::node(RenderNode::NSPopUpButton {
-            items: self.items.clone(),
-            selected: self.store.map(|store| *cx.get(store)).or(self.selected),
-            enabled: self.enabled,
+        let element = Element::node(RenderNode::View {
+            kind: ViewKind::PopUpButton {
+                items: self.items.clone(),
+                selected: self.store.map(|store| *cx.get(store)).or(self.selected),
+            },
             layout: self.layout,
             id: self.id.clone(),
+            enabled: self.enabled,
         });
         Binding {
             store: self.store,
@@ -335,7 +342,7 @@ impl NativeView for PopUpButton {
     }
 }
 
-/// A native `NSSegmentedControl` that selects one segment.
+/// A native segmented control that selects one segment.
 #[derive(Clone)]
 pub struct SegmentedControl {
     segments: Vec<String>,
@@ -388,12 +395,14 @@ impl NativeView for SegmentedControl {
     attachments!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let element = Element::node(RenderNode::NSSegmentedControl {
-            segments: self.segments.clone(),
-            selected: self.store.map(|store| *cx.get(store)).or(self.selected),
-            enabled: self.enabled,
+        let element = Element::node(RenderNode::View {
+            kind: ViewKind::SegmentedControl {
+                segments: self.segments.clone(),
+                selected: self.store.map(|store| *cx.get(store)).or(self.selected),
+            },
             layout: self.layout,
             id: self.id.clone(),
+            enabled: self.enabled,
         });
         Binding {
             store: self.store,
@@ -403,7 +412,7 @@ impl NativeView for SegmentedControl {
     }
 }
 
-/// An editable native `NSComboBox` with suggested values.
+/// An editable native combo box with suggested values.
 #[derive(Clone)]
 pub struct ComboBox {
     items: Vec<String>,
@@ -460,15 +469,17 @@ impl NativeView for ComboBox {
     attachments!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let element = Element::node(RenderNode::NSComboBox {
-            items: self.items.clone(),
-            value: self
-                .store
-                .map_or_else(|| self.value.clone(), |store| cx.get(store).clone()),
-            placeholder: self.placeholder.clone(),
-            enabled: self.enabled,
+        let element = Element::node(RenderNode::View {
+            kind: ViewKind::ComboBox {
+                items: self.items.clone(),
+                value: self
+                    .store
+                    .map_or_else(|| self.value.clone(), |store| cx.get(store).clone()),
+                placeholder: self.placeholder.clone(),
+            },
             layout: self.layout,
             id: self.id.clone(),
+            enabled: self.enabled,
         });
         Binding {
             store: self.store,
@@ -559,15 +570,19 @@ impl NativeView for NumberField {
     attachments!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let element = Element::node(RenderNode::NSNumberField {
-            value: self.store.map_or(self.value, |store| *cx.get(store)),
-            minimum: self.minimum,
-            maximum: self.maximum,
-            step: self.step,
-            fraction_digits: self.fraction_digits,
-            enabled: self.enabled,
+        let element = Element::node(RenderNode::View {
+            kind: ViewKind::NumberField {
+                value: self.store.map_or(self.value, |store| *cx.get(store)),
+                format: zintl_ui_backend_core::NumberFormat {
+                    minimum: self.minimum,
+                    maximum: self.maximum,
+                    step: self.step,
+                    fraction_digits: self.fraction_digits,
+                },
+            },
             layout: self.layout,
             id: self.id.clone(),
+            enabled: self.enabled,
         });
         let (minimum, maximum) = (self.minimum, self.maximum);
         Binding {
@@ -581,7 +596,7 @@ impl NativeView for NumberField {
     }
 }
 
-/// A native `NSSearchField` that reports every edit.
+/// A native search field that reports every edit.
 #[derive(Clone)]
 pub struct SearchField {
     value: String,
@@ -635,13 +650,16 @@ impl NativeView for SearchField {
     attachments!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let element = Element::node(RenderNode::NSSearchField {
-            value: self
-                .store
-                .map_or_else(|| self.value.clone(), |store| cx.get(store).clone()),
-            placeholder: self.placeholder.clone(),
+        let element = Element::node(RenderNode::View {
+            kind: ViewKind::SearchField {
+                value: self
+                    .store
+                    .map_or_else(|| self.value.clone(), |store| cx.get(store).clone()),
+                placeholder: self.placeholder.clone(),
+            },
             layout: self.layout,
             id: self.id.clone(),
+            enabled: true,
         });
         Binding {
             store: self.store,
@@ -654,7 +672,7 @@ impl NativeView for SearchField {
     }
 }
 
-/// A native `NSColorWell` that edits a color with the system color panel.
+/// A native color well that edits a color with the system color picker.
 #[derive(Clone)]
 pub struct ColorWell {
     color: Color,
@@ -705,11 +723,13 @@ impl NativeView for ColorWell {
     attachments!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let element = Element::node(RenderNode::NSColorWell {
-            color: self.store.map_or(self.color, |store| *cx.get(store)),
-            enabled: self.enabled,
+        let element = Element::node(RenderNode::View {
+            kind: ViewKind::ColorWell {
+                color: self.store.map_or(self.color, |store| *cx.get(store)),
+            },
             layout: self.layout,
             id: self.id.clone(),
+            enabled: self.enabled,
         });
         Binding {
             store: self.store,

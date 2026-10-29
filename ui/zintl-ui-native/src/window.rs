@@ -131,7 +131,7 @@ impl View for Window {
             .iter()
             .map(|attachment| attachment.element(cx))
             .collect::<Vec<_>>();
-        let mut element = Element::node(RenderNode::NSWindow {
+        let mut element = Element::node(RenderNode::Window {
             sidebar: self.sidebar.as_ref().map(|sidebar| sidebar.state(cx)),
             bounds: self.bounds,
             title: self.title.clone(),

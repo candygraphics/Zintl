@@ -3,6 +3,7 @@ use std::rc::Rc;
 use zintl_ui::element::{ElementFactory, IntoElement};
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
+use zintl_ui_backend_core::ViewKind;
 use zintl_ui_layout::{Axis, LayoutDimension, LayoutStyle, Size};
 
 use crate::attach::attachments;
@@ -13,7 +14,7 @@ use crate::{
 
 type SelectionAction = dyn for<'a> Fn(&mut Context<'a>, usize);
 
-/// A native `NSScrollView` around its content.
+/// A native scroll view around its content.
 #[derive(Clone)]
 pub struct ScrollView {
     content: ElementFactory<RenderNode>,
@@ -72,11 +73,17 @@ impl NativeView for ScrollView {
     attachments!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let element = Element::node(RenderNode::NSScrollView {
-            axes: self.axes,
-            status: self.store.map(|store| *cx.get(store)),
+        let element = Element::node(RenderNode::View {
+            kind: ViewKind::ScrollView {
+                axes: self.axes,
+                offset: self.store.map(|store| {
+                    let status = *cx.get(store);
+                    (status.x, status.y)
+                }),
+            },
             layout: self.layout,
             id: self.id.clone(),
+            enabled: true,
         })
         .with_children([self.content.clone().into_element()]);
         let Some(store) = self.store else {
@@ -117,7 +124,7 @@ impl TabViewItem {
     }
 }
 
-/// A native `NSTabView` that shows one page at a time.
+/// A native tab view that shows one page at a time.
 #[derive(Clone)]
 pub struct TabView {
     items: Vec<TabViewItem>,
@@ -179,17 +186,22 @@ impl NativeView for TabView {
         let mut page_layout = LayoutStyle::stack(Axis::Vertical, 8.0);
         page_layout.padding = Self::PAGE_PADDING;
         let pages = self.items.iter().map(|item| {
-            Element::node(RenderNode::NSView {
+            Element::node(RenderNode::View {
+                kind: ViewKind::Container,
                 layout: page_layout,
                 id: None,
+                enabled: true,
             })
             .with_children([item.content.clone().into_element()])
         });
-        let element = Element::node(RenderNode::NSTabView {
-            titles: self.items.iter().map(|item| item.title.clone()).collect(),
-            selected: self.store.map_or(self.selected, |store| *cx.get(store)),
+        let element = Element::node(RenderNode::View {
+            kind: ViewKind::TabView {
+                titles: self.items.iter().map(|item| item.title.clone()).collect(),
+                selected: self.store.map_or(self.selected, |store| *cx.get(store)),
+            },
             layout: self.layout,
             id: self.id.clone(),
+            enabled: true,
         })
         .with_children(pages);
         if self.store.is_none() && self.action.is_none() {

@@ -3,6 +3,7 @@ use std::rc::Rc;
 use zintl_ui::element::IntoElement;
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
+use zintl_ui_backend_core::ViewKind;
 use zintl_ui_layout::{LayoutStyle, Size};
 
 use crate::attach::attachments;
@@ -117,7 +118,7 @@ impl Button {
         self
     }
 
-    /// Schedules `action` when this button is activated by AppKit.
+    /// Schedules `action` when the user activates this button.
     pub fn on_click(mut self, action: impl for<'a> Fn(&mut Context<'a>) + 'static) -> Self {
         self.action = Some(Rc::new(action));
         self
@@ -143,17 +144,19 @@ impl NativeView for Button {
             ButtonRole::Cancel => Some("\u{1b}".to_owned()),
             ButtonRole::Normal | ButtonRole::Destructive => None,
         };
-        let mut element = Element::node(RenderNode::NSButton {
-            title: self.title.clone(),
-            button_type: self.button_type,
-            bezel: self.bezel,
-            on,
-            system_image: self.system_image.clone(),
-            key_equivalent,
-            destructive: self.role == ButtonRole::Destructive,
-            enabled: self.enabled,
+        let mut element = Element::node(RenderNode::View {
+            kind: ViewKind::Button(zintl_ui_backend_core::Button {
+                title: self.title.clone(),
+                button_type: self.button_type,
+                bezel: self.bezel,
+                on,
+                system_image: self.system_image.clone(),
+                key_equivalent,
+                destructive: self.role == ButtonRole::Destructive,
+            }),
             layout: self.layout,
             id: self.id.clone(),
+            enabled: self.enabled,
         });
         if let Some(action) = self.action.clone() {
             element = element.on_event(EventKind::Activated, move |cx, event| {

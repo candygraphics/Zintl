@@ -1,6 +1,6 @@
 # zintl-ui-desktop
 
-Declarative desktop views. Native sidebar support is currently AppKit-only.
+Declarative desktop views rendered with AppKit on macOS and WinUI 3 on Windows.
 
 Attach navigation to a window with `Window::sidebar`:
 
@@ -74,7 +74,7 @@ removes its sidebar. SF Symbol names are interpreted by AppKit.
 ## Controls
 
 Controls bind to Stores with `bind` and report changes with `on_change`.
-Each renders a native AppKit control.
+Each renders a native control.
 
 ```rust,ignore
 VStack::new(list![
@@ -146,7 +146,7 @@ Window::panel(bounds, "Inspector").bind_open(self.inspector)
 
 Only one `ColorPanel` should be presented at a time because AppKit shares it.
 
-## Main menu (macOS)
+## Main menu
 
 Declare a `MainMenu` at the root next to the windows. `MainMenu::standard()`
 builds the App, File, Edit, View, Window, and Help menus with conventional
@@ -169,6 +169,12 @@ has a stable catalog key (`StandardText::key`, such as `menu.edit.copy`).
 `EnglishMenuLocalizer` is the default and `JapaneseMenuLocalizer` is provided;
 implement the trait to supply other translations.
 
+On Windows the menus become a menu bar in each normal window. App menu items
+such as Settings and Quit (shown as Exit) join the File menu, editing items act
+on the focused text box, and macOS-only items such as Hide and Services are
+omitted. Shortcuts use Control in place of Command; only letter and digit keys
+are shown, because WinUI menus cannot display OEM keys such as the comma.
+
 ## Sidebar search
 
 `Sidebar::searchable(query)` adds a search field above the items. Filter the
@@ -178,13 +184,25 @@ See `examples/gallery.rs` for every control, presentation, and menu.
 
 ## Crate responsibilities
 
-- `zintl-ui-desktop` owns the cross-platform builders and wraps platform views.
-- `zintl-ui-appkit` owns AppKit-shaped views, render nodes, Store bindings, and events.
-- `zintl-ui-appkit-backend` translates render nodes and synchronizes native state.
-- `zpd-appkit` owns AppKit controllers, native lifetime, and native events.
+```
+zintl-ui-desktop ─┬─ zintl-ui-native ── zintl-ui-backend-core
+                  ├─ [macOS]   zintl-ui-appkit-backend ── zpd-appkit
+                  └─ [Windows] zintl-ui-winui3-backend ── zpd-winui3
+```
+
+- `zintl-ui-desktop` owns the cross-platform builders and picks the backend.
+- `zintl-ui-native` owns the declarative views, Store bindings, and menus; views
+  render `RenderNode` descriptions.
+- `zintl-ui-backend-core` defines `RenderNode`, `Event`, and `Context`, and the
+  node tree, layout, and `HeadlessBackend` that backends share.
+- `zintl-ui-appkit-backend` (macOS) and `zintl-ui-winui3-backend` (Windows)
+  synchronize render nodes with native views and report events.
+- `zpd-appkit` and `zpd-winui3` own the native controls, their lifetime, and
+  native events. They define their own value types, so they do not depend on
+  the UI crates.
 - `zintl-ui` and `zintl-ui-layout` provide composition and layout primitives.
 
-The non-macOS tree backend retains sidebar declarations for inspection; it does
-not provide a native sidebar implementation.
+Tests, and platforms other than macOS and Windows, use `HeadlessBackend`, which
+retains render nodes without native views.
 
 See `examples/app.rs` for a complete application.

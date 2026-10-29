@@ -6,14 +6,15 @@ use zpd_appkit::ui::{
     AlertSheet, ColorPanelSession, ContextMenu, FileDialogSheet, Popover, UiError,
 };
 
-use super::layout::HostLayout;
+use super::NativeNode;
+use zintl_ui_backend_core::layout::HostLayout;
 
 /// Native state of a node presented outside its parent's layout.
 pub(super) enum Attachment {
     ContextMenu(ContextMenu),
     Popover {
         popover: Popover,
-        layout: Rc<RefCell<HostLayout>>,
+        layout: Rc<RefCell<HostLayout<NativeNode>>>,
     },
     Alert(Option<AlertSheet>),
     FileDialog(Option<FileDialogSheet>),

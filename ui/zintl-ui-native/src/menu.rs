@@ -158,7 +158,7 @@ impl MenuLocalizer for JapaneseMenuLocalizer {
     }
 }
 
-/// Actions AppKit delivers through the responder chain.
+/// Actions the platform performs itself, such as clipboard editing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StandardAction {
     About,
@@ -402,7 +402,7 @@ impl MenuItem {
     }
 }
 
-/// Menus that AppKit fills or decorates.
+/// Menus that the platform fills or decorates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuRole {
     Services,
@@ -458,7 +458,9 @@ impl Menu {
     pub(crate) fn context_element(&self) -> Element<RenderNode> {
         let mut actions = MenuActions::default();
         let menu = self.resolve(&EnglishMenuLocalizer, "", "context", &mut actions);
-        actions.route(Element::node(RenderNode::NSMenu { menu }))
+        actions.route(Element::node(RenderNode::ContextMenu {
+            items: MenuItemState::commands(&menu.items),
+        }))
     }
 
     /// Resolves titles and assigns IDs to custom actions.
@@ -583,7 +585,7 @@ pub enum StandardMenu {
 /// The application's main menu bar.
 ///
 /// Declare it at the root next to windows. Standard items use the
-/// responder chain, so AppKit enables them for the focused control.
+/// platform, which enables them for the focused control.
 #[derive(Clone)]
 pub struct MainMenu {
     app_name: Option<String>,
@@ -594,6 +596,11 @@ pub struct MainMenu {
 }
 
 impl MainMenu {
+    /// Describes these menus for a backend that installs them without routing actions.
+    pub fn commands(&self) -> zintl_ui_backend_core::CommandSet {
+        MenuState::command_set(&self.resolve(&mut MenuActions::default()))
+    }
+
     /// Creates the App, File, Edit, View, Window, and Help menus.
     pub fn standard() -> Self {
         Self {
@@ -799,17 +806,19 @@ impl View for MainMenu {
     fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
         let mut actions = MenuActions::default();
         let menus = self.resolve(&mut actions);
-        actions.route(Element::node(RenderNode::NSMainMenu { menus }))
+        actions.route(Element::node(RenderNode::MainMenu(MenuState::command_set(
+            &menus,
+        ))))
     }
 }
 
-#[cfg(target_os = "macos")]
-mod backend {
+/// Converts resolved menus into the core command descriptions.
+mod commands {
     use super::*;
-    use zintl_ui_appkit_backend as native;
+    use zintl_ui_backend_core as native;
 
     impl StandardAction {
-        fn backend(self) -> native::CommandRole {
+        fn role(self) -> native::CommandRole {
             match self {
                 Self::About => native::CommandRole::About,
                 Self::Hide => native::CommandRole::Hide,
@@ -835,10 +844,10 @@ mod backend {
     }
 
     impl MenuState {
-        pub(crate) fn backend(&self) -> native::CommandMenu {
+        fn command_menu(&self) -> native::CommandMenu {
             native::CommandMenu {
                 title: self.title.clone(),
-                items: MenuItemState::backend_items(&self.items),
+                items: MenuItemState::commands(&self.items),
                 role: self.role.map(|role| match role {
                     MenuRole::Services => native::MenuRole::Services,
                     MenuRole::Windows => native::MenuRole::Windows,
@@ -848,8 +857,8 @@ mod backend {
         }
 
         /// Converts a menu bar whose first menu is the App menu.
-        pub(crate) fn backend_menu_bar(menus: &[Self]) -> native::CommandSet {
-            let mut menus = menus.iter().map(Self::backend);
+        pub(crate) fn command_set(menus: &[Self]) -> native::CommandSet {
+            let mut menus = menus.iter().map(Self::command_menu);
             native::CommandSet {
                 app_menu: menus
                     .next()
@@ -860,15 +869,15 @@ mod backend {
     }
 
     impl MenuItemState {
-        pub(crate) fn backend_items(items: &[Self]) -> Vec<native::CommandItem> {
-            items.iter().map(Self::backend).collect()
+        pub(crate) fn commands(items: &[Self]) -> Vec<native::CommandItem> {
+            items.iter().map(Self::command).collect()
         }
 
-        fn backend(&self) -> native::CommandItem {
+        fn command(&self) -> native::CommandItem {
             match self {
                 Self::Separator => native::CommandItem::separator(),
                 Self::Submenu(menu) => native::CommandItem {
-                    submenu: Some(menu.backend()),
+                    submenu: Some(menu.command_menu()),
                     ..native::CommandItem::new(menu.title.clone())
                 },
                 Self::Action {
@@ -880,7 +889,7 @@ mod backend {
                     checked,
                 } => native::CommandItem {
                     id: id.clone(),
-                    role: standard.map(StandardAction::backend),
+                    role: standard.map(StandardAction::role),
                     key: shortcut.as_ref().map(|shortcut| shortcut.key.clone()),
                     modifiers: shortcut
                         .iter()

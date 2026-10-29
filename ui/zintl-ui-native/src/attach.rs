@@ -1,6 +1,6 @@
 use crate::{Context, Element, Menu, Popover, RenderNode};
 
-/// A view that renders exactly one native AppKit element.
+/// A view that renders exactly one native element.
 ///
 /// Built-in views implement this so presentation modifiers can attach to
 /// the native view they render.
