@@ -2,13 +2,17 @@
 //!
 //! Swift owns `JavaScriptCore` and every engine value on the `ZjsHost` thread.
 //! This crate exposes only the safe [`JavaScriptCoreBackend`]; its opaque FFI
-//! pointer and unsafe calls remain private.
+//! pointer and unsafe calls remain private. Swift encodes events in the
+//! [`runtime_engine::wire`] format; this crate applies the shared request
+//! limits after decoding them.
 
 #![warn(missing_docs)]
 
+#[cfg(target_os = "macos")]
+use runtime_engine::{BOOTSTRAP_SCRIPT, EngineObjectKind, HostErrorCode, HostFailure};
 use runtime_engine::{
-    EngineConfiguration, EngineError, EngineEvent, EngineNotifier, EngineObjectKind, EvaluationId,
-    EvaluationRequest, HostCompletion, HostErrorCode, HostRequestId, JavaScriptEngineBackend,
+    EngineConfiguration, EngineError, EngineEvent, EngineNotifier, EvaluationId, EvaluationRequest,
+    HostCompletion, HostRequestId, JavaScriptEngineBackend,
 };
 use std::sync::Arc;
 
@@ -55,6 +59,7 @@ impl JavaScriptEngineBackend for JavaScriptCoreBackend {
         if self.engine.is_some() {
             return Err(EngineError::InvalidState);
         }
+        let configuration = configuration.validate()?;
         let mut state = Box::new(NotifierState { notifier });
         let user_data = std::ptr::from_mut(state.as_mut()).cast();
         let mut engine = std::ptr::null_mut();
@@ -73,8 +78,16 @@ impl JavaScriptEngineBackend for JavaScriptCoreBackend {
         };
         status_result(status)?;
         let engine = std::ptr::NonNull::new(engine).ok_or(EngineError::Backend)?;
-        // SAFETY: `engine` was returned live by `zjsc_engine_new`.
-        if let Err(error) = status_result(unsafe { ffi::zjsc_engine_start(engine.as_ptr()) }) {
+        // SAFETY: `engine` was returned live by `zjsc_engine_new`; Swift copies
+        // the script during the call.
+        let status = unsafe {
+            ffi::zjsc_engine_start(
+                engine.as_ptr(),
+                BOOTSTRAP_SCRIPT.as_ptr(),
+                BOOTSTRAP_SCRIPT.len(),
+            )
+        };
+        if let Err(error) = status_result(status) {
             // SAFETY: startup failed but ownership remains with this caller.
             unsafe { ffi::zjsc_engine_free(engine.as_ptr()) };
             return Err(error);
@@ -98,34 +111,21 @@ impl JavaScriptEngineBackend for JavaScriptCoreBackend {
     }
 
     fn next_event(&mut self) -> Result<Option<EngineEvent>, EngineError> {
-        let engine = self.engine.ok_or(EngineError::InvalidState)?;
-        let mut required = 0;
-        // SAFETY: engine and required out pointer are live; null/zero is the
-        // documented non-consuming size query.
-        let status = unsafe {
-            ffi::zjsc_engine_next_event(engine.as_ptr(), std::ptr::null_mut(), 0, &raw mut required)
-        };
-        if status == ffi::EMPTY {
-            return Ok(None);
+        loop {
+            let event = self.next_wire_event()?;
+            // Requests over the shared limits never reach the host; their Promise rejects here.
+            if let Some(EngineEvent::HostRequest { id, request }) = &event
+                && let Err(message) = request.validate()
+            {
+                let failure = HostFailure {
+                    code: HostErrorCode::InvalidRequest,
+                    message: message.to_owned(),
+                };
+                self.complete_host_request(*id, HostCompletion::Failed(failure))?;
+                continue;
+            }
+            return Ok(event);
         }
-        if status != ffi::BUFFER_TOO_SMALL || required == 0 {
-            return Err(map_status(status));
-        }
-        self.event_buffer.resize(required, 0);
-        let mut written = 0;
-        // SAFETY: buffer is writable for its capacity and the engine remains live.
-        status_result(unsafe {
-            ffi::zjsc_engine_next_event(
-                engine.as_ptr(),
-                self.event_buffer.as_mut_ptr(),
-                self.event_buffer.len(),
-                &raw mut written,
-            )
-        })?;
-        if written != required {
-            return Err(EngineError::Backend);
-        }
-        runtime_engine::wire::decode_event(&self.event_buffer).map(Some)
     }
 
     fn complete_host_request(
@@ -134,7 +134,7 @@ impl JavaScriptEngineBackend for JavaScriptCoreBackend {
         completion: HostCompletion,
     ) -> Result<(), EngineError> {
         let engine = self.engine.ok_or(EngineError::InvalidState)?;
-        let (kind, object_id, payload) = encode_completion(completion);
+        let (kind, object_id, payload) = Self::encode_completion(completion);
         // SAFETY: engine is live and Swift copies payload bytes during the call.
         status_result(unsafe {
             ffi::zjsc_engine_complete(
@@ -165,13 +165,75 @@ impl JavaScriptEngineBackend for JavaScriptCoreBackend {
         let Some(engine) = self.engine.take() else {
             return Ok(());
         };
-        // SAFETY: engine is uniquely owned; shutdown is idempotent and free is
-        // called only after its serial queue has released JavaScriptCore state.
+        // SAFETY: engine is uniquely owned and live; shutdown is idempotent and
+        // releases JavaScriptCore state before the free below.
         let result = status_result(unsafe { ffi::zjsc_engine_shutdown(engine.as_ptr()) });
         // SAFETY: `engine` was taken above, so this is its only free.
         unsafe { ffi::zjsc_engine_free(engine.as_ptr()) };
         self.notifier.take();
         result
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl JavaScriptCoreBackend {
+    /// Copies and decodes the next queued Swift event without validating it.
+    fn next_wire_event(&mut self) -> Result<Option<EngineEvent>, EngineError> {
+        let engine = self.engine.ok_or(EngineError::InvalidState)?;
+        let mut required = 0;
+        // SAFETY: engine and required out pointer are live; null/zero is the
+        // documented non-consuming size query.
+        let status = unsafe {
+            ffi::zjsc_engine_next_event(engine.as_ptr(), std::ptr::null_mut(), 0, &raw mut required)
+        };
+        if status == ffi::EMPTY {
+            return Ok(None);
+        }
+        if status != ffi::BUFFER_TOO_SMALL || required == 0 {
+            return Err(map_status(status));
+        }
+        self.event_buffer.resize(required, 0);
+        let mut written = 0;
+        // SAFETY: buffer is writable for its capacity and the engine remains live.
+        status_result(unsafe {
+            ffi::zjsc_engine_next_event(
+                engine.as_ptr(),
+                self.event_buffer.as_mut_ptr(),
+                self.event_buffer.len(),
+                &raw mut written,
+            )
+        })?;
+        if written != required {
+            return Err(EngineError::Backend);
+        }
+        runtime_engine::wire::decode_event(&self.event_buffer).map(Some)
+    }
+
+    fn encode_completion(completion: HostCompletion) -> (u32, u64, Vec<u8>) {
+        match completion {
+            HostCompletion::Unit => (0, 0, Vec::new()),
+            HostCompletion::Bytes(bytes) => (1, 0, bytes),
+            HostCompletion::Object { id, kind } => (
+                match kind {
+                    EngineObjectKind::Directory => 2,
+                    EngineObjectKind::File => 3,
+                },
+                id.0,
+                Vec::new(),
+            ),
+            HostCompletion::Failed(error) => {
+                let code = error.code.as_str().as_bytes();
+                let mut payload = Vec::with_capacity(2 + code.len() + error.message.len());
+                payload.extend_from_slice(
+                    &u16::try_from(code.len())
+                        .expect("host error names fit in u16")
+                        .to_be_bytes(),
+                );
+                payload.extend_from_slice(code);
+                payload.extend_from_slice(error.message.as_bytes());
+                (4, 0, payload)
+            }
+        }
     }
 }
 
@@ -241,47 +303,6 @@ impl JavaScriptEngineBackend for JavaScriptCoreBackend {
 }
 
 #[cfg(target_os = "macos")]
-fn encode_completion(completion: HostCompletion) -> (u32, u64, Vec<u8>) {
-    match completion {
-        HostCompletion::Unit => (0, 0, Vec::new()),
-        HostCompletion::Bytes(bytes) => (1, 0, bytes),
-        HostCompletion::Object { id, kind } => (
-            match kind {
-                EngineObjectKind::Directory => 2,
-                EngineObjectKind::File => 3,
-            },
-            id.0,
-            Vec::new(),
-        ),
-        HostCompletion::Failed(error) => {
-            let code = host_error_name(error.code).as_bytes();
-            let mut payload = Vec::with_capacity(2 + code.len() + error.message.len());
-            payload.extend_from_slice(
-                &u16::try_from(code.len())
-                    .expect("host error names fit in u16")
-                    .to_be_bytes(),
-            );
-            payload.extend_from_slice(code);
-            payload.extend_from_slice(error.message.as_bytes());
-            (4, 0, payload)
-        }
-    }
-}
-
-#[cfg(target_os = "macos")]
-const fn host_error_name(error: HostErrorCode) -> &'static str {
-    match error {
-        HostErrorCode::PermissionDenied => "PermissionDenied",
-        HostErrorCode::InvalidRequest => "InvalidRequest",
-        HostErrorCode::QuotaExceeded => "QuotaExceeded",
-        HostErrorCode::Cancelled => "Cancelled",
-        HostErrorCode::TimedOut => "TimedOut",
-        HostErrorCode::ShuttingDown => "ShuttingDown",
-        HostErrorCode::OperationFailed => "OperationFailed",
-    }
-}
-
-#[cfg(target_os = "macos")]
 fn u32_limit(value: usize) -> Result<u32, EngineError> {
     u32::try_from(value).map_err(|_| EngineError::InvalidConfiguration)
 }
@@ -326,7 +347,7 @@ mod ffi {
             user_data: *mut c_void,
             out_engine: *mut *mut c_void,
         ) -> u32;
-        pub fn zjsc_engine_start(engine: *mut c_void) -> u32;
+        pub fn zjsc_engine_start(engine: *mut c_void, script: *const u8, script_len: usize) -> u32;
         pub fn zjsc_engine_submit(
             engine: *mut c_void,
             evaluation_id: u64,
@@ -364,8 +385,6 @@ mod tests {
         JavaScriptException, MountRequest,
     };
     use std::sync::Arc;
-    use std::thread;
-    use std::time::{Duration, Instant};
 
     struct NoopNotifier;
 
@@ -577,84 +596,40 @@ mod tests {
     #[test]
     // Verifies Rust can evaluate a Promise through the statically linked Swift/JSC backend.
     fn evaluates_promise_through_swift_ffi() {
-        let mut backend = JavaScriptCoreBackend::new();
-        backend
-            .start(EngineConfiguration::default(), Arc::new(NoopNotifier))
-            .expect("start");
-        backend
-            .submit_evaluation(EvaluationRequest {
-                id: EvaluationId(1),
-                source: "Promise.resolve(6 * 7)".to_owned(),
-            })
-            .expect("submit");
-        let deadline = Instant::now() + Duration::from_secs(2);
-        let outcome = loop {
-            if let Some(EngineEvent::EvaluationSettled { outcome, .. }) =
-                backend.next_event().expect("event")
-            {
-                break outcome;
-            }
-            assert!(Instant::now() < deadline, "evaluation timed out");
-            thread::sleep(Duration::from_millis(1));
-        };
+        let mut backend = started();
+        submit(&mut backend, 1, "Promise.resolve(6 * 7)").expect("submit");
         assert_eq!(
-            outcome,
-            EvaluationOutcome::Value(br#"{"type":"value","value":42}"#.to_vec())
+            drain(&mut backend),
+            vec![settled(1, value(r#"{"type":"value","value":42}"#))]
         );
         backend.shutdown().expect("shutdown");
     }
 
     #[test]
-    // Verifies JavaScript console output crosses the bounded engine event protocol.
+    // Verifies JavaScript console output crosses the bounded engine event protocol before settlement.
     fn emits_console_output_through_swift_ffi() {
-        let mut backend = JavaScriptCoreBackend::new();
-        backend
-            .start(EngineConfiguration::default(), Arc::new(NoopNotifier))
-            .expect("start");
-        backend
-            .submit_evaluation(EvaluationRequest {
-                id: EvaluationId(1),
-                source: "console.debug('hello', {value: 42}); 7".to_owned(),
-            })
-            .expect("submit");
-        let deadline = Instant::now() + Duration::from_secs(2);
-        let mut console = None;
-        let mut settled = false;
-        while !settled {
-            match backend.next_event().expect("event") {
-                Some(EngineEvent::ConsoleOutput(bytes)) => console = Some(bytes),
-                Some(EngineEvent::EvaluationSettled { .. }) => settled = true,
-                Some(EngineEvent::HostRequest { .. }) | None => {}
-            }
-            assert!(Instant::now() < deadline, "evaluation timed out");
-            thread::sleep(Duration::from_millis(1));
-        }
-        assert_eq!(console, Some(br#"hello {"value":42}"#.to_vec()));
-        backend.shutdown().expect("shutdown");
+        let mut backend = started();
+        submit(&mut backend, 1, "console.debug('hello', {value: 42}); 7").expect("submit");
+        assert_eq!(
+            drain(&mut backend),
+            vec![
+                EngineEvent::ConsoleOutput(br#"hello {"value":42}"#.to_vec()),
+                settled(1, value(r#"{"type":"value","value":7}"#)),
+            ]
+        );
     }
 
     #[test]
     // Verifies the Swift bridge reconstructs a host failure's stable code and sanitized message.
     fn exposes_structured_host_failure_through_swift_ffi() {
-        let mut backend = JavaScriptCoreBackend::new();
-        backend
-            .start(EngineConfiguration::default(), Arc::new(NoopNotifier))
-            .expect("start");
-        backend
-            .submit_evaluation(EvaluationRequest {
-                id: EvaluationId(1),
-                source: "Zintl.invoke('dev.zintl.fail').catch(error => ({ code: error.code, message: error.message }))".to_owned(),
-            })
-            .expect("submit");
-        let deadline = Instant::now() + Duration::from_secs(2);
-        let request_id = loop {
-            if let Some(EngineEvent::HostRequest { id, .. }) = backend.next_event().expect("event")
-            {
-                break id;
-            }
-            assert!(Instant::now() < deadline, "host request timed out");
-            thread::sleep(Duration::from_millis(1));
-        };
+        let mut backend = started();
+        submit(
+            &mut backend,
+            1,
+            "Zintl.invoke('dev.zintl.fail').catch(error => ({ code: error.code, message: error.message }))",
+        )
+        .expect("submit");
+        let (request_id, _) = host_request(&drain(&mut backend));
         backend
             .complete_host_request(
                 request_id,
@@ -664,23 +639,92 @@ mod tests {
                 }),
             )
             .expect("complete");
-        backend.perform_microtask_checkpoint().expect("checkpoint");
-        let outcome = loop {
-            if let Some(EngineEvent::EvaluationSettled { outcome, .. }) =
-                backend.next_event().expect("event")
-            {
-                break outcome;
-            }
-            assert!(Instant::now() < deadline, "evaluation timed out");
-            thread::sleep(Duration::from_millis(1));
-        };
         assert_eq!(
-            outcome,
-            EvaluationOutcome::Value(
-                br#"{"type":"value","value":{"code":"InvalidRequest","message":"Mount not found"}}"#
-                    .to_vec(),
-            )
+            drain(&mut backend),
+            vec![settled(
+                1,
+                value(
+                    r#"{"type":"value","value":{"code":"InvalidRequest","message":"Mount not found"}}"#
+                )
+            )]
         );
-        backend.shutdown().expect("shutdown");
+    }
+
+    #[test]
+    // Verifies bytes cross the bridge as Uint8Array views, honoring a subarray's offset both ways.
+    fn bytes_round_trip_as_uint8_array() {
+        let mut backend = started();
+        submit(
+            &mut backend,
+            1,
+            "Zintl.invoke('echo', new Uint8Array([1, 2, 3, 4]).subarray(1, 3)) \
+             .then(bytes => [bytes instanceof Uint8Array, Array.from(bytes)])",
+        )
+        .expect("submit");
+        let (request_id, request) = host_request(&drain(&mut backend));
+        assert_eq!(
+            request,
+            HostRequest::Invoke {
+                name: "echo".to_owned(),
+                version: 1,
+                input: vec![2, 3],
+            }
+        );
+        backend
+            .complete_host_request(request_id, HostCompletion::Bytes(vec![2, 3]))
+            .expect("complete");
+        assert_eq!(
+            drain(&mut backend),
+            vec![settled(
+                1,
+                value(r#"{"type":"value","value":[true,[2,3]]}"#)
+            )]
+        );
+    }
+
+    #[test]
+    // Verifies UTF-8 reads decode natively and invalid bytes reject with InvalidData.
+    fn read_file_decodes_utf8() {
+        let mut backend = started();
+        let mut settlements = Vec::new();
+        for (id, bytes) in [(1, "h\u{e9}llo".as_bytes().to_vec()), (2, vec![0xff])] {
+            submit(
+                &mut backend,
+                id,
+                "Zintl.readFile('mount://p/a', 'utf8').catch(error => error.code)",
+            )
+            .expect("submit");
+            let (request_id, _) = host_request(&drain(&mut backend));
+            backend
+                .complete_host_request(request_id, HostCompletion::Bytes(bytes))
+                .expect("complete");
+            settlements.extend(drain(&mut backend));
+        }
+        assert_eq!(
+            settlements,
+            vec![
+                settled(1, value("{\"type\":\"value\",\"value\":\"h\u{e9}llo\"}")),
+                settled(2, value(r#"{"type":"value","value":"InvalidData"}"#)),
+            ]
+        );
+    }
+
+    #[test]
+    // Verifies a request over a shared limit rejects in JavaScript and never reaches the host.
+    fn over_limit_request_is_rejected_before_the_host() {
+        let mut backend = started();
+        submit(
+            &mut backend,
+            1,
+            "Zintl.sleep(86400001).catch(error => error.code)",
+        )
+        .expect("submit");
+        assert_eq!(
+            drain(&mut backend),
+            vec![settled(
+                1,
+                value(r#"{"type":"value","value":"InvalidRequest"}"#)
+            )]
+        );
     }
 }

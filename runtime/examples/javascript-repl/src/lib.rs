@@ -23,7 +23,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
-use zintl_host::{ZjsHost, ZjsHostBuilder};
+use zintl_host::{DriveBudget, ZjsHost, ZjsHostBuilder};
 use zintl_io_mounts::{
     BoundaryResolve, DirResolve, MountConfig, MountError, MountService, Source as MountSource,
     SymlinkPolicy,
@@ -305,6 +305,12 @@ struct MainHandler {
 }
 
 impl MainHandler {
+    /// Work drained per engine wake-up before yielding to other messages.
+    const DRIVE_BUDGET: DriveBudget = match DriveBudget::new(64, 4 * 1024 * 1024) {
+        Ok(budget) => budget,
+        Err(_) => panic!("drive budget limits are nonzero"),
+    };
+
     fn send_io(&self, message: IoMessage) -> io::Result<()> {
         self.io_sender
             .lock()
@@ -319,7 +325,7 @@ impl MainHandler {
         let Some(js) = self.js.as_mut() else {
             return Ok(());
         };
-        let turn = js.drain_events(64, 4 * 1024 * 1024).map_err(engine_io)?;
+        let turn = js.drain_events(Self::DRIVE_BUDGET).map_err(engine_io)?;
         while let Some(event) = self.js.as_mut().and_then(ZjsHost::next_event) {
             match event {
                 EngineEvent::EvaluationSettled { outcome, .. } => {

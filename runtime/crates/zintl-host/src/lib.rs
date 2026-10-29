@@ -3,19 +3,21 @@
 #![forbid(unsafe_code)]
 
 pub use runtime_engine::{
-    EngineConfiguration, EngineError, EngineEvent, EngineNotifier, EvaluationId, EvaluationOutcome,
-    EvaluationRequest, HostCompletion, HostRequest, HostRequestId, JavaScriptEngineBackend,
+    DriveBudget, EngineConfiguration, EngineError, EngineEvent, EngineNotifier, EvaluationId,
+    EvaluationOutcome, EvaluationRequest, HostCompletion, HostRequest, HostRequestId,
+    JavaScriptEngineBackend,
 };
 use std::collections::VecDeque;
-use std::marker::PhantomData;
-use std::rc::Rc;
 use std::sync::Arc;
 
 /// Engine work observed during one bounded host turn.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct HostTurn {
+    /// Events moved into the host queue.
     pub events: usize,
+    /// Payload bytes of those events.
     pub payload_bytes: usize,
+    /// Whether the budget ended the turn before the backend ran out of events.
     pub has_more: bool,
 }
 
@@ -56,19 +58,17 @@ impl ZjsHostBuilder {
             backend: self.backend,
             events: VecDeque::new(),
             deferred: None,
-            local_only: PhantomData,
         })
     }
 }
 
 /// Owns only the JavaScript engine and its engine-local runtime state.
 ///
-/// `Rc` in the marker keeps this value on its owning message-loop thread.
+/// The non-`Send` backend keeps this value on its owning message-loop thread.
 pub struct ZjsHost {
     backend: Box<dyn JavaScriptEngineBackend>,
     events: VecDeque<EngineEvent>,
     deferred: Option<EngineEvent>,
-    local_only: PhantomData<Rc<()>>,
 }
 
 impl ZjsHost {
@@ -104,31 +104,23 @@ impl ZjsHost {
 
     /// Moves a bounded number of already-produced engine events into host state.
     ///
-    /// An event larger than `maximum_bytes` is delivered alone in its own turn,
-    /// so the byte budget never drops an event.
+    /// An event larger than the byte budget is delivered alone in its own turn,
+    /// so the budget never drops an event.
     ///
     /// # Errors
-    /// Rejects zero limits or malformed backend events.
-    pub fn drain_events(
-        &mut self,
-        maximum_events: usize,
-        maximum_bytes: usize,
-    ) -> Result<HostTurn, EngineError> {
-        if maximum_events == 0 || maximum_bytes == 0 {
-            return Err(EngineError::InvalidConfiguration);
-        }
+    /// Reports malformed backend events or unavailable backend state.
+    pub fn drain_events(&mut self, budget: DriveBudget) -> Result<HostTurn, EngineError> {
         let mut turn = HostTurn::default();
-        while turn.events < maximum_events {
-            let event = if self.deferred.is_some() {
-                self.deferred.take()
-            } else {
-                self.backend.next_event()?
-            };
-            let Some(event) = event else {
-                break;
+        while turn.events < budget.maximum_events {
+            let event = match self.deferred.take() {
+                Some(event) => event,
+                None => match self.backend.next_event()? {
+                    Some(event) => event,
+                    None => break,
+                },
             };
             let bytes = event.payload_len();
-            if turn.events > 0 && bytes.saturating_add(turn.payload_bytes) > maximum_bytes {
+            if turn.events > 0 && bytes.saturating_add(turn.payload_bytes) > budget.maximum_bytes {
                 self.deferred = Some(event);
                 turn.has_more = true;
                 break;
@@ -137,10 +129,11 @@ impl ZjsHost {
             turn.payload_bytes += bytes;
             self.events.push_back(event);
         }
-        turn.has_more |= turn.events == maximum_events || self.deferred.is_some();
+        turn.has_more |= turn.events == budget.maximum_events || self.deferred.is_some();
         Ok(turn)
     }
 
+    /// Pops the next event a previous [`Self::drain_events`] moved into the host.
     #[must_use]
     pub fn next_event(&mut self) -> Option<EngineEvent> {
         self.events.pop_front()
@@ -257,19 +250,20 @@ mod tests {
         let mut host = ZjsHostBuilder::new(Box::new(backend), Arc::new(NoopNotifier))
             .build()
             .unwrap();
+        let budget = DriveBudget::new(8, 10).unwrap();
 
-        let turn = host.drain_events(8, 10).unwrap();
+        let turn = host.drain_events(budget).unwrap();
         assert_eq!((turn.events, turn.has_more), (1, true));
         assert_eq!(host.next_event(), Some(console("small")));
 
-        let turn = host.drain_events(8, 10).unwrap();
+        let turn = host.drain_events(budget).unwrap();
         assert_eq!(
             (turn.events, turn.payload_bytes, turn.has_more),
             (1, 100, true)
         );
         assert_eq!(host.next_event(), Some(console(&"x".repeat(100))));
 
-        let turn = host.drain_events(8, 10).unwrap();
+        let turn = host.drain_events(budget).unwrap();
         assert_eq!((turn.events, turn.has_more), (1, false));
         assert_eq!(host.next_event(), Some(console("tail")));
     }

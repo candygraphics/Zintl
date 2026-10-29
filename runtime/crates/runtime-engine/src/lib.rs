@@ -13,6 +13,22 @@ use std::sync::Arc;
 /// Canonical versioned wire codec shared by native engine adapters.
 pub mod wire;
 
+/// JavaScript bridge every backend evaluates once at startup.
+///
+/// It installs `Zintl` and `console`, then returns `{ evaluate }`. It expects
+/// these native callbacks on `globalThis` and removes them before user code runs:
+/// `__zintlEvaluationDone(token, json)`, `__zintlEvaluationFailed(token, name, message)`,
+/// `__zintlInvoke(name, bytes, resolve, reject)`, `__zintlSleep(ms, resolve, reject)`,
+/// `__zintlReadFile(url, maximumBytes, resolve, reject)`,
+/// `__zintlMountOperation(kind, url, bytesOrUrl, resolve, reject)`,
+/// `__zintlConsole(message)`, `__zintlEncodeUtf8(string)` and
+/// `__zintlDecodeUtf8(bytes)`, which returns `undefined` for invalid UTF-8.
+/// Byte values cross the bridge as `Uint8Array`.
+pub const BOOTSTRAP_SCRIPT: &str = include_str!("bootstrap.js");
+
+/// Largest integer a JavaScript number represents exactly.
+pub const MAXIMUM_SAFE_INTEGER: u64 = (1 << 53) - 1;
+
 /// Maximum work an embedder permits in one non-blocking drain turn.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DriveBudget {
@@ -50,6 +66,25 @@ pub struct EngineConfiguration {
     pub maximum_source_bytes: usize,
     /// Maximum queued event payload bytes.
     pub maximum_event_bytes: usize,
+}
+
+impl EngineConfiguration {
+    /// Checks that every limit is finite and nonzero.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError::InvalidConfiguration`] when any limit is zero.
+    pub const fn validate(self) -> Result<Self, EngineError> {
+        if self.maximum_pending_evaluations == 0
+            || self.maximum_pending_host_requests == 0
+            || self.maximum_source_bytes == 0
+            || self.maximum_event_bytes == 0
+        {
+            Err(EngineError::InvalidConfiguration)
+        } else {
+            Ok(self)
+        }
+    }
 }
 
 impl Default for EngineConfiguration {
@@ -134,6 +169,23 @@ pub enum MountRequest {
     },
 }
 
+impl MountRequest {
+    /// Maximum UTF-8 length of one mount URI.
+    pub const MAXIMUM_URL_BYTES: usize = 4096;
+
+    fn urls(&self) -> impl Iterator<Item = &str> {
+        let (first, second) = match self {
+            Self::ReadFile { url, .. }
+            | Self::WriteFile { url, .. }
+            | Self::CreateDirectory { url }
+            | Self::RemoveFile { url }
+            | Self::RemoveDirectory { url } => (url, None),
+            Self::Rename { from, to } => (from, Some(to)),
+        };
+        std::iter::once(first.as_str()).chain(second.map(String::as_str))
+    }
+}
+
 /// A validated request emitted by a JavaScript backend.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HostRequest {
@@ -153,6 +205,39 @@ pub enum HostRequest {
     },
     /// Performs an operation through an IO-side mount service.
     Mount(MountRequest),
+}
+
+impl HostRequest {
+    /// Longest delay `Zintl.sleep` accepts: one day.
+    pub const MAXIMUM_SLEEP_NANOSECONDS: u64 = 86_400 * 1_000_000_000;
+
+    /// Checks the engine-independent limits every backend enforces before a
+    /// request reaches the host.
+    ///
+    /// # Errors
+    ///
+    /// Returns a sanitized description suitable for JavaScript.
+    pub fn validate(&self) -> Result<(), &'static str> {
+        match self {
+            Self::Invoke { name, .. } if name.len() > usize::from(u16::MAX) => {
+                Err("Invalid operation input")
+            }
+            Self::Sleep { nanoseconds } if *nanoseconds > Self::MAXIMUM_SLEEP_NANOSECONDS => {
+                Err("Invalid timer delay")
+            }
+            Self::Mount(MountRequest::ReadFile {
+                maximum_bytes: 0, ..
+            }) => Err("Invalid mount read request"),
+            Self::Mount(request)
+                if request
+                    .urls()
+                    .any(|url| url.len() > MountRequest::MAXIMUM_URL_BYTES) =>
+            {
+                Err("Invalid mount URI")
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 /// Sanitized JavaScript exception information.
@@ -240,6 +325,22 @@ pub enum HostErrorCode {
     ShuttingDown,
     /// The operation failed without exposing backend details.
     OperationFailed,
+}
+
+impl HostErrorCode {
+    /// Stable name exposed to JavaScript as `error.code`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::PermissionDenied => "PermissionDenied",
+            Self::InvalidRequest => "InvalidRequest",
+            Self::QuotaExceeded => "QuotaExceeded",
+            Self::Cancelled => "Cancelled",
+            Self::TimedOut => "TimedOut",
+            Self::ShuttingDown => "ShuttingDown",
+            Self::OperationFailed => "OperationFailed",
+        }
+    }
 }
 
 /// Sanitized failure returned by a trusted host operation.
@@ -364,7 +465,60 @@ impl std::error::Error for EngineError {}
 
 #[cfg(test)]
 mod tests {
-    use super::{DriveBudget, EngineError, EngineEvent, EvaluationId, EvaluationOutcome};
+    use super::{
+        DriveBudget, EngineConfiguration, EngineError, EngineEvent, EvaluationId,
+        EvaluationOutcome, HostRequest, MountRequest,
+    };
+
+    #[test]
+    // Verifies a zero limit is rejected so no backend runs with an unbounded or useless queue.
+    fn configuration_rejects_zero_limits() {
+        assert!(EngineConfiguration::default().validate().is_ok());
+        let configuration = EngineConfiguration {
+            maximum_event_bytes: 0,
+            ..EngineConfiguration::default()
+        };
+        assert_eq!(
+            configuration.validate(),
+            Err(EngineError::InvalidConfiguration)
+        );
+    }
+
+    #[test]
+    // Verifies shared host-request limits apply to every request kind, including both rename URIs.
+    fn host_request_validation_enforces_shared_limits() {
+        let long_url = "m".repeat(MountRequest::MAXIMUM_URL_BYTES + 1);
+        assert!(
+            HostRequest::Sleep {
+                nanoseconds: HostRequest::MAXIMUM_SLEEP_NANOSECONDS
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            HostRequest::Sleep {
+                nanoseconds: HostRequest::MAXIMUM_SLEEP_NANOSECONDS + 1
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            HostRequest::Mount(MountRequest::ReadFile {
+                url: "mount://p/a".into(),
+                maximum_bytes: 0,
+            })
+            .validate()
+            .is_err()
+        );
+        assert!(
+            HostRequest::Mount(MountRequest::Rename {
+                from: "mount://p/a".into(),
+                to: long_url,
+            })
+            .validate()
+            .is_err()
+        );
+    }
 
     #[test]
     // Verifies zero work limits cannot create an effectively unbounded driver contract.

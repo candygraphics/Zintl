@@ -7,6 +7,8 @@
   const readFileNative = globalThis.__zintlReadFile;
   const mountOperationNative = globalThis.__zintlMountOperation;
   const consoleNative = globalThis.__zintlConsole;
+  const encodeUtf8 = globalThis.__zintlEncodeUtf8;
+  const decodeUtf8Native = globalThis.__zintlDecodeUtf8;
   for (const name of [
     "__zintlEvaluationDone",
     "__zintlEvaluationFailed",
@@ -15,6 +17,8 @@
     "__zintlReadFile",
     "__zintlMountOperation",
     "__zintlConsole",
+    "__zintlEncodeUtf8",
+    "__zintlDecodeUtf8",
   ]) delete globalThis[name];
 
   // Captured intrinsics keep the bridge working after user code replaces globals.
@@ -27,139 +31,58 @@
   const ByteArray = Uint8Array;
   const ErrorConstructor = Error;
   const toString = String;
-  const fromCodePoint = String.fromCodePoint;
   const assign = Object.assign;
   const freeze = Object.freeze;
   const defineProperty = Object.defineProperty;
 
+  const MAXIMUM_READ_BYTES = 4 * 1024 * 1024;
+
   const newPromise = (executor) => new PromiseConstructor(executor);
   const then = (promise, onFulfilled, onRejected) =>
     apply(promiseThen, promise, [onFulfilled, onRejected]);
+  const rejected = (reason) => newPromise((_, reject) => reject(reason));
   const error = (message, code) => assign(new ErrorConstructor(message), { code });
+
   const invoke = (name, input = new ByteArray()) =>
     then(
       newPromise((resolve, reject) => {
         if (typeof name !== "string" || !(input instanceof ByteArray)) {
           return reject(error("Invalid input", "InvalidRequest"));
         }
-        invokeNative(name, arrayFrom(input), resolve, reject);
+        invokeNative(name, input, resolve, reject);
       }),
-      (bytes) => new ByteArray(bytes),
+      // A unit completion still resolves `invoke` with bytes.
+      (value) => (value === undefined ? new ByteArray() : value),
     );
   const sleep = (ms) =>
     newPromise((resolve, reject) => sleepNative(ms, resolve, reject));
 
   const decodeUtf8 = (bytes) => {
-    let output = "";
-    let codePoints = [];
-    const append = (value) => {
-      codePoints.push(value);
-      if (codePoints.length === 1024) {
-        output += apply(fromCodePoint, undefined, codePoints);
-        codePoints = [];
-      }
-    };
-    const continuation = (value) => (value & 0xc0) === 0x80;
-    for (let index = 0; index < bytes.length; ) {
-      const first = bytes[index++];
-      if (first <= 0x7f) {
-        append(first);
-        continue;
-      }
-      if (first >= 0xc2 && first <= 0xdf && index < bytes.length) {
-        const second = bytes[index++];
-        if (continuation(second)) {
-          append(((first & 0x1f) << 6) | (second & 0x3f));
-          continue;
-        }
-      } else if (first >= 0xe0 && first <= 0xef && index + 1 < bytes.length) {
-        const second = bytes[index++];
-        const third = bytes[index++];
-        const validSecond =
-          continuation(second) &&
-          (first !== 0xe0 || second >= 0xa0) &&
-          (first !== 0xed || second <= 0x9f);
-        if (validSecond && continuation(third)) {
-          append(((first & 0x0f) << 12) | ((second & 0x3f) << 6) | (third & 0x3f));
-          continue;
-        }
-      } else if (first >= 0xf0 && first <= 0xf4 && index + 2 < bytes.length) {
-        const second = bytes[index++];
-        const third = bytes[index++];
-        const fourth = bytes[index++];
-        const validSecond =
-          continuation(second) &&
-          (first !== 0xf0 || second >= 0x90) &&
-          (first !== 0xf4 || second <= 0x8f);
-        if (validSecond && continuation(third) && continuation(fourth)) {
-          append(
-            ((first & 0x07) << 18) |
-              ((second & 0x3f) << 12) |
-              ((third & 0x3f) << 6) |
-              (fourth & 0x3f),
-          );
-          continue;
-        }
-      }
-      throw error("Invalid UTF-8", "InvalidData");
-    }
-    if (codePoints.length) output += apply(fromCodePoint, undefined, codePoints);
-    return output;
+    const text = decodeUtf8Native(bytes);
+    if (text === undefined) throw error("Invalid UTF-8", "InvalidData");
+    return text;
   };
-
-  const encodeUtf8 = (value) => {
-    const output = [];
-    for (const character of value) {
-      let point = character.codePointAt(0);
-      // Lone surrogates have no UTF-8 form; encode them as U+FFFD like TextEncoder.
-      if (point >= 0xd800 && point <= 0xdfff) point = 0xfffd;
-      if (point <= 0x7f) output.push(point);
-      else if (point <= 0x7ff)
-        output.push(0xc0 | (point >> 6), 0x80 | (point & 0x3f));
-      else if (point <= 0xffff)
-        output.push(
-          0xe0 | (point >> 12),
-          0x80 | ((point >> 6) & 0x3f),
-          0x80 | (point & 0x3f),
-        );
-      else
-        output.push(
-          0xf0 | (point >> 18),
-          0x80 | ((point >> 12) & 0x3f),
-          0x80 | ((point >> 6) & 0x3f),
-          0x80 | (point & 0x3f),
-        );
-    }
-    return new ByteArray(output);
-  };
-
   const readFile = (url, encoding) =>
     then(
       newPromise((resolve, reject) => {
         if (typeof url !== "string" || (encoding !== undefined && encoding !== "utf8")) {
           return reject(error("Invalid mount URI or encoding", "InvalidRequest"));
         }
-        readFileNative(url, 4 * 1024 * 1024, resolve, reject);
+        readFileNative(url, MAXIMUM_READ_BYTES, resolve, reject);
       }),
-      (bytes) => {
-        const value = new ByteArray(bytes);
-        return encoding === "utf8" ? decodeUtf8(value) : value;
-      },
+      (bytes) => (encoding === "utf8" ? decodeUtf8(bytes) : bytes),
     );
-  const mutateMount = (kind, first, second = null) =>
+  const mutateMount = (kind, url, operand = null) =>
     newPromise((resolve, reject) => {
-      if (typeof first !== "string") {
+      if (typeof url !== "string") {
         return reject(error("Invalid mount URI", "InvalidRequest"));
       }
-      mountOperationNative(kind, first, second, resolve, reject);
+      mountOperationNative(kind, url, operand, resolve, reject);
     });
-  const rejected = (reason) => newPromise((_, reject) => reject(reason));
   const writeFile = (url, data) => {
-    let bytes;
-    if (typeof data === "string") bytes = encodeUtf8(data);
-    else if (data instanceof ByteArray) bytes = data;
-    else return rejected(error("Expected string or Uint8Array", "InvalidRequest"));
-    return mutateMount(11, url, arrayFrom(bytes));
+    if (typeof data === "string") return mutateMount(11, url, encodeUtf8(data));
+    if (data instanceof ByteArray) return mutateMount(11, url, data);
+    return rejected(error("Expected string or Uint8Array", "InvalidRequest"));
   };
   const mkdir = (url) => mutateMount(12, url);
   const removeFile = (url) => mutateMount(13, url);
