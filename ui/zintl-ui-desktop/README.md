@@ -1,6 +1,6 @@
 # zintl-ui-desktop
 
-Declarative desktop views. Native sidebar support is currently AppKit-only.
+Declarative desktop views rendered with AppKit on macOS and WinUI 3 on Windows.
 
 Attach navigation to a window with `Window::sidebar`:
 
@@ -146,7 +146,7 @@ Window::panel(bounds, "Inspector").bind_open(self.inspector)
 
 Only one `ColorPanel` should be presented at a time because AppKit shares it.
 
-## Main menu (macOS)
+## Main menu
 
 Declare a `MainMenu` at the root next to the windows. `MainMenu::standard()`
 builds the App, File, Edit, View, Window, and Help menus with conventional
@@ -169,6 +169,12 @@ has a stable catalog key (`StandardText::key`, such as `menu.edit.copy`).
 `EnglishMenuLocalizer` is the default and `JapaneseMenuLocalizer` is provided;
 implement the trait to supply other translations.
 
+On Windows the menus become a menu bar in each normal window. App menu items
+such as Settings and Quit (shown as Exit) join the File menu, editing items act
+on the focused text box, and macOS-only items such as Hide and Services are
+omitted. Shortcuts use Control in place of Command; only letter and digit keys
+are shown, because WinUI menus cannot display OEM keys such as the comma.
+
 ## Sidebar search
 
 `Sidebar::searchable(query)` adds a search field above the items. Filter the
@@ -180,11 +186,15 @@ See `examples/gallery.rs` for every control, presentation, and menu.
 
 - `zintl-ui-desktop` owns the cross-platform builders and wraps platform views.
 - `zintl-ui-appkit` owns AppKit-shaped views, render nodes, Store bindings, and events.
-- `zintl-ui-appkit-backend` translates render nodes and synchronizes native state.
-- `zpd-appkit` owns AppKit controllers, native lifetime, and native events.
+- `zintl-ui-appkit-backend` describes render nodes as platform-neutral `NodeKind`s,
+  shares the node tree and layout, and synchronizes AppKit state.
+- `zintl-ui-winui3-backend` synchronizes the same descriptions with WinUI 3.
+- `zpd-appkit` owns AppKit controllers, native lifetime, and native events; its
+  `model` module holds the plain descriptions and builds on every platform.
+- `zpd-winui3` owns WinUI controls, presentations, and windows.
 - `zintl-ui` and `zintl-ui-layout` provide composition and layout primitives.
 
-The non-macOS tree backend retains sidebar declarations for inspection; it does
-not provide a native sidebar implementation.
+On platforms other than macOS and Windows, a tree backend retains declarations
+for inspection without native views.
 
 See `examples/app.rs` for a complete application.

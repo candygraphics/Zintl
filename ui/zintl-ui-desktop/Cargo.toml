@@ -6,3 +6,6 @@ edition = "2024"
 zintl-ui = { path = "../zintl-ui" }
 zintl-ui-layout = { path = "../zintl-ui-layout" }
 zintl-ui-appkit = { path = "../zintl-ui-appkit" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+zintl-ui-winui3-backend = { path = "../zintl-ui-winui3-backend" }

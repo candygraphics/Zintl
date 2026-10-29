@@ -368,10 +368,10 @@ impl View for Gallery {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn main() -> Result<(), AppError> {
     App::new(Gallery::default()).run()
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn main() {}

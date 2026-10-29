@@ -76,8 +76,13 @@ fn main() {
         .join("runtimes")
         .join(runtime_arch)
         .join("native/Microsoft.WindowsAppRuntime.Bootstrap.dll");
-    for directory in [&profile_dir, &profile_dir.join("deps")] {
-        std::fs::create_dir_all(directory).expect("failed to create Cargo output directory");
+    // Tests live in `deps` and examples in `examples`, beside the profile binaries.
+    for directory in [
+        profile_dir.clone(),
+        profile_dir.join("deps"),
+        profile_dir.join("examples"),
+    ] {
+        std::fs::create_dir_all(&directory).expect("failed to create Cargo output directory");
         std::fs::copy(
             &bootstrap_dll,
             directory.join("Microsoft.WindowsAppRuntime.Bootstrap.dll"),

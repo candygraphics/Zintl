@@ -19,7 +19,7 @@ pub use controls::{
 };
 use zintl_ui::composer::Composer;
 pub use zintl_ui::element::{Element, ElementFactory, IntoElement};
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(not(any(target_os = "macos", target_os = "windows")), test))]
 use zintl_ui::event::EventRouteId;
 use zintl_ui::renderer::RenderBackend;
 pub use zintl_ui::store::Store;
@@ -465,7 +465,7 @@ impl NativeView for VStack {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 struct Node {
     value: Option<RenderNode>,
     parent: Option<usize>,
@@ -473,12 +473,12 @@ struct Node {
     event_route: Option<EventRouteId>,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 struct TreeBackend {
     nodes: Vec<Option<Node>>,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 impl TreeBackend {
     fn new() -> Self {
         Self {
@@ -523,7 +523,7 @@ impl TreeBackend {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 impl RenderBackend<RenderNode> for TreeBackend {
     type NodeId = usize;
 
@@ -588,7 +588,10 @@ pub struct RenderedNode {
 #[cfg(target_os = "macos")]
 type DesktopBackend = zintl_ui_appkit::AppKitBackend<RenderNode>;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+type DesktopBackend = zintl_ui_winui3_backend::WinUI3Backend<RenderNode>;
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 type DesktopBackend = TreeBackend;
 
 type DesktopNodeId = <DesktopBackend as RenderBackend<RenderNode>>::NodeId;
@@ -642,6 +645,11 @@ impl App {
         zintl_ui_appkit::run_composer(self.composer)
     }
 
+    #[cfg(target_os = "windows")]
+    pub fn run(self) -> Result<(), AppError> {
+        zintl_ui_winui3_backend::run_composer(self.composer)
+    }
+
     #[cfg(test)]
     fn update_text_store(&mut self, store: Store<String>, value: String) {
         self.composer
@@ -690,6 +698,8 @@ impl App {
 
 #[cfg(target_os = "macos")]
 pub use zintl_ui_appkit::AppError;
+#[cfg(target_os = "windows")]
+pub use zintl_ui_winui3_backend::AppError;
 
 #[cfg(test)]
 mod widget_tests;
