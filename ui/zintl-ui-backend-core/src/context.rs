@@ -2,16 +2,15 @@ use zintl_ui::element::IntoElement;
 use zintl_ui::store::Store;
 use zintl_ui::view::{Context as ContextTrait, StoreContext, StoreWatcher};
 
-pub type MainTask = Box<dyn FnOnce() + Send + 'static>;
+use crate::MainTaskSender;
 
-pub type MainTaskSender = dyn Fn(MainTask) -> bool + Send + Sync;
-
-pub struct NativeContext<'a> {
+/// Gives views access to Stores and to the platform main thread.
+pub struct Context<'a> {
     store_context: StoreContext<'a>,
     perform_main: Option<&'a MainTaskSender>,
 }
 
-impl<'a> NativeContext<'a> {
+impl<'a> Context<'a> {
     #[doc(hidden)]
     pub fn new(store_context: StoreContext<'a>, perform_main: Option<&'a MainTaskSender>) -> Self {
         Self {
@@ -61,7 +60,7 @@ impl<'a> NativeContext<'a> {
     }
 }
 
-impl<'a> ContextTrait<'a> for NativeContext<'a> {
+impl<'a> ContextTrait<'a> for Context<'a> {
     fn store_context<'context>(&'context self) -> &'context StoreContext<'a> {
         &self.store_context
     }

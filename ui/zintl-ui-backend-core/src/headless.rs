@@ -5,23 +5,23 @@ use zintl_ui::renderer::RenderBackend;
 use zintl_ui::view::StoreContext;
 
 use crate::tree::{MainTasks, NodeTree};
-use crate::{NativeRenderNode, NodeId};
+use crate::{Context, NodeId, RenderNode};
 
 /// Retains the rendered tree for tests and platforms without a native backend.
 ///
 /// Main-thread tasks queue until [`HeadlessBackend::connect_main_tasks`] runs.
-pub struct HeadlessBackend<R: NativeRenderNode> {
-    tree: NodeTree<R, ()>,
+pub struct HeadlessBackend {
+    tree: NodeTree<()>,
     main_tasks: MainTasks,
 }
 
-impl<R: NativeRenderNode> Default for HeadlessBackend<R> {
+impl Default for HeadlessBackend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<R: NativeRenderNode> HeadlessBackend<R> {
+impl HeadlessBackend {
     pub fn new() -> Self {
         Self {
             tree: NodeTree::new(),
@@ -37,7 +37,7 @@ impl<R: NativeRenderNode> HeadlessBackend<R> {
         self.main_tasks.connect(sender);
     }
 
-    pub fn value(&self, id: NodeId) -> Option<&R> {
+    pub fn value(&self, id: NodeId) -> Option<&RenderNode> {
         self.tree.value(id)
     }
 
@@ -51,22 +51,22 @@ impl<R: NativeRenderNode> HeadlessBackend<R> {
     }
 }
 
-impl<R: NativeRenderNode> RenderBackend<R> for HeadlessBackend<R> {
+impl RenderBackend<RenderNode> for HeadlessBackend {
     type NodeId = NodeId;
 
-    fn create_context<'a>(&'a self, store_context: StoreContext<'a>) -> R::Context<'a> {
-        R::create_context(store_context, Some(self.main_tasks.sender()))
+    fn create_context<'a>(&'a self, store_context: StoreContext<'a>) -> Context<'a> {
+        Context::new(store_context, Some(self.main_tasks.sender()))
     }
 
     fn root(&self) -> NodeId {
-        NodeTree::<R, ()>::ROOT
+        NodeTree::<()>::ROOT
     }
 
-    fn create(&mut self, value: &R, event_route: Option<EventRouteId>) -> NodeId {
+    fn create(&mut self, value: &RenderNode, event_route: Option<EventRouteId>) -> NodeId {
         self.tree.create(value, event_route)
     }
 
-    fn update(&mut self, id: NodeId, value: &R) {
+    fn update(&mut self, id: NodeId, value: &RenderNode) {
         self.tree.node_mut(id).value = Some(value.clone());
     }
 

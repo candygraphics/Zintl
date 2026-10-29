@@ -1,12 +1,12 @@
-//! Desktop controls that wrap native AppKit views.
+//! Desktop controls that wrap native views.
 
 use std::ops::RangeInclusive;
 
 use zintl_ui::element::{Element, IntoElement};
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
-use zintl_ui_appkit::NativeView;
 use zintl_ui_layout::{Axis, LayoutStyle, Size};
+use zintl_ui_native::NativeView;
 
 use crate::{Attachments, Color, Context, ListFactory, RenderNode, ScrollAxes, ScrollStatus};
 
@@ -27,7 +27,7 @@ native_view!(
 /// How a [`Toggle`] is drawn.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ToggleStyle {
-    /// A label followed by an `NSSwitch`.
+    /// A label followed by a switch.
     #[default]
     Switch,
     /// A checkbox with its label beside the box.
@@ -93,7 +93,7 @@ impl Toggle {
         self
     }
 
-    fn button(&self, button: zintl_ui_appkit::Button) -> zintl_ui_appkit::Button {
+    fn button(&self, button: zintl_ui_native::Button) -> zintl_ui_native::Button {
         let mut button = button.on(self.on).enabled(self.enabled);
         if let Some(store) = self.store {
             button = button.bind_state(store);
@@ -120,19 +120,19 @@ impl NativeView for Toggle {
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         match self.style {
             ToggleStyle::Checkbox => self
-                .button(zintl_ui_appkit::Button::checkbox(self.label.clone()))
+                .button(zintl_ui_native::Button::checkbox(self.label.clone()))
                 .native_element(cx),
             ToggleStyle::Button => {
                 let width = self.label.chars().count() as f32 * 7.0 + 32.0;
                 self.button(
-                    zintl_ui_appkit::Button::new(self.label.clone())
-                        .button_type(zintl_ui_appkit::ButtonType::PushOnPushOff)
+                    zintl_ui_native::Button::new(self.label.clone())
+                        .button_type(zintl_ui_native::ButtonType::PushOnPushOff)
                         .minimum_size(Size::new(width.max(80.0), 32.0)),
                 )
                 .native_element(cx)
             }
             ToggleStyle::Switch => {
-                let mut switch = zintl_ui_appkit::Switch::new()
+                let mut switch = zintl_ui_native::Switch::new()
                     .on(self.on)
                     .enabled(self.enabled);
                 if let Some(store) = self.store {
@@ -150,10 +150,10 @@ impl NativeView for Toggle {
                 // The label leads and the switch trails, as in System Settings.
                 let mut row = LayoutStyle::stack(Axis::Horizontal, 12.0);
                 row.main_axis_distribution = zintl_ui_layout::MainAxisDistribution::SpaceBetween;
-                zintl_ui_appkit::View::new(
+                zintl_ui_native::View::new(
                     row,
-                    zintl_ui_appkit::list![
-                        zintl_ui_appkit::TextField::label_with_string(self.label.clone()),
+                    zintl_ui_native::list![
+                        zintl_ui_native::TextField::label_with_string(self.label.clone()),
                         switch,
                     ],
                 )
@@ -252,7 +252,7 @@ impl NativeView for Picker {
         };
         match self.style {
             PickerStyle::Menu => {
-                let mut picker = zintl_ui_appkit::PopUpButton::new(self.options.clone())
+                let mut picker = zintl_ui_native::PopUpButton::new(self.options.clone())
                     .selected(self.selected)
                     .enabled(self.enabled)
                     .on_change(on_change);
@@ -265,7 +265,7 @@ impl NativeView for Picker {
                 picker.native_element(cx)
             }
             PickerStyle::Segmented => {
-                let mut picker = zintl_ui_appkit::SegmentedControl::new(self.options.clone())
+                let mut picker = zintl_ui_native::SegmentedControl::new(self.options.clone())
                     .selected(self.selected)
                     .enabled(self.enabled)
                     .on_change(on_change);
@@ -288,7 +288,7 @@ impl NativeView for Picker {
                     .map(|(index, option)| {
                         let on_change = on_change.clone();
                         zintl_ui::element::ElementFactory::new(
-                            zintl_ui_appkit::Button::radio(option.clone())
+                            zintl_ui_native::Button::radio(option.clone())
                                 .on(index == selected)
                                 .enabled(self.enabled)
                                 .on_state_change(move |cx, on| {
@@ -304,7 +304,7 @@ impl NativeView for Picker {
                     })
                     .collect::<ListFactory<RenderNode>>();
                 let view =
-                    zintl_ui_appkit::View::new(LayoutStyle::stack(Axis::Vertical, 6.0), radios);
+                    zintl_ui_native::View::new(LayoutStyle::stack(Axis::Vertical, 6.0), radios);
                 match &self.id {
                     Some(id) => view.id(id.clone()).native_element(cx),
                     None => view.native_element(cx),
@@ -314,7 +314,7 @@ impl NativeView for Picker {
     }
 }
 
-/// Wraps an AppKit control and forwards builder methods to it.
+/// Wraps a native control and forwards builder methods to it.
 macro_rules! wrapper {
     ($(#[$meta:meta])* $name:ident($inner:ty)) => {
         $(#[$meta])*
@@ -353,13 +353,13 @@ macro_rules! wrapper {
 
 wrapper!(
     /// An editable text field with suggested values.
-    ComboBox(zintl_ui_appkit::ComboBox)
+    ComboBox(zintl_ui_native::ComboBox)
 );
 
 impl ComboBox {
     pub fn new(items: impl IntoIterator<Item = impl Into<String>>) -> Self {
         Self {
-            inner: zintl_ui_appkit::ComboBox::new(items),
+            inner: zintl_ui_native::ComboBox::new(items),
         }
     }
 
@@ -389,13 +389,13 @@ impl ComboBox {
 
 wrapper!(
     /// A continuous slider over a closed range.
-    Slider(zintl_ui_appkit::Slider)
+    Slider(zintl_ui_native::Slider)
 );
 
 impl Slider {
     pub fn new(range: RangeInclusive<f64>) -> Self {
         Self {
-            inner: zintl_ui_appkit::Slider::new(*range.start(), *range.end()),
+            inner: zintl_ui_native::Slider::new(*range.start(), *range.end()),
         }
     }
 
@@ -434,13 +434,13 @@ impl Slider {
 
 wrapper!(
     /// A field that only accepts numbers, with a stepper.
-    NumberField(zintl_ui_appkit::NumberField)
+    NumberField(zintl_ui_native::NumberField)
 );
 
 impl NumberField {
     pub fn new() -> Self {
         Self {
-            inner: zintl_ui_appkit::NumberField::new(),
+            inner: zintl_ui_native::NumberField::new(),
         }
     }
 
@@ -484,13 +484,13 @@ impl Default for NumberField {
 
 wrapper!(
     /// A search field that reports every edit.
-    SearchField(zintl_ui_appkit::SearchField)
+    SearchField(zintl_ui_native::SearchField)
 );
 
 impl SearchField {
     pub fn new() -> Self {
         Self {
-            inner: zintl_ui_appkit::SearchField::new(),
+            inner: zintl_ui_native::SearchField::new(),
         }
     }
 
@@ -526,13 +526,13 @@ impl Default for SearchField {
 
 wrapper!(
     /// A color swatch that edits its color with the system color panel.
-    ColorWell(zintl_ui_appkit::ColorWell)
+    ColorWell(zintl_ui_native::ColorWell)
 );
 
 impl ColorWell {
     pub fn new() -> Self {
         Self {
-            inner: zintl_ui_appkit::ColorWell::new(),
+            inner: zintl_ui_native::ColorWell::new(),
         }
     }
 
@@ -560,7 +560,7 @@ impl Default for ColorWell {
 
 wrapper!(
     /// Scrolls its content when it does not fit; fills the remaining space by default.
-    ScrollView(zintl_ui_appkit::ScrollView)
+    ScrollView(zintl_ui_native::ScrollView)
 );
 
 impl ScrollView {
@@ -569,7 +569,7 @@ impl ScrollView {
         V: Clone + IntoElement<Output = RenderNode> + 'static,
     {
         Self {
-            inner: zintl_ui_appkit::ScrollView::new(content),
+            inner: zintl_ui_native::ScrollView::new(content),
         }
     }
 
@@ -592,17 +592,17 @@ impl ScrollView {
 }
 
 /// One page of a [`TabView`].
-pub type Tab = zintl_ui_appkit::TabViewItem;
+pub type Tab = zintl_ui_native::TabViewItem;
 
 wrapper!(
     /// Native tabs that show one page at a time.
-    TabView(zintl_ui_appkit::TabView)
+    TabView(zintl_ui_native::TabView)
 );
 
 impl TabView {
     pub fn new(tabs: impl IntoIterator<Item = Tab>) -> Self {
         Self {
-            inner: zintl_ui_appkit::TabView::new(tabs),
+            inner: zintl_ui_native::TabView::new(tabs),
         }
     }
 

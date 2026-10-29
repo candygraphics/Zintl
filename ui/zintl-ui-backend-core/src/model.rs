@@ -21,58 +21,6 @@ impl Rect {
     }
 }
 
-/// A user change or window lifecycle event reported by a native backend.
-#[derive(Clone, Debug, PartialEq)]
-pub enum NativeEvent {
-    Created,
-    DidResize,
-    WillClose,
-    DidClose,
-    ButtonClicked,
-    TextChanged {
-        value: String,
-    },
-    SidebarSelectionChanged {
-        id: String,
-    },
-    SidebarSearchChanged {
-        value: String,
-    },
-    /// A two-state control such as a switch, checkbox, or toggle button changed.
-    StateChanged {
-        on: bool,
-    },
-    /// A continuous control such as a slider or stepper changed.
-    ValueChanged {
-        value: f64,
-    },
-    /// A choice control such as a pop-up button, segmented control, or tab view changed.
-    SelectionChanged {
-        index: usize,
-    },
-    ColorChanged {
-        color: Color,
-    },
-    /// A scroll view's top-left document point moved.
-    Scrolled {
-        x: f64,
-        y: f64,
-    },
-    MenuItemSelected {
-        id: String,
-    },
-    PopoverClosed,
-    /// An alert ended; `button` is `None` when it was dismissed programmatically.
-    AlertResponse {
-        button: Option<usize>,
-    },
-    /// A file panel ended; `paths` is `None` when it was cancelled.
-    FileDialogCompleted {
-        paths: Option<Vec<String>>,
-    },
-    ColorPanelClosed,
-}
-
 /// An sRGB color with components in `0.0..=1.0`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
@@ -83,13 +31,26 @@ pub struct Color {
 }
 
 impl Color {
-    pub const fn new(red: f64, green: f64, blue: f64, alpha: f64) -> Self {
+    pub const BLACK: Self = Self::rgb(0.0, 0.0, 0.0);
+    pub const WHITE: Self = Self::rgb(1.0, 1.0, 1.0);
+
+    pub const fn rgb(red: f64, green: f64, blue: f64) -> Self {
+        Self::rgba(red, green, blue, 1.0)
+    }
+
+    pub const fn rgba(red: f64, green: f64, blue: f64, alpha: f64) -> Self {
         Self {
             red,
             green,
             blue,
             alpha,
         }
+    }
+}
+
+impl Default for Color {
+    fn default() -> Self {
+        Self::BLACK
     }
 }
 
@@ -293,11 +254,32 @@ pub enum PopoverEdge {
     Bottom,
 }
 
-/// Scroll directions enabled on a scroll view.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// Directions in which a scroll view scrolls.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScrollAxes {
     pub horizontal: bool,
     pub vertical: bool,
+}
+
+impl ScrollAxes {
+    pub const VERTICAL: Self = Self {
+        horizontal: false,
+        vertical: true,
+    };
+    pub const HORIZONTAL: Self = Self {
+        horizontal: true,
+        vertical: false,
+    };
+    pub const BOTH: Self = Self {
+        horizontal: true,
+        vertical: true,
+    };
+}
+
+impl Default for ScrollAxes {
+    fn default() -> Self {
+        Self::VERTICAL
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

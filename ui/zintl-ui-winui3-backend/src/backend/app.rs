@@ -7,7 +7,7 @@ use messageloop_dispatcherqueue::{
 };
 use zintl_ui::composer::Composer;
 use zintl_ui::event::EventRouteId;
-use zintl_ui_backend_core::{MainTask, NativeEvent, NativeRenderNode, NodeId};
+use zintl_ui_backend_core::{Event, MainTask, NodeId, RenderNode};
 use zpd_winui3::Application;
 
 use super::menu::Menus;
@@ -17,7 +17,7 @@ pub(super) enum Message {
     /// A control or presentation reported a user change.
     Event {
         route: EventRouteId,
-        event: NativeEvent,
+        event: Event,
     },
     /// The user or the app closed a window.
     WindowClosed {
@@ -33,12 +33,12 @@ pub(super) enum Message {
 
 pub(super) type MessageSender = DispatcherQueueSender<Message>;
 
-struct AppHandler<R: NativeRenderNode> {
-    composer: Composer<R, WinUI3Backend<R>>,
+struct AppHandler {
+    composer: Composer<RenderNode, WinUI3Backend>,
     error: Rc<RefCell<Option<AppError>>>,
 }
 
-impl<R: NativeRenderNode> AppHandler<R> {
+impl AppHandler {
     fn synchronize(&mut self, cx: &MessageContext<'_, Message>) {
         let backend = self.composer.backend_mut();
         match backend.synchronize(cx.application(), &cx.sender()) {
@@ -51,12 +51,12 @@ impl<R: NativeRenderNode> AppHandler<R> {
         }
     }
 
-    fn dispatch(&mut self, route: EventRouteId, event: NativeEvent) {
-        self.composer.dispatch_event(route, R::native_event(event));
+    fn dispatch(&mut self, route: EventRouteId, event: Event) {
+        self.composer.dispatch_event(route, event);
     }
 }
 
-impl<R: NativeRenderNode> MessageLoopHandler<Message> for AppHandler<R> {
+impl MessageLoopHandler<Message> for AppHandler {
     fn init(&mut self, cx: &MessageContext<'_, Message>) {
         let sender = cx.sender();
         self.composer.backend_mut().connect_main_tasks(move |task| {
@@ -74,8 +74,8 @@ impl<R: NativeRenderNode> MessageLoopHandler<Message> for AppHandler<R> {
             }
             Message::WindowClosed { route } => {
                 if let Some(route) = route {
-                    self.dispatch(route, NativeEvent::WillClose);
-                    self.dispatch(route, NativeEvent::DidClose);
+                    self.dispatch(route, Event::WindowWillClose);
+                    self.dispatch(route, Event::WindowDidClose);
                 }
                 self.synchronize(cx);
             }
@@ -84,7 +84,7 @@ impl<R: NativeRenderNode> MessageLoopHandler<Message> for AppHandler<R> {
                 Menus::CLOSE => self.composer.backend().close_window(window),
                 _ => {
                     if let Some(route) = self.composer.backend().main_menu_route() {
-                        self.dispatch(route, NativeEvent::MenuItemSelected { id });
+                        self.dispatch(route, Event::MenuItemSelected { id });
                     }
                     self.synchronize(cx);
                 }
@@ -94,10 +94,7 @@ impl<R: NativeRenderNode> MessageLoopHandler<Message> for AppHandler<R> {
 }
 
 /// Runs `composer` in a WinUI application until its last normal window closes.
-pub fn run_composer<R>(composer: Composer<R, WinUI3Backend<R>>) -> Result<(), AppError>
-where
-    R: NativeRenderNode,
-{
+pub fn run_composer(composer: Composer<RenderNode, WinUI3Backend>) -> Result<(), AppError> {
     let application = Application::new().map_err(AppError::Application)?;
     let error = Rc::new(RefCell::new(None));
     MessageLoopDispatcherQueue::new(

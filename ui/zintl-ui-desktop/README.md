@@ -74,7 +74,7 @@ removes its sidebar. SF Symbol names are interpreted by AppKit.
 ## Controls
 
 Controls bind to Stores with `bind` and report changes with `on_change`.
-Each renders a native AppKit control.
+Each renders a native control.
 
 ```rust,ignore
 VStack::new(list![
@@ -184,17 +184,25 @@ See `examples/gallery.rs` for every control, presentation, and menu.
 
 ## Crate responsibilities
 
-- `zintl-ui-desktop` owns the cross-platform builders and wraps platform views.
-- `zintl-ui-appkit` owns AppKit-shaped views, render nodes, Store bindings, and events.
-- `zintl-ui-appkit-backend` describes render nodes as platform-neutral `NodeKind`s,
-  shares the node tree and layout, and synchronizes AppKit state.
-- `zintl-ui-winui3-backend` synchronizes the same descriptions with WinUI 3.
-- `zpd-appkit` owns AppKit controllers, native lifetime, and native events; its
-  `model` module holds the plain descriptions and builds on every platform.
-- `zpd-winui3` owns WinUI controls, presentations, and windows.
+```
+zintl-ui-desktop ─┬─ zintl-ui-native ── zintl-ui-backend-core
+                  ├─ [macOS]   zintl-ui-appkit-backend ── zpd-appkit
+                  └─ [Windows] zintl-ui-winui3-backend ── zpd-winui3
+```
+
+- `zintl-ui-desktop` owns the cross-platform builders and picks the backend.
+- `zintl-ui-native` owns the declarative views, Store bindings, and menus; views
+  render `RenderNode` descriptions.
+- `zintl-ui-backend-core` defines `RenderNode`, `Event`, and `Context`, and the
+  node tree, layout, and `HeadlessBackend` that backends share.
+- `zintl-ui-appkit-backend` (macOS) and `zintl-ui-winui3-backend` (Windows)
+  synchronize render nodes with native views and report events.
+- `zpd-appkit` and `zpd-winui3` own the native controls, their lifetime, and
+  native events. They define their own value types, so they do not depend on
+  the UI crates.
 - `zintl-ui` and `zintl-ui-layout` provide composition and layout primitives.
 
-On platforms other than macOS and Windows, a tree backend retains declarations
-for inspection without native views.
+Tests, and platforms other than macOS and Windows, use `HeadlessBackend`, which
+retains render nodes without native views.
 
 See `examples/app.rs` for a complete application.

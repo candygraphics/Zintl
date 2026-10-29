@@ -1,5 +1,5 @@
 [package]
-name = "zintl-ui-appkit"
+name = "zintl-ui-native"
 edition = "2024"
 
 [dependencies]

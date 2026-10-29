@@ -5,7 +5,7 @@ use messageloop_dispatcherqueue::Sender;
 use zintl_ui::event::EventRouteId;
 use zintl_ui_backend_core::layout::{HostLayout, LayoutNative, LayoutSnapshot};
 use zintl_ui_backend_core::tree::ErrorSlot;
-use zintl_ui_backend_core::{BezelStyle, ButtonType, Color, NativeEvent, ViewKind};
+use zintl_ui_backend_core::{BezelStyle, ButtonType, Color, Event, ViewKind};
 use zintl_ui_layout::{LayoutStyle, Rect as LayoutRect, Size};
 use zpd_winui3::{
     AsElement, BoolProperty, Control, ControlEvent, ControlKind, NumberProperty, TextProperty,
@@ -190,19 +190,19 @@ impl NativeNode {
     }
 
     /// Converts a routed control event; size changes are handled locally.
-    pub(super) fn event(event: ControlEvent) -> Option<NativeEvent> {
+    pub(super) fn event(event: ControlEvent) -> Option<Event> {
         Some(match event {
-            ControlEvent::Clicked => NativeEvent::ButtonClicked,
-            ControlEvent::TextChanged(value) => NativeEvent::TextChanged { value },
-            ControlEvent::StateChanged(on) => NativeEvent::StateChanged { on },
-            ControlEvent::ValueChanged(value) => NativeEvent::ValueChanged { value },
-            ControlEvent::SelectionChanged(index) => NativeEvent::SelectionChanged { index },
-            ControlEvent::ColorChanged(color) => NativeEvent::ColorChanged {
-                color: Color::new(color.red, color.green, color.blue, color.alpha),
+            ControlEvent::Clicked => Event::Activated,
+            ControlEvent::TextChanged(value) => Event::TextChanged { value },
+            ControlEvent::StateChanged(on) => Event::StateChanged { on },
+            ControlEvent::ValueChanged(value) => Event::ValueChanged { value },
+            ControlEvent::SelectionChanged(index) => Event::SelectionChanged { index },
+            ControlEvent::ColorChanged(color) => Event::ColorChanged {
+                color: Color::rgba(color.red, color.green, color.blue, color.alpha),
             },
-            ControlEvent::Scrolled { x, y } => NativeEvent::Scrolled { x, y },
-            ControlEvent::NavigationSelected(id) => NativeEvent::SidebarSelectionChanged { id },
-            ControlEvent::SearchChanged(value) => NativeEvent::SidebarSearchChanged { value },
+            ControlEvent::Scrolled { x, y } => Event::Scrolled { x, y },
+            ControlEvent::NavigationSelected(id) => Event::SidebarSelectionChanged { id },
+            ControlEvent::SearchChanged(value) => Event::SidebarSearchChanged { value },
             ControlEvent::SizeChanged { .. } => return None,
         })
     }

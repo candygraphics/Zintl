@@ -7,13 +7,13 @@ use std::sync::{Arc, Mutex, PoisonError};
 use zintl_ui::event::EventRouteId;
 
 use crate::{
-    CommandItem, CommandModifier, CommandRole, CommandSet, MainTask, MainTaskSender,
-    NativeRenderNode, NodeId, NodeKind, WindowAppMenu, WindowStyle,
+    CommandItem, CommandModifier, CommandRole, CommandSet, MainTask, MainTaskSender, NodeId,
+    RenderNode, WindowAppMenu, WindowStyle,
 };
 
 /// A rendered node and the backend's native state `S` for it.
-pub struct TreeNode<R, S> {
-    pub value: Option<R>,
+pub struct TreeNode<S> {
+    pub value: Option<RenderNode>,
     pub parent: Option<NodeId>,
     pub children: Vec<NodeId>,
     pub event_route: Option<EventRouteId>,
@@ -21,17 +21,17 @@ pub struct TreeNode<R, S> {
 }
 
 /// Rendered nodes addressed by [`NodeId`]; the root has no value.
-pub struct NodeTree<R, S> {
-    nodes: Vec<Option<TreeNode<R, S>>>,
+pub struct NodeTree<S> {
+    nodes: Vec<Option<TreeNode<S>>>,
 }
 
-impl<R: NativeRenderNode, S: Default> Default for NodeTree<R, S> {
+impl<S: Default> Default for NodeTree<S> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<R: NativeRenderNode, S: Default> NodeTree<R, S> {
+impl<S: Default> NodeTree<S> {
     pub const ROOT: NodeId = NodeId(0);
 
     pub fn new() -> Self {
@@ -40,7 +40,7 @@ impl<R: NativeRenderNode, S: Default> NodeTree<R, S> {
         }
     }
 
-    fn new_node(value: Option<R>, event_route: Option<EventRouteId>) -> TreeNode<R, S> {
+    fn new_node(value: Option<RenderNode>, event_route: Option<EventRouteId>) -> TreeNode<S> {
         TreeNode {
             value,
             parent: None,
@@ -50,7 +50,7 @@ impl<R: NativeRenderNode, S: Default> NodeTree<R, S> {
         }
     }
 
-    pub fn create(&mut self, value: &R, event_route: Option<EventRouteId>) -> NodeId {
+    pub fn create(&mut self, value: &RenderNode, event_route: Option<EventRouteId>) -> NodeId {
         let id = NodeId(self.nodes.len());
         self.nodes
             .push(Some(Self::new_node(Some(value.clone()), event_route)));
@@ -61,21 +61,21 @@ impl<R: NativeRenderNode, S: Default> NodeTree<R, S> {
         self.nodes.get(id.0).is_some_and(Option::is_some)
     }
 
-    pub fn node(&self, id: NodeId) -> &TreeNode<R, S> {
+    pub fn node(&self, id: NodeId) -> &TreeNode<S> {
         self.nodes
             .get(id.0)
             .and_then(Option::as_ref)
             .expect("node handle must belong to this backend")
     }
 
-    pub fn node_mut(&mut self, id: NodeId) -> &mut TreeNode<R, S> {
+    pub fn node_mut(&mut self, id: NodeId) -> &mut TreeNode<S> {
         self.nodes
             .get_mut(id.0)
             .and_then(Option::as_mut)
             .expect("node handle must belong to this backend")
     }
 
-    pub fn value(&self, id: NodeId) -> Option<&R> {
+    pub fn value(&self, id: NodeId) -> Option<&RenderNode> {
         self.nodes
             .get(id.0)
             .and_then(Option::as_ref)
@@ -86,10 +86,8 @@ impl<R: NativeRenderNode, S: Default> NodeTree<R, S> {
         &self.node(id).children
     }
 
-    pub fn kind(&self, id: NodeId) -> NodeKind {
-        self.value(id)
-            .expect("render nodes have values")
-            .node_kind()
+    pub fn kind(&self, id: NodeId) -> RenderNode {
+        self.value(id).expect("render nodes have values").clone()
     }
 
     pub fn states_mut(&mut self) -> impl Iterator<Item = &mut S> {
@@ -121,7 +119,7 @@ impl<R: NativeRenderNode, S: Default> NodeTree<R, S> {
 
     /// Removes `id` and its descendants, passing each removed node to
     /// `release` after its children.
-    pub fn remove_subtree(&mut self, id: NodeId, release: &mut impl FnMut(TreeNode<R, S>)) {
+    pub fn remove_subtree(&mut self, id: NodeId, release: &mut impl FnMut(TreeNode<S>)) {
         if !self.contains(id) {
             return;
         }
@@ -134,7 +132,7 @@ impl<R: NativeRenderNode, S: Default> NodeTree<R, S> {
         }
     }
 
-    pub fn root_children(&self) -> impl Iterator<Item = (NodeId, NodeKind)> + '_ {
+    pub fn root_children(&self) -> impl Iterator<Item = (NodeId, RenderNode)> + '_ {
         self.children(Self::ROOT)
             .iter()
             .map(|id| (*id, self.kind(*id)))
@@ -144,7 +142,7 @@ impl<R: NativeRenderNode, S: Default> NodeTree<R, S> {
     pub fn window_ids(&self, closed: impl Fn(&S) -> bool) -> Vec<NodeId> {
         self.root_children()
             .filter(|(id, kind)| {
-                matches!(kind, NodeKind::Window { .. }) && !closed(&self.node(*id).state)
+                matches!(kind, RenderNode::Window { .. }) && !closed(&self.node(*id).state)
             })
             .map(|(id, _)| id)
             .collect()
@@ -155,7 +153,7 @@ impl<R: NativeRenderNode, S: Default> NodeTree<R, S> {
         self.root_children().any(|(id, kind)| {
             matches!(
                 kind,
-                NodeKind::Window {
+                RenderNode::Window {
                     style: WindowStyle::Normal,
                     ..
                 }
@@ -165,17 +163,17 @@ impl<R: NativeRenderNode, S: Default> NodeTree<R, S> {
 
     pub fn main_menu_route(&self) -> Option<EventRouteId> {
         self.root_children()
-            .find(|(_, kind)| matches!(kind, NodeKind::MainMenu(_)))
+            .find(|(_, kind)| matches!(kind, RenderNode::MainMenu(_)))
             .and_then(|(id, _)| self.node(id).event_route)
     }
 
-    /// Returns the declared main menu, the node type's default, or a Quit item.
-    pub fn main_menu(&self) -> CommandSet {
+    /// Returns the declared main menu, else `fallback`, else a Quit item.
+    pub fn main_menu(&self, fallback: Option<&CommandSet>) -> CommandSet {
         let declared = self.root_children().find_map(|(_, kind)| match kind {
-            NodeKind::MainMenu(commands) => Some(commands),
+            RenderNode::MainMenu(commands) => Some(commands),
             _ => None,
         });
-        declared.or_else(R::default_main_menu).unwrap_or_else(|| {
+        declared.or_else(|| fallback.cloned()).unwrap_or_else(|| {
             let mut quit = CommandItem::new("Quit");
             quit.role = Some(CommandRole::Quit);
             quit.key = Some("q".into());
@@ -188,7 +186,7 @@ impl<R: NativeRenderNode, S: Default> NodeTree<R, S> {
     }
 }
 
-impl NodeKind {
+impl RenderNode {
     /// Returns whether a presentable attachment is declared as shown.
     pub fn is_presented(&self) -> bool {
         matches!(

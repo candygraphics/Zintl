@@ -7,9 +7,10 @@ use zintl_ui::element::{ElementFactory, IntoElement};
 use zintl_ui::store::Store;
 use zintl_ui_layout::Size;
 
+use zintl_ui_backend_core::{AlertButtonRole, AlertConfig, FileDialogConfig, FileDialogMode};
+
 use crate::{
-    AlertState, AlertStyle, ButtonRole, Color, Context, Element, Event, EventKind, FileDialogState,
-    PopoverEdge, RenderNode,
+    AlertStyle, ButtonRole, Color, Context, Element, Event, EventKind, PopoverEdge, RenderNode,
 };
 
 type Action = dyn for<'a> Fn(&mut Context<'a>);
@@ -24,7 +25,7 @@ impl Presented {
         self.0.is_some_and(|store| *cx.get(store))
     }
 
-    /// Clears the bound flag after AppKit dismissed the presentation.
+    /// Clears the bound flag after the platform dismissed the presentation.
     fn dismissed(store: Option<Store<bool>>, cx: &mut Context<'_>) {
         if let Some(store) = store {
             cx.update(store, |presented| *presented = false);
@@ -32,7 +33,7 @@ impl Presented {
     }
 }
 
-/// A transient `NSPopover` shown while its bound Store is `true`.
+/// A transient popover shown while its bound Store is `true`.
 #[derive(Clone)]
 pub struct Popover {
     content: ElementFactory<RenderNode>,
@@ -81,7 +82,7 @@ impl Popover {
     pub(crate) fn element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let store = self.presented;
         let on_close = self.on_close.clone();
-        Element::node(RenderNode::NSPopover {
+        Element::node(RenderNode::Popover {
             presented: Presented(store).get(cx),
             edge: self.edge,
             size: self.size,
@@ -125,9 +126,9 @@ impl AlertButton {
     }
 }
 
-/// An `NSAlert` sheet shown on its window while its bound Store is `true`.
+/// An alert shown on its window while its bound Store is `true`.
 ///
-/// The first button answers Return. AppKit adds an OK button when none is given.
+/// The first button answers Return. An OK button is added when none is given.
 #[derive(Clone)]
 pub struct Alert {
     title: String,
@@ -176,16 +177,23 @@ impl Alert {
             .iter()
             .map(|button| button.action.clone())
             .collect();
-        Element::node(RenderNode::NSAlert {
+        Element::node(RenderNode::Alert {
             presented: Presented(store).get(cx),
-            alert: AlertState {
+            config: AlertConfig {
                 style: self.style,
                 title: self.title.clone(),
                 message: self.message.clone(),
                 buttons: self
                     .buttons
                     .iter()
-                    .map(|button| (button.title.clone(), button.role))
+                    .map(|button| zintl_ui_backend_core::AlertButton {
+                        title: button.title.clone(),
+                        role: match button.role {
+                            ButtonRole::Normal | ButtonRole::Default => AlertButtonRole::Normal,
+                            ButtonRole::Cancel => AlertButtonRole::Cancel,
+                            ButtonRole::Destructive => AlertButtonRole::Destructive,
+                        },
+                    })
                     .collect(),
             },
         })
@@ -200,11 +208,10 @@ impl Alert {
     }
 }
 
-/// An `NSOpenPanel` or `NSSavePanel` sheet shown while its bound Store is `true`.
+/// An open or save dialog shown while its bound Store is `true`.
 #[derive(Clone)]
 pub struct FileDialog {
-    save: bool,
-    state: FileDialogState,
+    config: FileDialogConfig,
     presented: Option<Store<bool>>,
     on_select: Option<Rc<PathsAction>>,
     on_cancel: Option<Rc<Action>>,
@@ -214,10 +221,10 @@ impl FileDialog {
     /// Chooses existing files.
     pub fn open() -> Self {
         Self {
-            save: false,
-            state: FileDialogState {
+            config: FileDialogConfig {
+                mode: FileDialogMode::Open,
                 can_choose_files: true,
-                ..FileDialogState::default()
+                ..FileDialogConfig::default()
             },
             presented: None,
             on_select: None,
@@ -228,28 +235,28 @@ impl FileDialog {
     /// Chooses a destination for a new file.
     pub fn save() -> Self {
         Self {
-            save: true,
-            state: FileDialogState {
+            config: FileDialogConfig {
+                mode: FileDialogMode::Save,
                 can_create_directories: true,
-                ..FileDialogState::default()
+                ..FileDialogConfig::default()
             },
             ..Self::open()
         }
     }
 
     pub fn title(mut self, title: impl Into<String>) -> Self {
-        self.state.title = Some(title.into());
+        self.config.title = Some(title.into());
         self
     }
 
     pub fn message(mut self, message: impl Into<String>) -> Self {
-        self.state.message = Some(message.into());
+        self.config.message = Some(message.into());
         self
     }
 
     /// Sets the confirmation button title.
     pub fn prompt(mut self, prompt: impl Into<String>) -> Self {
-        self.state.prompt = Some(prompt.into());
+        self.config.prompt = Some(prompt.into());
         self
     }
 
@@ -258,38 +265,38 @@ impl FileDialog {
         mut self,
         extensions: impl IntoIterator<Item = impl Into<String>>,
     ) -> Self {
-        self.state.allowed_extensions = extensions.into_iter().map(Into::into).collect();
+        self.config.allowed_extensions = extensions.into_iter().map(Into::into).collect();
         self
     }
 
     pub fn choose_files(mut self, enabled: bool) -> Self {
-        self.state.can_choose_files = enabled;
+        self.config.can_choose_files = enabled;
         self
     }
 
     pub fn choose_directories(mut self, enabled: bool) -> Self {
-        self.state.can_choose_directories = enabled;
+        self.config.can_choose_directories = enabled;
         self
     }
 
     pub fn multiple(mut self) -> Self {
-        self.state.allows_multiple = true;
+        self.config.allows_multiple = true;
         self
     }
 
     pub fn can_create_directories(mut self, enabled: bool) -> Self {
-        self.state.can_create_directories = enabled;
+        self.config.can_create_directories = enabled;
         self
     }
 
     /// Prefills the save panel's name field.
     pub fn file_name(mut self, name: impl Into<String>) -> Self {
-        self.state.file_name = Some(name.into());
+        self.config.file_name = Some(name.into());
         self
     }
 
     pub fn directory(mut self, directory: impl Into<PathBuf>) -> Self {
-        self.state.directory = Some(directory.into());
+        self.config.directory = Some(directory.into().to_string_lossy().into_owned());
         self
     }
 
@@ -315,11 +322,9 @@ impl FileDialog {
     pub(crate) fn element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let store = self.presented;
         let presented = Presented(store).get(cx);
-        let panel = self.state.clone();
-        let node = if self.save {
-            RenderNode::NSSavePanel { presented, panel }
-        } else {
-            RenderNode::NSOpenPanel { presented, panel }
+        let node = RenderNode::FileDialog {
+            presented,
+            config: self.config.clone(),
         };
         let on_select = self.on_select.clone();
         let on_cancel = self.on_cancel.clone();
@@ -336,7 +341,7 @@ impl FileDialog {
     }
 }
 
-/// Connects the shared `NSColorPanel` to a window while its bound Store is `true`.
+/// Connects the shared color panel to a window while its bound Store is `true`.
 #[derive(Clone)]
 pub struct ColorPanel {
     color: Option<Store<Color>>,
@@ -380,7 +385,7 @@ impl ColorPanel {
         let store = self.presented;
         let color_store = self.color;
         let on_change = self.on_change.clone();
-        Element::node(RenderNode::NSColorPanel {
+        Element::node(RenderNode::ColorPanel {
             presented: Presented(store).get(cx),
             color: color_store.map_or(Color::WHITE, |color| *cx.get(color)),
             shows_alpha: self.shows_alpha,

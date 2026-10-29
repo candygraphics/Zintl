@@ -101,7 +101,7 @@ impl Shared for ui::Color {
     type Output = core::Color;
 
     fn shared(self) -> core::Color {
-        core::Color::new(self.red, self.green, self.blue, self.alpha)
+        core::Color::rgba(self.red, self.green, self.blue, self.alpha)
     }
 }
 
@@ -242,18 +242,18 @@ impl Native for core::FileDialogConfig {
 }
 
 impl Shared for zpd_appkit::actor::WindowEventKind {
-    type Output = core::NativeEvent;
+    type Output = core::Event;
 
-    fn shared(self) -> core::NativeEvent {
-        use core::NativeEvent as Shared;
+    fn shared(self) -> core::Event {
+        use core::Event as Shared;
         use zpd_appkit::actor::WindowEventKind as Native;
 
         match self {
-            Native::Created => Shared::Created,
-            Native::DidResize => Shared::DidResize,
-            Native::WillClose => Shared::WillClose,
-            Native::DidClose => Shared::DidClose,
-            Native::ButtonClicked => Shared::ButtonClicked,
+            Native::Created => Shared::WindowCreated,
+            Native::DidResize => Shared::WindowDidResize,
+            Native::WillClose => Shared::WindowWillClose,
+            Native::DidClose => Shared::WindowDidClose,
+            Native::ButtonClicked => Shared::Activated,
             Native::TextChanged { value } => Shared::TextChanged { value },
             Native::SidebarSelectionChanged { id } => Shared::SidebarSelectionChanged { id },
             Native::SidebarSearchChanged { value } => Shared::SidebarSearchChanged { value },
@@ -267,7 +267,9 @@ impl Shared for zpd_appkit::actor::WindowEventKind {
             Native::MenuItemSelected { id } => Shared::MenuItemSelected { id },
             Native::PopoverClosed => Shared::PopoverClosed,
             Native::AlertResponse { button } => Shared::AlertResponse { button },
-            Native::FileDialogCompleted { paths } => Shared::FileDialogCompleted { paths },
+            Native::FileDialogCompleted { paths } => Shared::FileDialogCompleted {
+                paths: paths.map(|paths| paths.into_iter().map(std::path::PathBuf::from).collect()),
+            },
             Native::ColorPanelClosed => Shared::ColorPanelClosed,
         }
     }

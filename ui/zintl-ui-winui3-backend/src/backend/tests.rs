@@ -1,91 +1,40 @@
 use zintl_ui::event::EventRouteId;
-use zintl_ui::renderer::{RenderBackend, RenderNode};
-use zintl_ui::view::{Context as ContextTrait, StoreContext};
+use zintl_ui::renderer::RenderBackend;
 use zintl_ui_backend_core::{
     AlertButton, AlertButtonRole, AlertConfig, Button, ButtonType, CommandItem, CommandMenu,
-    CommandModifier, CommandRole, CommandSet, FileDialogConfig, MainTaskSender, MenuRole,
-    WindowAppMenu,
+    CommandModifier, CommandRole, CommandSet, FileDialogConfig, MenuRole, WindowAppMenu,
 };
 use zintl_ui_layout::LayoutStyle;
 use zpd_winui3::{MenuFlyoutItemBase, MenuItemRole, VirtualKeyModifiers};
 
 use super::*;
 
-#[derive(Clone, PartialEq)]
-struct TestNode(NodeKind);
+/// Builds the render nodes the tests insert.
+struct Nodes;
 
-impl TestNode {
-    fn container() -> Self {
-        Self(NodeKind::View {
+impl Nodes {
+    fn container() -> RenderNode {
+        RenderNode::View {
             kind: ViewKind::Container,
             layout: LayoutStyle::leaf(Size::new(0.0, 0.0)),
             id: None,
             enabled: true,
-        })
+        }
     }
 
-    fn window(style: WindowStyle) -> Self {
-        Self(NodeKind::Window {
+    fn window(style: WindowStyle) -> RenderNode {
+        RenderNode::Window {
             sidebar: None,
             bounds: Rect::new(0.0, 0.0, 100.0, 100.0),
             title: String::new(),
             full_size_content_view: false,
             id: None,
             style,
-        })
+        }
     }
 }
 
-#[derive(Clone)]
-struct TestEvent;
-
-struct TestContext<'a> {
-    store_context: StoreContext<'a>,
-}
-
-impl<'a> ContextTrait<'a> for TestContext<'a> {
-    fn store_context<'context>(&'context self) -> &'context StoreContext<'a> {
-        &self.store_context
-    }
-
-    fn store_context_mut<'context>(&'context mut self) -> &'context mut StoreContext<'a> {
-        &mut self.store_context
-    }
-}
-
-impl zintl_ui::event::Event for TestEvent {
-    type Kind = ();
-
-    fn kind(&self) -> Self::Kind {}
-}
-
-impl RenderNode for TestNode {
-    type Event = TestEvent;
-    type Context<'a> = TestContext<'a>;
-
-    fn same_kind(&self, _other: &Self) -> bool {
-        true
-    }
-}
-
-impl NativeRenderNode for TestNode {
-    fn create_context<'a>(
-        store_context: StoreContext<'a>,
-        _perform_main: Option<&'a MainTaskSender>,
-    ) -> Self::Context<'a> {
-        TestContext { store_context }
-    }
-
-    fn node_kind(&self) -> NodeKind {
-        self.0.clone()
-    }
-
-    fn native_event(_event: NativeEvent) -> Self::Event {
-        TestEvent
-    }
-}
-
-type Backend = WinUI3Backend<TestNode>;
+type Backend = WinUI3Backend;
 
 fn command(title: &str, id: &str) -> CommandItem {
     CommandItem {
@@ -105,14 +54,14 @@ fn role(title: &str, role: CommandRole) -> CommandItem {
 fn only_normal_windows_keep_the_app_running() {
     // Verifies panels alone do not keep the app alive once a window has been shown.
     let mut backend = Backend::new();
-    let panel = backend.create(&TestNode::window(WindowStyle::Panel), None);
+    let panel = backend.create(&Nodes::window(WindowStyle::Panel), None);
     backend.insert_child(backend.root(), 0, panel);
     assert!(!backend.should_terminate());
 
     backend.opened_window = true;
     assert!(backend.should_terminate());
 
-    let window = backend.create(&TestNode::window(WindowStyle::Normal), None);
+    let window = backend.create(&Nodes::window(WindowStyle::Normal), None);
     backend.insert_child(backend.root(), 1, window);
     assert!(!backend.should_terminate());
 }
@@ -121,8 +70,8 @@ fn only_normal_windows_keep_the_app_running() {
 fn removing_a_parent_removes_its_descendants() {
     // Verifies renderer removal cannot leave detached descendants in backend storage.
     let mut backend = Backend::new();
-    let parent = backend.create(&TestNode::container(), None);
-    let child = backend.create(&TestNode::container(), None);
+    let parent = backend.create(&Nodes::container(), None);
+    let child = backend.create(&Nodes::container(), None);
     backend.insert_child(backend.root(), 0, parent);
     backend.insert_child(parent, 0, child);
 
@@ -137,7 +86,7 @@ fn removing_a_parent_removes_its_descendants() {
 fn event_routes_update_window_and_attachment_cells() {
     // Verifies native callbacks read the route the Composer assigned most recently.
     let mut backend = Backend::new();
-    let node = backend.create(&TestNode::container(), Some(EventRouteId::from_raw(3)));
+    let node = backend.create(&Nodes::container(), Some(EventRouteId::from_raw(3)));
     let cell = backend.state(node).route.clone();
     let route = EventRouteId::from_raw(17);
 
@@ -386,20 +335,20 @@ fn size_changes_stay_local_and_sidebar_events_are_routed() {
     );
     assert_eq!(
         NativeNode::event(ControlEvent::NavigationSelected("home".into())),
-        Some(NativeEvent::SidebarSelectionChanged { id: "home".into() })
+        Some(Event::SidebarSelectionChanged { id: "home".into() })
     );
 }
 
 #[test]
 fn colors_match_after_eight_bit_round_trips() {
     // Verifies picker rounding does not rewrite the color panel every update.
-    let color = Color::new(0.2, 0.4, 0.6, 1.0);
+    let color = Color::rgba(0.2, 0.4, 0.6, 1.0);
     assert!(Backend::colors_match(
         color,
-        Color::new(0.2 + 1.0 / 512.0, 0.4, 0.6, 1.0)
+        Color::rgba(0.2 + 1.0 / 512.0, 0.4, 0.6, 1.0)
     ));
     assert!(!Backend::colors_match(
         color,
-        Color::new(0.3, 0.4, 0.6, 1.0)
+        Color::rgba(0.3, 0.4, 0.6, 1.0)
     ));
 }

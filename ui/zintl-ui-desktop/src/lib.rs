@@ -24,36 +24,36 @@ use zintl_ui::event::EventRouteId;
 use zintl_ui::renderer::RenderBackend;
 pub use zintl_ui::store::Store;
 pub use zintl_ui::view::View;
-pub use zintl_ui_appkit::{
+pub use zintl_ui_layout::{
+    Axis, ChildSizing, CrossAxisAlignment, LayoutDimension, LayoutStyle, MainAxisDistribution, Size,
+};
+pub use zintl_ui_native::{
     Alert, AlertButton, AlertStyle, Attach, Attachments, ButtonRole, Color, ColorPanel, Context,
     EnglishMenuLocalizer, Event, EventKind, FileDialog, JapaneseMenuLocalizer, ListFactory,
     MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, NativeView, Popover, PopoverEdge, Rect,
     RenderNode, ScrollAxes, ScrollStatus, Shortcut, Sidebar, SidebarItem, SidebarSection,
-    SidebarState, StandardAction, StandardMenu, StandardText, list,
-};
-pub use zintl_ui_layout::{
-    Axis, ChildSizing, CrossAxisAlignment, LayoutDimension, LayoutStyle, MainAxisDistribution, Size,
+    StandardAction, StandardMenu, StandardText, ViewKind, list,
 };
 
 native_view!(Text, Button, TextField, HStack, VStack);
 
 #[derive(Clone)]
 pub struct Window {
-    inner: zintl_ui_appkit::Window,
+    inner: zintl_ui_native::Window,
 }
 
 impl Window {
     pub fn new(bounds: Rect, title: impl Into<String>) -> Self {
         Self {
-            inner: zintl_ui_appkit::Window::new(bounds, title),
+            inner: zintl_ui_native::Window::new(bounds, title),
         }
     }
 
     /// Creates a floating utility panel, such as an inspector or palette.
     pub fn panel(bounds: Rect, title: impl Into<String>) -> Self {
         Self {
-            inner: zintl_ui_appkit::Window::new(bounds, title)
-                .style(zintl_ui_appkit::WindowStyle::Panel),
+            inner: zintl_ui_native::Window::new(bounds, title)
+                .style(zintl_ui_native::WindowStyle::Panel),
         }
     }
 
@@ -122,13 +122,13 @@ impl View for Window {
 
 #[derive(Clone)]
 pub struct Text {
-    inner: zintl_ui_appkit::TextField,
+    inner: zintl_ui_native::TextField,
 }
 
 impl Text {
     pub fn new(content: impl Into<String>) -> Self {
         Self {
-            inner: zintl_ui_appkit::TextField::label_with_string(content),
+            inner: zintl_ui_native::TextField::label_with_string(content),
         }
     }
 
@@ -159,13 +159,13 @@ impl NativeView for Text {
 
 #[derive(Clone)]
 pub struct Button {
-    inner: zintl_ui_appkit::Button,
+    inner: zintl_ui_native::Button,
 }
 
 impl Button {
     pub fn new(title: impl Into<String>) -> Self {
         Self {
-            inner: zintl_ui_appkit::Button::new(title),
+            inner: zintl_ui_native::Button::new(title),
         }
     }
 
@@ -186,14 +186,14 @@ impl Button {
 
     pub fn style(mut self, style: ButtonStyle) -> Self {
         let bezel = match style {
-            ButtonStyle::Push => Some(zintl_ui_appkit::BezelStyle::Push),
-            ButtonStyle::Flexible => Some(zintl_ui_appkit::BezelStyle::FlexiblePush),
+            ButtonStyle::Push => Some(zintl_ui_native::BezelStyle::Push),
+            ButtonStyle::Flexible => Some(zintl_ui_native::BezelStyle::FlexiblePush),
             ButtonStyle::Borderless => None,
-            ButtonStyle::Toolbar => Some(zintl_ui_appkit::BezelStyle::Toolbar),
-            ButtonStyle::Accessory => Some(zintl_ui_appkit::BezelStyle::AccessoryBarAction),
-            ButtonStyle::Circular => Some(zintl_ui_appkit::BezelStyle::Circular),
-            ButtonStyle::Help => Some(zintl_ui_appkit::BezelStyle::Help),
-            ButtonStyle::Disclosure => Some(zintl_ui_appkit::BezelStyle::PushDisclosure),
+            ButtonStyle::Toolbar => Some(zintl_ui_native::BezelStyle::Toolbar),
+            ButtonStyle::Accessory => Some(zintl_ui_native::BezelStyle::AccessoryBarAction),
+            ButtonStyle::Circular => Some(zintl_ui_native::BezelStyle::Circular),
+            ButtonStyle::Help => Some(zintl_ui_native::BezelStyle::Help),
+            ButtonStyle::Disclosure => Some(zintl_ui_native::BezelStyle::PushDisclosure),
         };
         self.inner = self.inner.bezel_style(bezel);
         self
@@ -253,13 +253,13 @@ impl NativeView for Button {
 
 #[derive(Clone)]
 pub struct TextField {
-    inner: zintl_ui_appkit::TextField,
+    inner: zintl_ui_native::TextField,
 }
 
 impl TextField {
     pub fn new() -> Self {
         Self {
-            inner: zintl_ui_appkit::TextField::new(),
+            inner: zintl_ui_native::TextField::new(),
         }
     }
 
@@ -329,7 +329,7 @@ impl Stack {
     }
 
     fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let view = zintl_ui_appkit::View::new(self.layout, self.children.clone());
+        let view = zintl_ui_native::View::new(self.layout, self.children.clone());
         match &self.id {
             Some(id) => view.id(id.clone()).native_element(cx),
             None => view.native_element(cx),
@@ -473,13 +473,13 @@ pub struct RenderedNode {
 
 // Tests use the headless backend everywhere so they behave alike on every platform.
 #[cfg(all(target_os = "macos", not(test)))]
-type DesktopBackend = zintl_ui_appkit_backend::AppKitBackend<RenderNode>;
+type DesktopBackend = zintl_ui_appkit_backend::AppKitBackend;
 
 #[cfg(all(target_os = "windows", not(test)))]
-type DesktopBackend = zintl_ui_winui3_backend::WinUI3Backend<RenderNode>;
+type DesktopBackend = zintl_ui_winui3_backend::WinUI3Backend;
 
 #[cfg(any(test, not(any(target_os = "macos", target_os = "windows"))))]
-type DesktopBackend = zintl_ui_backend_core::HeadlessBackend<RenderNode>;
+type DesktopBackend = zintl_ui_backend_core::HeadlessBackend;
 
 type DesktopNodeId = <DesktopBackend as RenderBackend<RenderNode>>::NodeId;
 
@@ -492,7 +492,12 @@ impl App {
     where
         E: IntoElement<Output = RenderNode>,
     {
-        let mut composer = Composer::new(DesktopBackend::new());
+        #[allow(unused_mut)]
+        let mut backend = DesktopBackend::new();
+        // Native backends install the standard menus until the app declares its own.
+        #[cfg(all(any(target_os = "macos", target_os = "windows"), not(test)))]
+        backend.set_default_main_menu(MainMenu::standard().commands());
+        let mut composer = Composer::new(backend);
         composer.mount(root);
         Self { composer }
     }
@@ -658,23 +663,29 @@ mod tests {
 
     #[test]
     fn text_and_text_field_share_the_native_render_kind() {
-        // Verifies desktop text wrappers both render through NSTextField configuration.
+        // Verifies desktop text wrappers both render through text field configuration.
         let label = App::new(Text::new("Label")).render();
         let field = App::new(TextField::new()).render();
 
         assert!(matches!(
             label,
-            RenderNode::NSTextField {
-                editable: false,
-                bordered: false,
+            RenderNode::View {
+                kind: ViewKind::TextField {
+                    editable: false,
+                    bordered: false,
+                    ..
+                },
                 ..
             }
         ));
         assert!(matches!(
             field,
-            RenderNode::NSTextField {
-                editable: true,
-                bordered: true,
+            RenderNode::View {
+                kind: ViewKind::TextField {
+                    editable: true,
+                    bordered: true,
+                    ..
+                },
                 ..
             }
         ));
@@ -688,15 +699,21 @@ mod tests {
 
         assert!(matches!(
             single_line,
-            RenderNode::NSTextField {
-                multiline: false,
+            RenderNode::View {
+                kind: ViewKind::TextField {
+                    multiline: false,
+                    ..
+                },
                 ..
             }
         ));
         assert!(matches!(
             multiline,
-            RenderNode::NSTextField {
-                multiline: true,
+            RenderNode::View {
+                kind: ViewKind::TextField {
+                    multiline: true,
+                    ..
+                },
                 ..
             }
         ));
@@ -709,26 +726,26 @@ mod tests {
         let app = App::new(Window::new(bounds, "Zintl"));
         assert_eq!(
             app.render(),
-            RenderNode::NSWindow {
+            RenderNode::Window {
                 sidebar: None,
                 bounds,
                 title: "Zintl".into(),
                 full_size_content_view: false,
                 id: None,
-                style: zintl_ui_appkit::WindowStyle::Normal,
+                style: zintl_ui_native::WindowStyle::Normal,
             }
         );
     }
 
     #[test]
-    fn window_extend_client_area_uses_appkit_full_size_content_view() {
-        // Verifies extending the client area enables AppKit full-size content.
+    fn window_extend_client_area_uses_full_size_content_view() {
+        // Verifies extending the client area enables full-size content.
         let bounds = Rect::new(10.0, 20.0, 640.0, 480.0);
         let app = App::new(Window::new(bounds, "Zintl").extend_client_area());
 
         assert!(matches!(
             app.render(),
-            RenderNode::NSWindow {
+            RenderNode::Window {
                 full_size_content_view: true,
                 ..
             }
@@ -747,14 +764,17 @@ mod tests {
 
         assert_eq!(
             stack.value,
-            RenderNode::NSView {
+            RenderNode::View {
+                kind: ViewKind::Container,
                 layout: LayoutStyle::stack(Axis::Horizontal, 12.0),
                 id: None,
+                enabled: true,
             }
         );
         assert!(matches!(
             stack.children[0].value,
-            RenderNode::NSButton {
+            RenderNode::View {
+                kind: ViewKind::Button(zintl_ui_backend_core::Button { .. }),
                 layout: LayoutStyle {
                     minimum_size: Size {
                         width: 80.0,
@@ -767,7 +787,8 @@ mod tests {
         ));
         assert!(matches!(
             stack.children[1].value,
-            RenderNode::NSTextField {
+            RenderNode::View {
+                kind: ViewKind::TextField { .. },
                 layout: LayoutStyle {
                     minimum_size: Size {
                         width: 160.0,
@@ -798,24 +819,33 @@ mod tests {
         assert_eq!(tree.children.len(), 8);
         assert!(matches!(
             tree.children[0].value,
-            RenderNode::NSTextField {
-                editable: false,
+            RenderNode::View {
+                kind: ViewKind::TextField {
+                    editable: false,
+                    ..
+                },
                 ..
             }
         ));
         assert!(matches!(
             tree.children[1].value,
-            RenderNode::NSButton { .. }
+            RenderNode::View {
+                kind: ViewKind::Button(zintl_ui_backend_core::Button { .. }),
+                ..
+            }
         ));
         assert!(matches!(
             tree.children[2].value,
-            RenderNode::NSTextField { editable: true, .. }
+            RenderNode::View {
+                kind: ViewKind::TextField { editable: true, .. },
+                ..
+            }
         ));
     }
 
     #[test]
     fn stack_builders_preserve_width_and_child_distribution() {
-        // Verifies desktop stack options reach the wrapped AppKit NSView layout.
+        // Verifies desktop stack options reach the wrapped container layout.
         let app = App::new(
             Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Zintl").content(
                 VStack::new(list![
@@ -833,7 +863,8 @@ mod tests {
 
         assert!(matches!(
             column.value,
-            RenderNode::NSView {
+            RenderNode::View {
+                kind: ViewKind::Container,
                 layout: LayoutStyle {
                     width: LayoutDimension::Percent(1.0),
                     ..
@@ -843,7 +874,8 @@ mod tests {
         ));
         assert!(matches!(
             row.value,
-            RenderNode::NSView {
+            RenderNode::View {
+                kind: ViewKind::Container,
                 layout: LayoutStyle {
                     width: LayoutDimension::Percent(1.0),
                     main_axis_distribution: MainAxisDistribution::SpaceBetween,
@@ -864,7 +896,7 @@ mod tests {
             captured: captured.clone(),
         });
         assert!(
-            matches!(app.render(), RenderNode::NSTextField { value, .. } if value == "initial")
+            matches!(app.render(), RenderNode::View { kind: ViewKind::TextField { value, .. }, .. } if value == "initial")
         );
         let store = captured.get().expect("init must publish the test Store");
 
@@ -876,13 +908,13 @@ mod tests {
         assert_eq!(stored, "typed value");
         assert!(matches!(
             app.render(),
-            RenderNode::NSTextField { value, .. } if value == "typed value"
+            RenderNode::View { kind: ViewKind::TextField { value, .. }, .. } if value == "typed value"
         ));
     }
 
     #[test]
     fn button_dispatches_its_registered_action() {
-        // Verifies the desktop Button delegates activation to the AppKit view route.
+        // Verifies the desktop Button delegates activation to the native view route.
         let activations = Rc::new(Cell::new(0));
         let received = activations.clone();
         let mut app = App::new(Button::new("Save").on_click(move |_| {
@@ -905,11 +937,11 @@ mod tests {
 
         assert!(matches!(
             &tree.value,
-            RenderNode::NSWindow { id: Some(id), .. } if id == "main-window"
+            RenderNode::Window { id: Some(id), .. } if id == "main-window"
         ));
         assert!(matches!(
             &tree.children[0].value,
-            RenderNode::NSTextField { id: Some(id), .. } if id == "name-input"
+            RenderNode::View { kind: ViewKind::TextField { .. }, id: Some(id), .. } if id == "name-input"
         ));
     }
 
@@ -926,15 +958,22 @@ mod tests {
         let tree = app.render_tree();
         assert!(matches!(
             &tree.children[0].value,
-            RenderNode::NSTextField { .. }
+            RenderNode::View {
+                kind: ViewKind::TextField { .. },
+                ..
+            }
         ));
         let store = captured.get().expect("init must publish the test Store");
 
         app.update_text_store(store, "updated".into());
 
         let tree = app.render_tree();
-        let RenderNode::NSTextField { value, .. } = &tree.children[1].value else {
-            panic!("the watched Text must remain an NSTextField")
+        let RenderNode::View {
+            kind: ViewKind::TextField { value, .. },
+            ..
+        } = &tree.children[1].value
+        else {
+            panic!("the watched Text must remain a text field")
         };
         assert_eq!(value, "Stored value: updated");
         assert_eq!(renders.get(), 1);
@@ -942,7 +981,7 @@ mod tests {
 
     #[test]
     fn sidebar_selection_round_trips_and_rejects_unknown_items() {
-        // Verifies the desktop Sidebar preserves AppKit Store selection behavior.
+        // Verifies the desktop Sidebar preserves Store selection behavior.
         struct Navigation {
             selection: Store<Option<String>>,
             captured: Rc<Cell<Store<Option<String>>>>,

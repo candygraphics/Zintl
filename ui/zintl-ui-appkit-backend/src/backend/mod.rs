@@ -27,8 +27,7 @@ use native::NativeNode;
 use crate::convert::{Native, Shared};
 
 use super::{
-    Color, CommandSet, MainTask, NativeRenderNode, NodeId, NodeKind, Rect, Sidebar, ViewKind,
-    WindowStyle,
+    Color, CommandSet, Context, MainTask, NodeId, Rect, RenderNode, Sidebar, ViewKind, WindowStyle,
 };
 use zintl_ui_backend_core::layout::{HostLayout, LayoutSnapshot};
 use zintl_ui_backend_core::tree::{ErrorSlot, MainTasks, NodeTree};
@@ -103,7 +102,7 @@ struct NodeState {
     window: Option<WindowState>,
     attachment: Option<Attachment>,
     /// The attachment declaration last applied to `attachment`.
-    applied: Option<NodeKind>,
+    applied: Option<RenderNode>,
 }
 
 impl NodeState {
@@ -112,24 +111,26 @@ impl NodeState {
     }
 }
 
-pub struct AppKitBackend<R: NativeRenderNode> {
-    tree: NodeTree<R, NodeState>,
+pub struct AppKitBackend {
+    tree: NodeTree<NodeState>,
     retired_windows: Vec<ActorId>,
     structure_dirty: bool,
     layout_dirty: bool,
     pending_error: ErrorSlot<AppError>,
     main_tasks: MainTasks,
     main_menu: Option<CommandSet>,
+    /// Installed while the tree declares no main menu.
+    default_main_menu: Option<CommandSet>,
     opened_window: bool,
 }
 
-impl<R: NativeRenderNode> Default for AppKitBackend<R> {
+impl Default for AppKitBackend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<R: NativeRenderNode> AppKitBackend<R> {
+impl AppKitBackend {
     pub fn new() -> Self {
         Self {
             tree: NodeTree::new(),
@@ -139,15 +140,21 @@ impl<R: NativeRenderNode> AppKitBackend<R> {
             pending_error: ErrorSlot::default(),
             main_tasks: MainTasks::new(),
             main_menu: None,
+            default_main_menu: None,
             opened_window: false,
         }
+    }
+
+    /// Sets the main menu installed while the tree declares none.
+    pub fn set_default_main_menu(&mut self, commands: CommandSet) {
+        self.default_main_menu = Some(commands);
     }
 
     fn set_main_task_sender(&mut self, sender: impl Fn(MainTask) -> bool + Send + Sync + 'static) {
         self.main_tasks.connect(sender);
     }
 
-    pub fn value(&self, id: NodeId) -> Option<&R> {
+    pub fn value(&self, id: NodeId) -> Option<&RenderNode> {
         self.tree.value(id)
     }
 
@@ -168,7 +175,7 @@ impl<R: NativeRenderNode> AppKitBackend<R> {
         &mut self.tree.node_mut(id).state
     }
 
-    fn kind(&self, id: NodeId) -> NodeKind {
+    fn kind(&self, id: NodeId) -> RenderNode {
         self.tree.kind(id)
     }
 
@@ -253,7 +260,7 @@ impl<R: NativeRenderNode> AppKitBackend<R> {
         application: &Application,
         cx: &MessageContext<'_, '_, Message>,
     ) -> Result<(), AppError> {
-        let commands = self.tree.main_menu();
+        let commands = self.tree.main_menu(self.default_main_menu.as_ref());
         if self.main_menu.as_ref() != Some(&commands) {
             let sender = cx.sender();
             application.set_commands(&commands.native(), move |id| {
@@ -271,7 +278,7 @@ impl<R: NativeRenderNode> AppKitBackend<R> {
         window_id: NodeId,
         rebuild_structure: bool,
     ) -> Result<(), AppError> {
-        let NodeKind::Window {
+        let RenderNode::Window {
             bounds,
             title,
             full_size_content_view,
@@ -408,7 +415,7 @@ impl<R: NativeRenderNode> AppKitBackend<R> {
     ) -> Result<(), AppError> {
         for child in self.children(parent).to_vec() {
             if self.state(child).native.is_none()
-                && let NodeKind::View {
+                && let RenderNode::View {
                     kind, id, enabled, ..
                 } = self.kind(child)
             {
@@ -446,7 +453,7 @@ impl<R: NativeRenderNode> AppKitBackend<R> {
         match native {
             NativeNode::ScrollView(scroll, _) => self.attach_children(scroll.document_view(), id),
             NativeNode::TabView(tabs) => {
-                let NodeKind::View {
+                let RenderNode::View {
                     kind: ViewKind::TabView { titles, selected },
                     ..
                 } = self.kind(id)
@@ -491,7 +498,7 @@ impl<R: NativeRenderNode> AppKitBackend<R> {
     }
 
     fn build_layout_snapshot(&self, id: NodeId) -> Result<LayoutSnapshot<NativeNode>, AppError> {
-        let NodeKind::View {
+        let RenderNode::View {
             kind,
             layout: style,
             ..
@@ -552,7 +559,7 @@ impl<R: NativeRenderNode> AppKitBackend<R> {
             .parent
             .and_then(|parent| self.state(parent).native.clone());
         let applied = self.state(id).applied.clone();
-        let was_presented = applied.as_ref().is_some_and(NodeKind::is_presented);
+        let was_presented = applied.as_ref().is_some_and(RenderNode::is_presented);
         // A window shows one sheet at a time; retry after the current one ends.
         if kind.is_presented_sheet()
             && !was_presented
@@ -563,7 +570,7 @@ impl<R: NativeRenderNode> AppKitBackend<R> {
             return Ok(());
         }
         match &kind {
-            NodeKind::ContextMenu { items } => {
+            RenderNode::ContextMenu { items } => {
                 let Some(anchor) = anchor else {
                     return Ok(());
                 };
@@ -575,7 +582,7 @@ impl<R: NativeRenderNode> AppKitBackend<R> {
                     self.state_mut(id).attachment = Some(Attachment::ContextMenu(menu));
                 }
             }
-            NodeKind::Popover {
+            RenderNode::Popover {
                 presented,
                 edge,
                 size,
@@ -626,7 +633,7 @@ impl<R: NativeRenderNode> AppKitBackend<R> {
                     popover.close()?;
                 }
             }
-            NodeKind::Alert { presented, config } => {
+            RenderNode::Alert { presented, config } => {
                 if *presented && !was_presented {
                     self.state_mut(id).attachment = None;
                     let sheet = cx
@@ -640,7 +647,7 @@ impl<R: NativeRenderNode> AppKitBackend<R> {
                     self.state_mut(id).attachment = None;
                 }
             }
-            NodeKind::FileDialog { presented, config } => {
+            RenderNode::FileDialog { presented, config } => {
                 if *presented && !was_presented {
                     self.state_mut(id).attachment = None;
                     let sheet = cx
@@ -653,7 +660,7 @@ impl<R: NativeRenderNode> AppKitBackend<R> {
                     self.state_mut(id).attachment = None;
                 }
             }
-            NodeKind::ColorPanel {
+            RenderNode::ColorPanel {
                 presented,
                 color,
                 shows_alpha,
@@ -682,18 +689,23 @@ impl<R: NativeRenderNode> AppKitBackend<R> {
         Ok(())
     }
 
-    fn update_native(&self, id: NodeId, old: &NodeKind, new: &NodeKind) -> Result<(), AppError> {
+    fn update_native(
+        &self,
+        id: NodeId,
+        old: &RenderNode,
+        new: &RenderNode,
+    ) -> Result<(), AppError> {
         let Some(native) = self.state(id).native.as_ref() else {
             return Ok(());
         };
         let (
-            NodeKind::View {
+            RenderNode::View {
                 kind: old_kind,
                 id: old_id,
                 enabled: old_enabled,
                 ..
             },
-            NodeKind::View {
+            RenderNode::View {
                 kind: new_kind,
                 id: new_id,
                 enabled: new_enabled,
@@ -714,36 +726,36 @@ impl<R: NativeRenderNode> AppKitBackend<R> {
     }
 }
 
-impl<R: NativeRenderNode> RenderBackend<R> for AppKitBackend<R> {
+impl RenderBackend<RenderNode> for AppKitBackend {
     type NodeId = NodeId;
 
-    fn create_context<'a>(&'a self, store_context: StoreContext<'a>) -> R::Context<'a> {
-        R::create_context(store_context, Some(self.main_tasks.sender()))
+    fn create_context<'a>(&'a self, store_context: StoreContext<'a>) -> Context<'a> {
+        Context::new(store_context, Some(self.main_tasks.sender()))
     }
 
     fn root(&self) -> Self::NodeId {
-        NodeTree::<R, NodeState>::ROOT
+        NodeTree::<NodeState>::ROOT
     }
 
-    fn create(&mut self, value: &R, event_route: Option<EventRouteId>) -> Self::NodeId {
+    fn create(&mut self, value: &RenderNode, event_route: Option<EventRouteId>) -> Self::NodeId {
         self.structure_dirty = true;
         self.layout_dirty = true;
         self.tree.create(value, event_route)
     }
 
-    fn update(&mut self, id: Self::NodeId, value: &R) {
+    fn update(&mut self, id: Self::NodeId, value: &RenderNode) {
         let old = self.kind(id);
-        let new = value.node_kind();
+        let new = value.clone();
         if let Err(error) = self.update_native(id, &old, &new) {
             self.record_error(error);
         }
         // Tab titles are applied together with their pages.
         if let (
-            NodeKind::View {
+            RenderNode::View {
                 kind: ViewKind::TabView { titles: old, .. },
                 ..
             },
-            NodeKind::View {
+            RenderNode::View {
                 kind: ViewKind::TabView { titles: new, .. },
                 ..
             },

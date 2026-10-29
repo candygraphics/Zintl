@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::error::Error;
 use std::fmt;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use messageloop_dispatcherqueue::{MessageLoopError, Sender};
@@ -10,8 +11,8 @@ use zintl_ui::view::StoreContext;
 use zintl_ui_backend_core::layout::{HostLayout, LayoutSnapshot};
 use zintl_ui_backend_core::tree::{ErrorSlot, MainTasks, NodeTree};
 use zintl_ui_backend_core::{
-    AlertButtonRole, AlertConfig, Color, CommandSet, FileDialogConfig, FileDialogMode, MainTask,
-    NativeEvent, NativeRenderNode, NodeId, NodeKind, PopoverEdge, Rect, Sidebar, ViewKind,
+    AlertButtonRole, AlertConfig, Color, CommandSet, Context, Event, FileDialogConfig,
+    FileDialogMode, MainTask, NodeId, PopoverEdge, Rect, RenderNode, Sidebar, ViewKind,
     WindowStyle,
 };
 use zintl_ui_layout::{LayoutError, Size};
@@ -116,7 +117,7 @@ struct NodeState {
     window: Option<WindowState>,
     attachment: Option<Attachment>,
     /// The attachment declaration last applied to `attachment`.
-    applied: Option<NodeKind>,
+    applied: Option<RenderNode>,
     /// The route reported by this node's window or attachment.
     route: RouteCell,
 }
@@ -127,26 +128,28 @@ impl NodeState {
     }
 }
 
-pub struct WinUI3Backend<R: NativeRenderNode> {
-    tree: NodeTree<R, NodeState>,
+pub struct WinUI3Backend {
+    tree: NodeTree<NodeState>,
     structure_dirty: bool,
     layout_dirty: bool,
     pending_error: ErrorSlot<AppError>,
     main_tasks: MainTasks,
     main_menu: Option<CommandSet>,
+    /// Installed while the tree declares no main menu.
+    default_main_menu: Option<CommandSet>,
     menu_bar: MenuBar,
     /// Increments whenever `menu_bar` changes.
     menu_version: u64,
     opened_window: bool,
 }
 
-impl<R: NativeRenderNode> Default for WinUI3Backend<R> {
+impl Default for WinUI3Backend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<R: NativeRenderNode> WinUI3Backend<R> {
+impl WinUI3Backend {
     pub fn new() -> Self {
         Self {
             tree: NodeTree::new(),
@@ -155,17 +158,23 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
             pending_error: ErrorSlot::default(),
             main_tasks: MainTasks::new(),
             main_menu: None,
+            default_main_menu: None,
             menu_bar: MenuBar::default(),
             menu_version: 0,
             opened_window: false,
         }
     }
 
+    /// Sets the main menu shown while the tree declares none.
+    pub fn set_default_main_menu(&mut self, commands: CommandSet) {
+        self.default_main_menu = Some(commands);
+    }
+
     fn connect_main_tasks(&self, sender: impl Fn(MainTask) -> bool + Send + Sync + 'static) {
         self.main_tasks.connect(sender);
     }
 
-    pub fn value(&self, id: NodeId) -> Option<&R> {
+    pub fn value(&self, id: NodeId) -> Option<&RenderNode> {
         self.tree.value(id)
     }
 
@@ -186,7 +195,7 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
         &mut self.tree.node_mut(id).state
     }
 
-    fn kind(&self, id: NodeId) -> NodeKind {
+    fn kind(&self, id: NodeId) -> RenderNode {
         self.tree.kind(id)
     }
 
@@ -235,7 +244,7 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
         sender: &MessageSender,
     ) -> Result<(), AppError> {
         self.pending_error.take()?;
-        let commands = self.tree.main_menu();
+        let commands = self.tree.main_menu(self.default_main_menu.as_ref());
         if self.main_menu.as_ref() != Some(&commands) {
             self.menu_bar = Menus::menu_bar(&commands);
             self.main_menu = Some(commands);
@@ -302,7 +311,7 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
         window_id: NodeId,
         rebuild_structure: bool,
     ) -> Result<(), AppError> {
-        let NodeKind::Window {
+        let RenderNode::Window {
             bounds,
             title,
             full_size_content_view,
@@ -472,7 +481,7 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
     ) -> Result<bool, AppError> {
         let mut created = false;
         for child in self.children(parent).to_vec() {
-            if let NodeKind::View { kind, enabled, .. } = self.kind(child)
+            if let RenderNode::View { kind, enabled, .. } = self.kind(child)
                 && self.state(child).native.is_none()
             {
                 let native = NativeNode::create(&kind, sender, &self.pending_error)?;
@@ -526,7 +535,7 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
     }
 
     fn build_layout_snapshot(&self, id: NodeId) -> Result<LayoutSnapshot<NativeNode>, AppError> {
-        let NodeKind::View {
+        let RenderNode::View {
             kind,
             layout: mut style,
             ..
@@ -588,7 +597,7 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
         let report = {
             let sender = sender.clone();
             let route = route.clone();
-            move |event: NativeEvent| {
+            move |event: Event| {
                 if let Some(route) = route.get() {
                     let _ = sender.send(Message::Event { route, event });
                 }
@@ -600,14 +609,14 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
             .parent
             .and_then(|parent| self.state(parent).native.clone());
         let applied = self.state(id).applied.clone();
-        let was_presented = applied.as_ref().is_some_and(NodeKind::is_presented);
+        let was_presented = applied.as_ref().is_some_and(RenderNode::is_presented);
         let has_sheet = self.window_native(window).has_sheet();
         // A window shows one sheet at a time; retry after the current one ends.
         if kind.is_presented_sheet() && !was_presented && has_sheet {
             return Ok(());
         }
         match &kind {
-            NodeKind::ContextMenu { items } => {
+            RenderNode::ContextMenu { items } => {
                 let Some(anchor) = anchor else {
                     return Ok(());
                 };
@@ -617,14 +626,14 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
                     anchor
                         .control
                         .set_context_menu(&Menus::items(items), move |id| {
-                            report(NativeEvent::MenuItemSelected { id: id.into() });
+                            report(Event::MenuItemSelected { id: id.into() });
                         })?;
                     self.state_mut(id).attachment = Some(Attachment::ContextMenu {
                         _menu: ContextMenu { anchor },
                     });
                 }
             }
-            NodeKind::Popover {
+            RenderNode::Popover {
                 presented,
                 edge,
                 size,
@@ -636,8 +645,7 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
                 if created {
                     let content = Control::new(ControlKind::Canvas)?;
                     let host = CanvasHost::new(self.pending_error.clone());
-                    let popover =
-                        Popover::new(&content, move || report(NativeEvent::PopoverClosed))?;
+                    let popover = Popover::new(&content, move || report(Event::PopoverClosed))?;
                     self.state_mut(id).attachment = Some(Attachment::Popover {
                         popover,
                         content,
@@ -676,7 +684,7 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
                     popover.hide()?;
                 }
             }
-            NodeKind::Alert { presented, config } => {
+            RenderNode::Alert { presented, config } => {
                 if *presented && !was_presented {
                     self.state_mut(id).attachment = None;
                     let (dialog, indices) = Self::dialog(config);
@@ -689,7 +697,7 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
                                     DialogResult::Close => indices[2],
                                     DialogResult::None => None,
                                 };
-                                report(NativeEvent::AlertResponse { button });
+                                report(Event::AlertResponse { button });
                             })?;
                     self.state_mut(id).attachment = Some(Attachment::Alert { _dialog: native });
                 } else if !*presented {
@@ -697,12 +705,15 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
                     self.state_mut(id).attachment = None;
                 }
             }
-            NodeKind::FileDialog { presented, config } => {
+            RenderNode::FileDialog { presented, config } => {
                 if *presented && !was_presented {
                     self.window_native(window).show_file_dialog(
                         &Self::file_dialog(config),
                         move |paths| {
-                            report(NativeEvent::FileDialogCompleted { paths });
+                            report(Event::FileDialogCompleted {
+                                paths: paths
+                                    .map(|paths| paths.into_iter().map(PathBuf::from).collect()),
+                            });
                         },
                     )?;
                     self.state_mut(id).attachment = Some(Attachment::FileDialog);
@@ -710,7 +721,7 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
                     self.state_mut(id).attachment = None;
                 }
             }
-            NodeKind::ColorPanel {
+            RenderNode::ColorPanel {
                 presented,
                 color,
                 shows_alpha,
@@ -724,7 +735,7 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
                     {
                         let current = picker.color()?;
                         let current =
-                            Color::new(current.red, current.green, current.blue, current.alpha);
+                            Color::rgba(current.red, current.green, current.blue, current.alpha);
                         if !Self::colors_match(current, *color) {
                             picker.set_color(Self::native_color(*color))?;
                         }
@@ -807,7 +818,7 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
         application: &ApplicationContext,
         color: Color,
         shows_alpha: bool,
-        report: impl Fn(NativeEvent) + 'static,
+        report: impl Fn(Event) + 'static,
     ) -> Result<Attachment, AppError> {
         let report = Rc::new(report);
         let window = application.create_styled_window(zpd_winui3::WindowStyle::Panel)?;
@@ -818,12 +829,12 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
         picker.set_color(Self::native_color(color))?;
         let changed = report.clone();
         picker.set_event_handler(move |event| {
-            if let Some(event @ NativeEvent::ColorChanged { .. }) = NativeNode::event(event) {
+            if let Some(event @ Event::ColorChanged { .. }) = NativeNode::event(event) {
                 changed(event);
             }
         })?;
         window.set_content(Some(&picker))?;
-        window.set_closed(move || report(NativeEvent::ColorPanelClosed))?;
+        window.set_closed(move || report(Event::ColorPanelClosed))?;
         window.activate()?;
         Ok(Attachment::ColorPanel {
             _window: window,
@@ -857,19 +868,19 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
     fn update_native(
         &mut self,
         id: NodeId,
-        old: &NodeKind,
-        new: &NodeKind,
+        old: &RenderNode,
+        new: &RenderNode,
     ) -> Result<(), AppError> {
         let Some(native) = self.state(id).native.clone() else {
             return Ok(());
         };
         let (
-            NodeKind::View {
+            RenderNode::View {
                 kind: old_kind,
                 enabled: old_enabled,
                 ..
             },
-            NodeKind::View {
+            RenderNode::View {
                 kind: new_kind,
                 enabled: new_enabled,
                 ..
@@ -890,26 +901,26 @@ impl<R: NativeRenderNode> WinUI3Backend<R> {
     }
 }
 
-impl<R: NativeRenderNode> RenderBackend<R> for WinUI3Backend<R> {
+impl RenderBackend<RenderNode> for WinUI3Backend {
     type NodeId = NodeId;
 
-    fn create_context<'a>(&'a self, store_context: StoreContext<'a>) -> R::Context<'a> {
-        R::create_context(store_context, Some(self.main_tasks.sender()))
+    fn create_context<'a>(&'a self, store_context: StoreContext<'a>) -> Context<'a> {
+        Context::new(store_context, Some(self.main_tasks.sender()))
     }
 
     fn root(&self) -> Self::NodeId {
-        NodeTree::<R, NodeState>::ROOT
+        NodeTree::<NodeState>::ROOT
     }
 
-    fn create(&mut self, value: &R, event_route: Option<EventRouteId>) -> Self::NodeId {
+    fn create(&mut self, value: &RenderNode, event_route: Option<EventRouteId>) -> Self::NodeId {
         self.structure_dirty = true;
         self.layout_dirty = true;
         self.tree.create(value, event_route)
     }
 
-    fn update(&mut self, id: Self::NodeId, value: &R) {
+    fn update(&mut self, id: Self::NodeId, value: &RenderNode) {
         let old = self.kind(id);
-        let new = value.node_kind();
+        let new = value.clone();
         if let Err(error) = self.update_native(id, &old, &new) {
             self.pending_error.record(error);
         }

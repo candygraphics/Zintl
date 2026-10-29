@@ -132,15 +132,6 @@ name = "zintl-ui"
 version = "0.0.0"
 
 [[package]]
-name = "zintl-ui-appkit"
-version = "0.0.0"
-dependencies = [
- "zintl-ui",
- "zintl-ui-backend-core",
- "zintl-ui-layout",
-]
-
-[[package]]
 name = "zintl-ui-appkit-backend"
 version = "0.0.0"
 dependencies = [
@@ -164,10 +155,10 @@ name = "zintl-ui-desktop"
 version = "0.0.0"
 dependencies = [
  "zintl-ui",
- "zintl-ui-appkit",
  "zintl-ui-appkit-backend",
  "zintl-ui-backend-core",
  "zintl-ui-layout",
+ "zintl-ui-native",
  "zintl-ui-winui3-backend",
 ]
 
@@ -176,6 +167,15 @@ name = "zintl-ui-layout"
 version = "0.0.0"
 dependencies = [
  "taffy",
+]
+
+[[package]]
+name = "zintl-ui-native"
+version = "0.0.0"
+dependencies = [
+ "zintl-ui",
+ "zintl-ui-backend-core",
+ "zintl-ui-layout",
 ]
 
 [[package]]

@@ -5,7 +5,11 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use super::*;
-use zintl_ui_appkit::{ButtonType, MenuItemState, MenuRole, WindowStyle};
+use zintl_ui_backend_core::{
+    AlertButton as AlertButtonDescription, AlertButtonRole, CommandItem, CommandRole,
+    FileDialogMode, MenuRole as CommandMenuRole, NumberFormat, Sidebar as SidebarDescription,
+};
+use zintl_ui_native::{ButtonType, WindowStyle};
 
 /// Creates Stores in `init`, publishes them, and renders from them.
 struct Harness<S: Copy + 'static, E> {
@@ -68,11 +72,14 @@ impl Calls {
 
 #[test]
 fn switch_toggle_round_trips_through_its_store() {
-    // Verifies an unlabeled Toggle renders an NSSwitch that writes user changes to its Store.
+    // Verifies an unlabeled Toggle renders a switch that writes user changes to its Store.
     let (mut app, on) = Harness::mount(|cx| cx.store(true), |on| Toggle::new("").bind(on));
     assert!(matches!(
         app.render(),
-        RenderNode::NSSwitch { on: true, .. }
+        RenderNode::View {
+            kind: ViewKind::Switch { on: true, .. },
+            ..
+        }
     ));
 
     assert!(app.dispatch_at(&[0], Event::StateChanged { on: false }));
@@ -80,34 +87,55 @@ fn switch_toggle_round_trips_through_its_store() {
     assert!(!app.get(on));
     assert!(matches!(
         app.render(),
-        RenderNode::NSSwitch { on: false, .. }
+        RenderNode::View {
+            kind: ViewKind::Switch { on: false, .. },
+            ..
+        }
     ));
 }
 
 #[test]
 fn toggle_styles_use_native_two_state_controls() {
-    // Verifies switch rows lead with the label and other styles use NSButton types.
+    // Verifies switch rows lead with the label and other styles use button types.
     let row = App::new(Toggle::new("Wi-Fi")).render_tree();
-    assert!(matches!(row.value, RenderNode::NSView { .. }));
+    assert!(matches!(
+        row.value,
+        RenderNode::View {
+            kind: ViewKind::Container,
+            ..
+        }
+    ));
     assert!(matches!(
         &row.children[0].value,
-        RenderNode::NSTextField { value, .. } if value == "Wi-Fi"
+        RenderNode::View { kind: ViewKind::TextField { value, .. }, .. } if value == "Wi-Fi"
     ));
-    assert!(matches!(row.children[1].value, RenderNode::NSSwitch { .. }));
+    assert!(matches!(
+        row.children[1].value,
+        RenderNode::View {
+            kind: ViewKind::Switch { .. },
+            ..
+        }
+    ));
 
     let checkbox = App::new(Toggle::new("Agree").style(ToggleStyle::Checkbox)).render();
     let button = App::new(Toggle::new("Bold").style(ToggleStyle::Button)).render();
     assert!(matches!(
         checkbox,
-        RenderNode::NSButton {
-            button_type: ButtonType::Checkbox,
+        RenderNode::View {
+            kind: ViewKind::Button(zintl_ui_backend_core::Button {
+                button_type: ButtonType::Checkbox,
+                ..
+            }),
             ..
         }
     ));
     assert!(matches!(
         button,
-        RenderNode::NSButton {
-            button_type: ButtonType::PushOnPushOff,
+        RenderNode::View {
+            kind: ViewKind::Button(zintl_ui_backend_core::Button {
+                button_type: ButtonType::PushOnPushOff,
+                ..
+            }),
             ..
         }
     ));
@@ -129,9 +157,13 @@ fn radio_picker_selects_exactly_one_option() {
             .children
             .iter()
             .map(|radio| match radio.value {
-                RenderNode::NSButton {
-                    button_type: ButtonType::Radio,
-                    on,
+                RenderNode::View {
+                    kind:
+                        ViewKind::Button(zintl_ui_backend_core::Button {
+                            button_type: ButtonType::Radio,
+                            on,
+                            ..
+                        }),
                     ..
                 } => on,
                 _ => panic!("radio pickers render radio buttons"),
@@ -155,8 +187,11 @@ fn menu_and_segmented_pickers_render_bound_selection() {
     );
     assert!(matches!(
         app.render(),
-        RenderNode::NSPopUpButton {
-            selected: Some(1),
+        RenderNode::View {
+            kind: ViewKind::PopUpButton {
+                selected: Some(1),
+                ..
+            },
             ..
         }
     ));
@@ -166,7 +201,7 @@ fn menu_and_segmented_pickers_render_bound_selection() {
     let segmented = App::new(Picker::new(["A", "B"]).style(PickerStyle::Segmented)).render();
     assert!(matches!(
         segmented,
-        RenderNode::NSSegmentedControl { segments, .. } if segments == ["A", "B"]
+        RenderNode::View { kind: ViewKind::SegmentedControl { segments, .. }, .. } if segments == ["A", "B"]
     ));
 }
 
@@ -183,10 +218,15 @@ fn number_field_clamps_entered_values() {
     assert_eq!(app.get(value), 10.0);
     assert!(matches!(
         app.render(),
-        RenderNode::NSNumberField {
-            value: 10.0,
-            minimum: 0.0,
-            maximum: 10.0,
+        RenderNode::View {
+            kind: ViewKind::NumberField {
+                value: 10.0,
+                format: NumberFormat {
+                    minimum: 0.0,
+                    maximum: 10.0,
+                    ..
+                },
+            },
             ..
         }
     ));
@@ -246,16 +286,19 @@ fn button_roles_and_styles_configure_nsbutton() {
     let render = |button: Button| App::new(button).render();
     assert!(matches!(
         render(Button::new("OK").role(ButtonRole::Default)),
-        RenderNode::NSButton { key_equivalent: Some(key), .. } if key == "\r"
+        RenderNode::View { kind: ViewKind::Button(zintl_ui_backend_core::Button { key_equivalent: Some(key), .. }), .. } if key == "\r"
     ));
     assert!(matches!(
         render(Button::new("Cancel").role(ButtonRole::Cancel)),
-        RenderNode::NSButton { key_equivalent: Some(key), .. } if key == "\u{1b}"
+        RenderNode::View { kind: ViewKind::Button(zintl_ui_backend_core::Button { key_equivalent: Some(key), .. }), .. } if key == "\u{1b}"
     ));
     assert!(matches!(
         render(Button::new("Delete").role(ButtonRole::Destructive)),
-        RenderNode::NSButton {
-            destructive: true,
+        RenderNode::View {
+            kind: ViewKind::Button(zintl_ui_backend_core::Button {
+                destructive: true,
+                ..
+            }),
             ..
         }
     ));
@@ -265,7 +308,7 @@ fn button_roles_and_styles_configure_nsbutton() {
                 .style(ButtonStyle::Borderless)
                 .system_image("gearshape")
         ),
-        RenderNode::NSButton { bezel: None, system_image: Some(name), .. } if name == "gearshape"
+        RenderNode::View { kind: ViewKind::Button(zintl_ui_backend_core::Button { bezel: None, system_image: Some(name), .. }), .. } if name == "gearshape"
     ));
 }
 
@@ -280,27 +323,24 @@ fn context_menu_routes_custom_items_by_position() {
         MenuItem::new("Unavailable"),
     ]));
     let tree = app.render_tree();
-    let RenderNode::NSMenu { menu } = &tree.children[0].value else {
-        panic!("context menus render as a child NSMenu");
+    let RenderNode::ContextMenu { items } = &tree.children[0].value else {
+        panic!("context menus render as a child context menu");
     };
     assert!(matches!(
-        &menu.items[0],
-        MenuItemState::Action { id: Some(id), enabled: true, .. } if id == "context.0"
+        &items[0],
+        CommandItem { id: Some(id), enabled: true, .. } if id == "context.0"
     ));
-    assert_eq!(menu.items[1], MenuItemState::Separator);
+    assert_eq!(items[1].role, Some(CommandRole::Separator));
     assert!(matches!(
-        &menu.items[2],
-        MenuItemState::Action {
+        &items[2],
+        CommandItem {
             id: None,
-            standard: Some(StandardAction::Copy),
-            shortcut: Some(_),
+            role: Some(CommandRole::Copy),
+            key: Some(_),
             ..
         }
     ));
-    assert!(matches!(
-        &menu.items[3],
-        MenuItemState::Action { enabled: false, .. }
-    ));
+    assert!(matches!(&items[3], CommandItem { enabled: false, .. }));
 
     assert!(app.dispatch_at(
         &[0, 0],
@@ -321,19 +361,24 @@ fn view_builders_chain_after_attachments() {
             .padding(20.0),
     );
     let tree = app.render_tree();
-    let RenderNode::NSView { layout, .. } = &tree.value else {
-        panic!("stacks render as an NSView");
+    let RenderNode::View {
+        kind: ViewKind::Container,
+        layout,
+        ..
+    } = &tree.value
+    else {
+        panic!("stacks render as a container view");
     };
     assert_eq!((layout.gap, layout.padding), (12.0, 20.0));
     assert!(matches!(
         tree.children.last().map(|child| &child.value),
-        Some(RenderNode::NSMenu { .. })
+        Some(RenderNode::ContextMenu { .. })
     ));
 }
 
 #[test]
 fn popover_follows_its_presented_store() {
-    // Verifies popovers render content as children and AppKit dismissal clears the Store.
+    // Verifies popovers render content as children and native dismissal clears the Store.
     let (mut app, shown) = Harness::mount(
         |cx| cx.store(false),
         |shown| Button::new("Info").popover(Popover::new(Text::new("Details")).bind(shown)),
@@ -341,7 +386,7 @@ fn popover_follows_its_presented_store() {
     let popover = |app: &App| app.render_tree().children[0].clone();
     assert!(matches!(
         popover(&app).value,
-        RenderNode::NSPopover {
+        RenderNode::Popover {
             presented: false,
             ..
         }
@@ -351,7 +396,7 @@ fn popover_follows_its_presented_store() {
     app.set(shown, true);
     assert!(matches!(
         popover(&app).value,
-        RenderNode::NSPopover {
+        RenderNode::Popover {
             presented: true,
             ..
         }
@@ -384,10 +429,16 @@ fn alert_buttons_run_their_action_and_dismiss() {
     let tree = app.render_tree();
     assert!(matches!(
         &tree.children[0].value,
-        RenderNode::NSAlert { presented: true, alert }
-            if alert.buttons == [
-                ("Delete".to_owned(), ButtonRole::Destructive),
-                ("Cancel".to_owned(), ButtonRole::Cancel),
+        RenderNode::Alert { presented: true, config }
+            if config.buttons == [
+                AlertButtonDescription {
+                    title: "Delete".into(),
+                    role: AlertButtonRole::Destructive,
+                },
+                AlertButtonDescription {
+                    title: "Cancel".into(),
+                    role: AlertButtonRole::Cancel,
+                },
             ]
     ));
 
@@ -422,8 +473,9 @@ fn file_dialog_reports_paths_or_cancellation() {
     );
     assert!(matches!(
         &app.render_tree().children[0].value,
-        RenderNode::NSSavePanel { presented: true, panel }
-            if panel.file_name.as_deref() == Some("notes.txt")
+        RenderNode::FileDialog { presented: true, config }
+            if config.mode == FileDialogMode::Save
+                && config.file_name.as_deref() == Some("notes.txt")
     ));
 
     app.dispatch_at(
@@ -456,7 +508,7 @@ fn color_panel_writes_color_and_presentation_stores() {
     assert_eq!(app.get(color), red);
     assert!(matches!(
         app.render_tree().children[0].value,
-        RenderNode::NSColorPanel { color, presented: true, .. } if color == red
+        RenderNode::ColorPanel { color, presented: true, .. } if color == red
     ));
 
     app.dispatch_at(&[0, 0], Event::ColorPanelClosed);
@@ -472,7 +524,7 @@ fn bound_window_closes_and_reopens_from_its_store() {
     );
     assert!(matches!(
         app.render(),
-        RenderNode::NSWindow {
+        RenderNode::Window {
             style: WindowStyle::Panel,
             ..
         }
@@ -507,31 +559,25 @@ fn main_menu_orders_standard_and_custom_menus() {
         },
     );
     let roots = app.render_roots();
-    let RenderNode::NSMainMenu { menus } = &roots[0].value else {
+    let RenderNode::MainMenu(commands) = &roots[0].value else {
         panic!("the main menu renders as a root node");
     };
-    let titles = menus
+    let titles = commands
+        .menus
         .iter()
         .map(|menu| menu.title.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(
-        titles,
-        ["", "File", "Edit", "View", "Tools", "Window", "Help"]
-    );
-    let title = |item: &MenuItemState| match item {
-        MenuItemState::Action { title, .. } => title.clone(),
-        MenuItemState::Submenu(menu) => menu.title.clone(),
-        MenuItemState::Separator => String::new(),
-    };
-    assert_eq!(title(&menus[0].items[0]), "About Demo");
-    assert_eq!(title(menus[0].items.last().unwrap()), "Quit Demo");
+    assert_eq!(titles, ["File", "Edit", "View", "Tools", "Window", "Help"]);
+    let app_items = &commands.app_menu.as_ref().unwrap().items;
+    assert_eq!(app_items[0].title, "About Demo");
+    assert_eq!(app_items.last().unwrap().title, "Quit Demo");
     assert!(matches!(
-        &menus[0].items[2],
-        MenuItemState::Submenu(services) if services.role == Some(MenuRole::Services)
+        &app_items[2].submenu,
+        Some(services) if services.role == Some(CommandMenuRole::Services)
     ));
-    assert_eq!(title(&menus[1].items[0]), "New");
-    assert_eq!(menus[5].role, Some(MenuRole::Windows));
-    assert_eq!(menus[6].role, Some(MenuRole::Help));
+    assert_eq!(commands.menus[0].items[0].title, "New");
+    assert_eq!(commands.menus[4].role, Some(CommandMenuRole::Windows));
+    assert_eq!(commands.menus[5].role, Some(CommandMenuRole::Help));
 
     assert!(app.dispatch_at(&[0], Event::MenuItemSelected { id: "m4.0".into() }));
     assert_eq!(runs.count(), 1);
@@ -548,18 +594,16 @@ fn menu_localizers_translate_standard_text() {
         Window::new(Rect::new(0.0, 0.0, 200.0, 200.0), "Demo"),
     ])
     .render_roots();
-    let RenderNode::NSMainMenu { menus } = &roots[0].value else {
+    let RenderNode::MainMenu(commands) = &roots[0].value else {
         panic!("the main menu renders as a root node");
     };
+    let app_items = &commands.app_menu.as_ref().unwrap().items;
+    assert_eq!(app_items[0].title, "Demoについて");
     assert!(matches!(
-        &menus[0].items[0],
-        MenuItemState::Action { title, .. } if title == "Demoについて"
+        &app_items[2],
+        CommandItem { title, key: Some(_), .. } if title == "設定…"
     ));
-    assert!(matches!(
-        &menus[0].items[2],
-        MenuItemState::Action { title, shortcut: Some(_), .. } if title == "設定…"
-    ));
-    assert_eq!(menus[2].title, "編集");
+    assert_eq!(commands.menus[1].title, "編集");
 
     let texts = [
         StandardText::About,
@@ -595,7 +639,7 @@ fn sidebar_search_updates_its_query_store() {
     assert_eq!(app.get(query), "ho");
     assert!(matches!(
         app.render(),
-        RenderNode::NSWindow { sidebar: Some(SidebarState { search: Some(search), .. }), .. }
+        RenderNode::Window { sidebar: Some(SidebarDescription { search: Some(search), .. }), .. }
             if search.value == "ho" && search.placeholder.as_deref() == Some("Search")
     ));
 }
@@ -616,14 +660,16 @@ fn tab_view_hosts_one_page_per_tab() {
     let tree = app.render_tree();
     assert!(matches!(
         &tree.value,
-        RenderNode::NSTabView { titles, selected: 0, .. } if titles == &["General", "Advanced"]
+        RenderNode::View { kind: ViewKind::TabView { titles, selected: 0, .. }, .. } if titles == &["General", "Advanced"]
     ));
     assert_eq!(tree.children.len(), 2);
-    assert!(
-        tree.children
-            .iter()
-            .all(|page| matches!(page.value, RenderNode::NSView { .. }) && page.children.len() == 1)
-    );
+    assert!(tree.children.iter().all(|page| matches!(
+        page.value,
+        RenderNode::View {
+            kind: ViewKind::Container,
+            ..
+        }
+    ) && page.children.len() == 1));
 
     assert!(app.dispatch_at(&[0], Event::SelectionChanged { index: 1 }));
     assert_eq!(app.get(selected), 1);
@@ -635,7 +681,8 @@ fn scroll_view_fills_its_parent_and_hosts_content() {
     let tree = App::new(ScrollView::new(VStack::new(list![Text::new("Row")]))).render_tree();
     assert!(matches!(
         tree.value,
-        RenderNode::NSScrollView {
+        RenderNode::View {
+            kind: ViewKind::ScrollView { .. },
             layout: LayoutStyle {
                 width: LayoutDimension::Percent(1.0),
                 grow: 1.0,
@@ -658,8 +705,11 @@ fn scroll_view_binding_saves_and_restores_offset() {
     assert_eq!(app.get(status), ScrollStatus { x: 0.0, y: 120.0 });
     assert!(matches!(
         app.render_tree().value,
-        RenderNode::NSScrollView {
-            status: Some(ScrollStatus { x: 0.0, y: 120.0 }),
+        RenderNode::View {
+            kind: ViewKind::ScrollView {
+                offset: Some((0.0, 120.0)),
+                ..
+            },
             ..
         }
     ));

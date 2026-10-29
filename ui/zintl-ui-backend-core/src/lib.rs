@@ -1,24 +1,25 @@
-//! Platform-neutral descriptions and storage shared by native UI backends.
+//! Platform-neutral render nodes and the storage shared by native backends.
 //!
-//! Render nodes describe themselves as [`NodeKind`]s; each backend maps those
-//! descriptions to its platform's views and reports [`NativeEvent`]s back.
+//! Views render [`RenderNode`] descriptions; each backend maps them to its
+//! platform's views and reports [`Event`]s back.
 
+mod context;
+mod event;
 mod model;
 
 pub mod headless;
 pub mod layout;
 pub mod tree;
 
+pub use context::Context;
+pub use event::{Event, EventKind};
 pub use headless::HeadlessBackend;
-
 pub use model::{
     AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, Color,
     CommandItem, CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig,
-    FileDialogMode, MenuRole, NativeEvent, NumberFormat, PopoverEdge, Rect, ScrollAxes, Sidebar,
-    SidebarItem, SidebarSearch, SidebarSection, WindowAppMenu, WindowStyle,
+    FileDialogMode, MenuRole, NumberFormat, PopoverEdge, Rect, ScrollAxes, Sidebar, SidebarItem,
+    SidebarSearch, SidebarSection, WindowAppMenu, WindowStyle,
 };
-use zintl_ui::renderer::RenderNode;
-use zintl_ui::view::StoreContext;
 use zintl_ui_layout::{LayoutStyle, Size};
 
 pub type MainTask = Box<dyn FnOnce() + Send + 'static>;
@@ -99,7 +100,8 @@ pub enum ViewKind {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum NodeKind {
+/// A view, window, presentation, or menu that a backend renders natively.
+pub enum RenderNode {
     Window {
         sidebar: Option<Sidebar>,
         bounds: Rect,
@@ -143,7 +145,7 @@ pub enum NodeKind {
     MainMenu(CommandSet),
 }
 
-impl NodeKind {
+impl RenderNode {
     /// Returns whether this node is presented outside its parent's layout.
     pub fn is_attachment(&self) -> bool {
         matches!(
@@ -157,17 +159,18 @@ impl NodeKind {
     }
 }
 
-pub trait NativeRenderNode: RenderNode {
-    fn create_context<'a>(
-        store_context: StoreContext<'a>,
-        perform_main: Option<&'a MainTaskSender>,
-    ) -> Self::Context<'a>;
-    fn node_kind(&self) -> NodeKind;
-    fn native_event(event: NativeEvent) -> Self::Event;
+impl zintl_ui::renderer::RenderNode for RenderNode {
+    type Event = Event;
+    type Context<'a> = Context<'a>;
 
-    /// Returns the main menu installed while the tree declares none.
-    fn default_main_menu() -> Option<CommandSet> {
-        None
+    /// Views keep their native object while only properties change.
+    fn same_kind(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::View { kind: first, .. }, Self::View { kind: second, .. }) => {
+                std::mem::discriminant(first) == std::mem::discriminant(second)
+            }
+            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
+        }
     }
 }
 

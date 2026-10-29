@@ -68,21 +68,6 @@ impl SidebarItem {
     }
 }
 
-/// Rendered sidebar data without Store handles or native AppKit objects.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SidebarState {
-    pub sections: Vec<SidebarSection>,
-    pub selected_id: Option<String>,
-    pub search: Option<SidebarSearchState>,
-}
-
-/// Rendered search field text shown above sidebar items.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SidebarSearchState {
-    pub value: String,
-    pub placeholder: Option<String>,
-}
-
 impl Sidebar {
     pub fn new(sections: impl IntoIterator<Item = SidebarSection>) -> Self {
         Self {
@@ -99,7 +84,7 @@ impl Sidebar {
         self
     }
 
-    /// Runs after AppKit changes the selection and updates the bound Store.
+    /// Runs after the user changes the selection and the bound Store updates.
     pub fn on_select(mut self, action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static) -> Self {
         self.action = Some(Rc::new(action));
         self
@@ -118,14 +103,32 @@ impl Sidebar {
         self
     }
 
-    pub(crate) fn state(&self, cx: &mut Context<'_>) -> SidebarState {
-        SidebarState {
-            sections: self.sections.clone(),
+    /// Describes the sidebar with its current selection and search text.
+    pub(crate) fn state(&self, cx: &mut Context<'_>) -> zintl_ui_backend_core::Sidebar {
+        zintl_ui_backend_core::Sidebar {
+            sections: self
+                .sections
+                .iter()
+                .map(|section| zintl_ui_backend_core::SidebarSection {
+                    title: section.title.clone(),
+                    items: section
+                        .items
+                        .iter()
+                        .map(|item| zintl_ui_backend_core::SidebarItem {
+                            id: item.id.clone(),
+                            title: item.title.clone(),
+                            system_image: item.system_image.clone(),
+                        })
+                        .collect(),
+                })
+                .collect(),
             selected_id: self.selection.and_then(|store| cx.get(store).clone()),
-            search: self.search.map(|store| SidebarSearchState {
-                value: cx.get(store).clone(),
-                placeholder: self.search_placeholder.clone(),
-            }),
+            search: self
+                .search
+                .map(|store| zintl_ui_backend_core::SidebarSearch {
+                    value: cx.get(store).clone(),
+                    placeholder: self.search_placeholder.clone(),
+                }),
         }
     }
 
@@ -159,36 +162,5 @@ impl Sidebar {
                 }
             }
         })
-    }
-}
-
-impl SidebarState {
-    pub(crate) fn backend(&self) -> zintl_ui_backend_core::Sidebar {
-        zintl_ui_backend_core::Sidebar {
-            selected_id: self.selected_id.clone(),
-            search: self
-                .search
-                .as_ref()
-                .map(|search| zintl_ui_backend_core::SidebarSearch {
-                    value: search.value.clone(),
-                    placeholder: search.placeholder.clone(),
-                }),
-            sections: self
-                .sections
-                .iter()
-                .map(|section| zintl_ui_backend_core::SidebarSection {
-                    title: section.title.clone(),
-                    items: section
-                        .items
-                        .iter()
-                        .map(|item| zintl_ui_backend_core::SidebarItem {
-                            id: item.id.clone(),
-                            title: item.title.clone(),
-                            system_image: item.system_image.clone(),
-                        })
-                        .collect(),
-                })
-                .collect(),
-        }
     }
 }

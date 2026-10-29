@@ -4,7 +4,7 @@ use zintl_ui::event::Event as EventTrait;
 
 use crate::Color;
 
-/// Selects the semantic AppKit event handled by an element route.
+/// Selects the event an element route handles.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum EventKind {
     Activated,
@@ -27,7 +27,7 @@ pub enum EventKind {
     WindowDidClose,
 }
 
-/// A semantic event produced by the AppKit backend.
+/// A user change or window lifecycle event reported by a native backend.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     Activated,

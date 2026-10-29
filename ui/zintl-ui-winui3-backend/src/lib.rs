@@ -1,6 +1,6 @@
 //! WinUI 3 renderer for Zintl UI trees.
 //!
-//! The backend reads the same [`NodeKind`](zintl_ui_backend_core::NodeKind)
+//! The backend reads the same [`RenderNode`](zintl_ui_backend_core::RenderNode)
 //! descriptions as the AppKit backend and maps them to WinUI controls.
 
 #[cfg(target_os = "windows")]

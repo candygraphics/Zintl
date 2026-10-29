@@ -5,7 +5,7 @@ edition = "2024"
 [dependencies]
 zintl-ui = { path = "../zintl-ui" }
 zintl-ui-layout = { path = "../zintl-ui-layout" }
-zintl-ui-appkit = { path = "../zintl-ui-appkit" }
+zintl-ui-native = { path = "../zintl-ui-native" }
 zintl-ui-backend-core = { path = "../zintl-ui-backend-core" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
