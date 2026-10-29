@@ -57,13 +57,21 @@ impl<N: LayoutNative> LayoutSnapshot<N> {
 
     /// Lays out this view's children inside a view that is sized externally.
     pub fn apply_as_root(&self, size: Size) -> Result<(), N::Error> {
+        Self::apply_children(self.style, &self.children, size)
+    }
+
+    /// Lays out `children` of a container with `style` that is sized externally.
+    pub fn apply_children(
+        style: LayoutStyle,
+        children: &[Self],
+        size: Size,
+    ) -> Result<(), N::Error> {
         let mut layout = LayoutTree::new();
-        let built = self
-            .children
+        let built = children
             .iter()
             .map(|child| child.build(&mut layout))
             .collect::<Result<Vec<_>, _>>()?;
-        let mut style = self.style;
+        let mut style = style;
         style.width = LayoutDimension::Points(size.width);
         style.height = LayoutDimension::Points(size.height);
         let child_nodes = built.iter().map(|child| child.layout).collect::<Vec<_>>();
@@ -73,6 +81,17 @@ impl<N: LayoutNative> LayoutSnapshot<N> {
             child.apply(&layout, Some(size.height))?;
         }
         Ok(())
+    }
+}
+
+impl<N> Clone for LayoutSnapshot<N> {
+    fn clone(&self) -> Self {
+        Self {
+            style: self.style,
+            native: self.native.clone(),
+            children: self.children.clone(),
+            hosted: self.hosted.clone(),
+        }
     }
 }
 

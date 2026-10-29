@@ -28,6 +28,14 @@ name = "messageloop-core"
 version = "0.1.0"
 
 [[package]]
+name = "messageloop-dispatcherqueue"
+version = "0.1.0"
+dependencies = [
+ "messageloop-core",
+ "zpd-winui3",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -167,6 +175,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "zintl-ui-winui3-backend"
+version = "0.0.0"
+dependencies = [
+ "messageloop-dispatcherqueue",
+ "zintl-ui",
+ "zintl-ui-appkit-backend",
+ "zintl-ui-layout",
+ "zpd-winui3",
+]
+
+[[package]]
 name = "zpd-appkit"
 version = "0.1.0"
 dependencies = [
@@ -180,4 +199,8 @@ version = "0.1.0"
 
 [[package]]
 name = "zpd-objc"
+version = "0.1.0"
+
+[[package]]
+name = "zpd-winui3"
 version = "0.1.0"

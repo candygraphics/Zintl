@@ -539,7 +539,8 @@ int32_t zpd_winui3_control_set_number(zpd_winui3_element* target, int32_t proper
       case ZPD_WINUI3_CONTROL_COMBO_BOX:
         if (property == ZPD_WINUI3_NUMBER_SELECTED_INDEX) {
           element->state->index = static_cast<int64_t>(value);
-          element->value.as<ComboBox>().SelectedIndex(static_cast<int32_t>(value));
+          auto combo = element->value.as<ComboBox>();
+          if (value < combo.Items().Size()) combo.SelectedIndex(static_cast<int32_t>(value));
         }
         break;
       case ZPD_WINUI3_CONTROL_SELECTOR_BAR:
@@ -553,7 +554,8 @@ int32_t zpd_winui3_control_set_number(zpd_winui3_element* target, int32_t proper
       case ZPD_WINUI3_CONTROL_TAB_VIEW:
         if (property == ZPD_WINUI3_NUMBER_SELECTED_INDEX) {
           element->state->index = static_cast<int64_t>(value);
-          element->value.as<TabView>().SelectedIndex(static_cast<int32_t>(value));
+          auto tabs = element->value.as<TabView>();
+          if (value >= 0 && value < tabs.TabItems().Size()) tabs.SelectedIndex(static_cast<int32_t>(value));
         }
         break;
       default: break;
@@ -709,7 +711,8 @@ int32_t zpd_winui3_control_set_items(zpd_winui3_element* target, const zpd_winui
         auto text = element->kind == ZPD_WINUI3_CONTROL_EDITABLE_COMBO_BOX ? combo.Text() : hstring();
         combo.Items().Clear();
         for (size_t index = 0; index < length; ++index) combo.Items().Append(box_value(string_from(items[index])));
-        if (element->kind == ZPD_WINUI3_CONTROL_COMBO_BOX) combo.SelectedIndex(static_cast<int32_t>(element->state->index));
+        auto selected = element->state->index;
+        if (element->kind == ZPD_WINUI3_CONTROL_COMBO_BOX) combo.SelectedIndex(selected < static_cast<int64_t>(length) ? static_cast<int32_t>(selected) : -1);
         else combo.Text(text);
         break;
       }
@@ -757,7 +760,7 @@ int32_t zpd_winui3_control_set_children(zpd_winui3_element* target, const zpd_wi
           item.Content(children[index]->value);
           tabs.TabItems().Append(item);
         }
-        tabs.SelectedIndex(static_cast<int32_t>(element->state->index));
+        if (element->state->index >= 0 && element->state->index < static_cast<int64_t>(length)) tabs.SelectedIndex(static_cast<int32_t>(element->state->index));
         break;
       }
       case ZPD_WINUI3_CONTROL_NAVIGATION_VIEW: {
