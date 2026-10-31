@@ -1084,3 +1084,43 @@ fn rich_editor_writes_attributed_text_and_reports_plain_text() {
     assert_eq!(app.get(body), edited);
     assert_eq!(*seen.borrow(), ["Title\nbold"]);
 }
+
+#[test]
+fn toolbar_describes_items_and_routes_clicks_and_search() {
+    // Verifies toolbar items render with state, buttons run their actions, and search writes its Store.
+    let clicks = Calls::default();
+    let click = clicks.clone();
+    let (mut app, query) = Harness::mount(
+        |cx| cx.store(String::new()),
+        move |query| {
+            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Toolbar").toolbar(Toolbar::new([
+                ToolbarItem::button("new", "New", "plus").on_click(click.action()),
+                ToolbarItem::flexible_space(),
+                ToolbarItem::search(query).placeholder("Search"),
+            ]))
+        },
+    );
+
+    let RenderNode::Window {
+        toolbar: Some(toolbar),
+        ..
+    } = &app.render_tree().value
+    else {
+        panic!("expected a window with a toolbar");
+    };
+    assert_eq!(toolbar.items.len(), 3);
+    assert!(matches!(
+        &toolbar.items[2],
+        zintl_ui_backend_core::ToolbarItem::Search { placeholder: Some(text), .. } if text == "Search"
+    ));
+
+    assert!(app.dispatch_at(&[0], Event::ToolbarItemClicked { id: "new".into() }));
+    assert!(app.dispatch_at(
+        &[0],
+        Event::ToolbarSearchChanged {
+            value: "roux".into()
+        }
+    ));
+    assert_eq!(clicks.count(), 1);
+    assert_eq!(app.get(query), "roux");
+}

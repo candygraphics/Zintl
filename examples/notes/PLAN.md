@@ -36,7 +36,8 @@ Out of scope: iCloud sync, sharing/collaboration, locking, drawing, scanning.
    Needs C1–C5. All done: notes are `AttributedText`, and the Format menu
    sets paragraph styles, lists, checklists, and Bold/Italic/Underline.
 5. **Toolbar and search** — toolbar items, toolbar search field, focus control.
-   Needs D1–D3.
+   Needs D1–D3. Done: the toolbar has Delete, New Note, and a search field
+   that searches every note; a new note puts the cursor in the editor.
 6. **Sidebar polish** — counts, folder editing, nested folders, drag and drop.
    Needs E1–E4.
 7. **Persistence and lifecycle** — JSON files under Application Support,
@@ -86,7 +87,8 @@ Found while writing phase 1 (see `TODO` comments in `src/main.rs`).
   views, a selection binding (`Store<Option<Id>>` and multiple selection),
   sections with headers, keyboard navigation, and source-list or inset styles.
   `Sidebar` covers only string items.
-- **B2 Row actions.** Context menu with the clicked row's ID, double-click,
+- **B2 Row actions (context menus done).** `context_menu` on row views. Not yet:
+  double-click, delete key, swipe actions. Formerly: Context menu with the clicked row's ID, double-click,
   delete key, swipe actions.
 - **B3 Lazy grid** for the gallery view (lower priority).
 
@@ -115,12 +117,14 @@ Found while writing phase 1 (see `TODO` comments in `src/main.rs`).
 
 ### D. Toolbar and focus
 
-- **D1 Toolbar.** `Window::toolbar` with items (buttons with SF Symbols, menus,
+- **D1 Toolbar (done).** `Window::toolbar` with buttons, flexible space, and
+  search. Not yet: menus and segmented controls in the toolbar. Formerly: `Window::toolbar` with items (buttons with SF Symbols, menus,
   segmented controls, flexible space) and placement relative to split columns
   (`NSTrackingSeparatorToolbarItem`). Only the automatic sidebar toggle exists.
-- **D2 Toolbar search.** `NSSearchToolbarItem`; `Sidebar::searchable` places
+- **D2 Toolbar search (done).** `ToolbarItem::search`. Formerly: `NSSearchToolbarItem`; `Sidebar::searchable` places
   the field in the sidebar only.
-- **D3 Focus control.** Programmatic focus (`focus(Store<Option<FocusId>>)`) so a
+- **D3 Focus control (done for the editor).** `TextEditor::focus_on`. Not yet:
+  other views and focusing the toolbar search (⌥⌘F). Formerly: Programmatic focus (`focus(Store<Option<FocusId>>)`) so a
   new note focuses the editor and ⌥⌘F focuses search. Only canvases are
   focusable today.
 
@@ -143,7 +147,8 @@ Found while writing phase 1 (see `TODO` comments in `src/main.rs`).
   saves; the app name shown in the menu bar comes from the binary (`notes`)
   instead of `MainMenu::app_name`; it probably needs a bundle or
   `NSProcessInfo.processName`.
-- **F3 Window state.** Frame autosave name and restoring the split column
+- **F3 Window state (frame done).** `Window::autosave`. Not yet: split widths
+  and sidebar collapse state. Formerly: Frame autosave name and restoring the split column
   widths and sidebar collapse state.
 - **F4 Menu item state.** Checked state and validation for menu items bound to
   Stores (Format menu checkmarks, disabling Delete without a selection).

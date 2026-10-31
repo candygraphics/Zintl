@@ -348,6 +348,19 @@ impl TextEditor {
         })
     }
 
+    /// Makes the text view its window's first responder.
+    pub fn focus(&self) -> Result<(), UiError> {
+        self.with_text(|text| {
+            // SAFETY: The live text view and its window, which may be nil, accept the message.
+            unsafe {
+                let window = zpd_objc::msg_send!(text, zpd_objc::sel!("window"), () => Id);
+                if !window.is_null() {
+                    zpd_objc::msg_send!(window, zpd_objc::sel!("makeFirstResponder:"), ((text): Id) => bool);
+                }
+            }
+        })
+    }
+
     pub fn set_editable(&self, editable: bool) -> Result<(), UiError> {
         self.with_text(|text| {
             // SAFETY: The live NSTextView accepts the flag.

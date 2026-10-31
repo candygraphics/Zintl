@@ -18,6 +18,10 @@ struct State {
     /// The editor's text, which mirrors the selected note's body.
     draft: Store<AttributedText>,
     saver: Store<Saver>,
+    /// Text in the toolbar search field; non-empty text searches every folder.
+    query: Store<String>,
+    /// Increases to move keyboard focus to the editor.
+    focus: Store<u64>,
 }
 
 impl State {
@@ -67,7 +71,9 @@ impl State {
     fn new_note(&self, cx: &mut Context<'_>) {
         let folder = self.folder_id(cx);
         let id = self.change(cx, |library| library.create(&folder));
+        cx.update(self.query, String::clear);
         self.select(cx, Some(id));
+        cx.update(self.focus, |focus| *focus += 1);
     }
 
     fn delete_selected(&self, cx: &mut Context<'_>) {
@@ -125,6 +131,8 @@ impl View for NotesApp {
             row: cx.store(first.as_ref().map(|note| note.id.to_string())),
             draft: cx.store(first.map(|note| note.body).unwrap_or_default()),
             saver: cx.store(saver),
+            query: cx.store(String::new()),
+            focus: cx.store(0),
         };
     }
 
@@ -166,6 +174,16 @@ impl View for NotesApp {
                     ],
                 )),
             Window::new(Rect::new(120.0, 120.0, 960.0, 600.0), "Notes")
+                .autosave("notes.main")
+                .toolbar(Toolbar::new([
+                    ToolbarItem::button("delete", "Delete", "trash")
+                        .enabled(cx.get(state.selected).is_some())
+                        .on_click(move |cx| state.delete_selected(cx)),
+                    ToolbarItem::flexible_space(),
+                    ToolbarItem::button("new", "New Note", "square.and.pencil")
+                        .on_click(move |cx| state.new_note(cx)),
+                    ToolbarItem::search(state.query).placeholder("Search"),
+                ]))
                 .sidebar(
                     Sidebar::new([
                         SidebarSection::new([SidebarItem::new(SmartFolder::ALL, "All Notes")
@@ -237,7 +255,12 @@ impl View for NoteList {
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let state = self.state;
         let folder = state.folder_id(cx);
-        let notes = cx.get(state.library).notes_in(&folder);
+        let query = cx.get(state.query).clone();
+        let notes = if query.is_empty() {
+            cx.get(state.library).notes_in(&folder)
+        } else {
+            cx.get(state.library).search(&query)
+        };
         let count = notes.len();
         let (pinned, others): (Vec<&Note>, Vec<&Note>) =
             notes.into_iter().partition(|note| note.pinned);
@@ -258,16 +281,13 @@ impl View for NoteList {
         }
         VStack::new(list![
             HStack::new(list![
-                Text::new(match count {
-                    1 => "1 note".to_owned(),
-                    count => format!("{count} notes"),
+                Text::new(match (count, query.is_empty()) {
+                    (1, true) => "1 note".to_owned(),
+                    (count, true) => format!("{count} notes"),
+                    (1, false) => "1 result".to_owned(),
+                    (count, false) => format!("{count} results"),
                 })
                 .color(TextColor::Secondary),
-                Spacer::new(),
-                Button::new("")
-                    .system_image("square.and.pencil")
-                    .style(ButtonStyle::Borderless)
-                    .on_click(move |cx| state.new_note(cx)),
             ])
             .alignment(CrossAxisAlignment::Center)
             .padding(12.0)
@@ -302,18 +322,11 @@ impl View for Editor {
                 .grow();
         }
         VStack::new(list![
-            HStack::new(list![
-                Button::new("")
-                    .system_image("trash")
-                    .style(ButtonStyle::Borderless)
-                    .on_click(move |cx| state.delete_selected(cx)),
-            ])
-            .padding(8.0),
             TextEditor::new()
                 .bind_rich(state.draft)
+                .focus_on(state.focus)
                 .on_change(move |cx, _| state.save(cx)),
         ])
-        .spacing(0.0)
         .fill_width()
         .grow()
     }

@@ -96,3 +96,10 @@ omitted from WinUI menus.
 `App::on_exit` runs after the WinUI 3 message loop returns. It does not run
 when Windows ends the session; handle `WM_QUERYENDSESSION`/`WM_ENDSESSION`
 (or `Application.Suspending`) and call it there.
+
+## Toolbar and window autosave on Windows
+
+`RenderNode::Window::toolbar` and `autosave` are ignored by the WinUI 3
+backend. Show toolbar items in a `CommandBar` in the title bar area, the search
+item as an `AutoSuggestBox`, and save the window placement in app settings.
+`TextEditor::focus_on` should call `Focus(FocusState::Programmatic)`.

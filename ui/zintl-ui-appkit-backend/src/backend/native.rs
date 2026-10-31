@@ -264,14 +264,24 @@ impl NativeNode {
                     rich,
                     font,
                     editable,
+                    focus,
                 },
             ) => {
+                // Each new focus request moves keyboard focus to the editor.
+                let old_focus = match old {
+                    Some(ViewKind::TextEditor { focus, .. }) => Some(*focus),
+                    _ => None,
+                };
+                if *focus > 0 && old_focus != Some(*focus) {
+                    editor.focus()?;
+                }
                 let old = match old {
                     Some(ViewKind::TextEditor {
                         text,
                         rich,
                         font,
                         editable,
+                        ..
                     }) => Some((text, rich, font, editable)),
                     _ => None,
                 };

@@ -11,7 +11,7 @@ use zpd_appkit::ui::{
     ColorWell, ListEntry, ListView, CommandItem, CommandMenu, CommandRole, CommandSet, ContextMenu, MenuRole,
     NumberField, NumberFormat, PopUpButton, Popover, ScrollView, SegmentedControl, Sidebar,
     SidebarItem, SidebarSearch, SidebarSection, Slider, Switch, TabView, TextAlignment, TextColor,
-    RichParagraph, RichRun, RichStyle, TextEditor, TextField, View, WindowStyle,
+    RichParagraph, RichRun, RichStyle, TextEditor, TextField, Toolbar, ToolbarItem, View, WindowStyle,
 };
 use zpd_objc::Id;
 
@@ -668,6 +668,53 @@ fn main() {
         }
     });
     assert!(floating);
+
+    // Verifies toolbar buttons report clicks and state changes update items in place.
+    let button = |enabled| ToolbarItem::Button {
+        id: "new".into(),
+        label: "New".into(),
+        system_image: "plus".into(),
+        enabled,
+    };
+    let declared = |enabled| Toolbar {
+        items: vec![
+            button(enabled),
+            ToolbarItem::FlexibleSpace,
+            ToolbarItem::Search {
+                value: String::new(),
+                placeholder: Some("Search".into()),
+            },
+        ],
+    };
+    take();
+    window.set_toolbar(Some(&declared(true))).unwrap();
+    // SAFETY: The window owns its toolbar; items and the action target are live.
+    let item = unsafe {
+        let windows = Checks::windows();
+        let toolbar = windows
+            .iter()
+            .map(|window| zpd_objc::msg_send!(*window, zpd_objc::sel!("toolbar"), () => Id))
+            .find(|toolbar| !toolbar.is_null())
+            .expect("the window shows a toolbar");
+        // The window has a sidebar here, so its toggle and separator come first.
+        let items = zpd_objc::msg_send!(toolbar, zpd_objc::sel!("items"), () => Id);
+        assert_eq!(zpd_objc::msg_send!(items, zpd_objc::sel!("count"), () => u64), 5);
+        let item = zpd_objc::msg_send!(items, zpd_objc::sel!("objectAtIndex:"), ((2): u64) => Id);
+        let identifier = zpd_objc::msg_send!(item, zpd_objc::sel!("itemIdentifier"), () => Id);
+        assert_eq!(rust_string(identifier), "zintl.toolbar.0");
+        let action = zpd_objc::msg_send!(item, zpd_objc::sel!("action"), () => zpd_objc::Sel);
+        let target = zpd_objc::msg_send!(item, zpd_objc::sel!("target"), () => Id);
+        zpd_objc::msg_send!(target, action, ((item): Id) => ());
+        item
+    };
+    assert_eq!(
+        take(),
+        vec![WindowEventKind::ToolbarItemClicked { id: "new".into() }]
+    );
+    window.set_toolbar(Some(&declared(false))).unwrap();
+    // SAFETY: The same item stays installed when only its state changes.
+    assert!(!unsafe { zpd_objc::msg_send!(item, zpd_objc::sel!("isEnabled"), () => bool) });
+    window.set_toolbar(None).unwrap();
 
     // Verifies the will-terminate hook runs when AppKit announces that it is exiting.
     let exited = Rc::new(std::cell::Cell::new(0));

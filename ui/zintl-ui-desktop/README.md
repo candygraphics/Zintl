@@ -264,6 +264,26 @@ on the focused text box, and macOS-only items such as Hide and Services are
 omitted. Shortcuts use Control in place of Command; only letter and digit keys
 are shown, because WinUI menus cannot display OEM keys such as the comma.
 
+## Toolbar
+
+`Window::toolbar` shows buttons with SF Symbols, flexible space, and a search
+field bound to a Store. With a sidebar, the sidebar toggle comes first and the
+items sit over the content. Changing only enabled states or search text
+updates the items in place.
+
+```rust,ignore
+Window::new(bounds, "Notes")
+    .autosave("notes.main") // remembers the frame between launches
+    .toolbar(Toolbar::new([
+        ToolbarItem::button("new", "New Note", "square.and.pencil").on_click(new_note),
+        ToolbarItem::flexible_space(),
+        ToolbarItem::search(self.query).placeholder("Search"),
+    ]))
+```
+
+`TextEditor::focus_on(store)` moves keyboard focus to the editor whenever the
+`u64` in `store` increases, for example after creating a note.
+
 ## Sidebar search
 
 `Sidebar::searchable(query)` adds a search field above the items. Filter the

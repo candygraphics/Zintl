@@ -228,6 +228,7 @@ pub struct TextEditor {
     action: Option<Rc<ChangeAction>>,
     font: Option<Font>,
     editable: bool,
+    focus: Option<Store<u64>>,
     layout: LayoutStyle,
     id: Option<String>,
     attachments: Attachments,
@@ -240,6 +241,7 @@ impl TextEditor {
             action: None,
             font: None,
             editable: true,
+            focus: None,
             layout: LayoutStyle::fill(Size::new(80.0, 40.0)),
             id: None,
             attachments: Attachments::default(),
@@ -275,6 +277,12 @@ impl TextEditor {
         self
     }
 
+    /// Takes keyboard focus whenever `requests` increases, for example after creating a note.
+    pub fn focus_on(mut self, requests: Store<u64>) -> Self {
+        self.focus = Some(requests);
+        self
+    }
+
     pub fn id(mut self, id: impl Into<String>) -> Self {
         self.id = Some(id.into());
         self
@@ -307,6 +315,7 @@ impl NativeView for TextEditor {
                 rich,
                 font: self.font.clone(),
                 editable: self.editable,
+                focus: self.focus.map_or(0, |store| *cx.get(store)),
             },
             layout: self.layout,
             id: self.id.clone(),

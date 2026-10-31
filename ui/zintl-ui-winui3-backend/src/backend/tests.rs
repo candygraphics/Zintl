@@ -31,6 +31,8 @@ impl Nodes {
             title_bar: zintl_ui_backend_core::TitleBar::Standard,
             id: None,
             style,
+            toolbar: None,
+            autosave: None,
         }
     }
 }

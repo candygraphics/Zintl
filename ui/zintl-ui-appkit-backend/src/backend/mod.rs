@@ -29,8 +29,8 @@ use native::NativeNode;
 use crate::convert::{Native, Shared};
 
 use super::{
-    Color, CommandSet, Context, MainTask, NodeId, Rect, RenderNode, Sidebar, TitleBar, ViewKind,
-    WindowStyle,
+    Color, CommandSet, Context, MainTask, NodeId, Rect, RenderNode, Sidebar, TitleBar, Toolbar,
+    ViewKind, WindowStyle,
 };
 use zintl_ui_backend_core::layout::{HostLayout, LayoutSnapshot};
 use zintl_ui_backend_core::tree::{ErrorSlot, MainTasks, NodeTree};
@@ -94,6 +94,8 @@ struct WindowState {
     applied_title_bar: Option<TitleBar>,
     /// `None` until the sidebar declaration has been applied once.
     applied_sidebar: Option<Option<Sidebar>>,
+    /// `None` until the toolbar declaration has been applied once.
+    applied_toolbar: Option<Option<Toolbar>>,
     /// Set when the user closed the window; it is not recreated afterwards.
     closed: bool,
 }
@@ -288,6 +290,8 @@ impl AppKitBackend {
             id,
             sidebar,
             style,
+            toolbar,
+            autosave,
         } = self.kind(window_id)
         else {
             return Ok(());
@@ -330,6 +334,7 @@ impl AppKitBackend {
                 applied_bounds: None,
                 applied_title_bar: None,
                 applied_sidebar: None,
+                applied_toolbar: None,
                 closed: false,
             });
             self.opened_window = true;
@@ -346,6 +351,8 @@ impl AppKitBackend {
         let apply_bounds =
             apply_title_bar || window_bounds_need_update(state.applied_bounds, bounds);
         let apply_sidebar = state.applied_sidebar.as_ref() != Some(&sidebar);
+        // The sidebar decides whether the toolbar includes its toggle, so both reapply together.
+        let apply_toolbar = apply_sidebar || state.applied_toolbar.as_ref() != Some(&toolbar);
         cx.with_window(native_id, |window| -> Result<(), AppError> {
             window
                 .actor_ref()
@@ -365,6 +372,13 @@ impl AppKitBackend {
                     None => window.clear_sidebar()?,
                 }
             }
+            if apply_toolbar {
+                window.set_toolbar(toolbar.as_ref().map(Native::native).as_ref())?;
+            }
+            // A saved frame replaces the declared bounds on a new window.
+            if new_window && let Some(name) = &autosave {
+                window.set_frame_autosave_name(name)?;
+            }
             Ok(())
         })
         .ok_or(UiError::Closed)??;
@@ -376,6 +390,7 @@ impl AppKitBackend {
         state.applied_bounds = Some(bounds);
         state.applied_title_bar = Some(title_bar);
         state.applied_sidebar = Some(sidebar);
+        state.applied_toolbar = Some(toolbar);
 
         self.materialize_children(application, window_id)?;
         if rebuild_structure {

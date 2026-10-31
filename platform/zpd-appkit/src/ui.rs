@@ -19,6 +19,7 @@ mod tab_view;
 mod text_editor;
 mod text_field;
 mod text_lists;
+mod toolbar;
 mod view;
 mod window;
 
@@ -50,6 +51,7 @@ pub use sidebar::{Sidebar, SidebarItem, SidebarSearch, SidebarSection};
 pub use tab_view::TabView;
 pub use text_editor::TextEditor;
 pub use text_field::{TextAlignment, TextColor, TextField};
+pub use toolbar::{Toolbar, ToolbarItem};
 pub use view::{AsView, View, ViewRef};
 #[cfg(feature = "wgpu")]
 pub use window::{MetalLayer, WgpuSurface};

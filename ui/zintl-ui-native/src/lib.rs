@@ -10,6 +10,7 @@ mod menu;
 mod presentation;
 mod sidebar;
 mod text_field;
+mod toolbar;
 mod types;
 mod view;
 mod window;
@@ -30,6 +31,7 @@ pub use menu::{
 pub use presentation::{Alert, AlertButton, ColorPanel, FileDialog, Popover};
 pub use sidebar::{Sidebar, SidebarItem, SidebarSection};
 pub use text_field::{TextEditor, TextField};
+pub use toolbar::{Toolbar, ToolbarItem};
 pub use types::{ButtonRole, ScrollStatus};
 pub use view::View;
 pub use window::Window;

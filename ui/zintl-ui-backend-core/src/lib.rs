@@ -24,8 +24,8 @@ pub use model::{
     AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, CommandItem,
     CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig, FileDialogMode,
     ListSection, ListStyle, MenuRole, NumberFormat, PopoverEdge, ScrollAxes, Sidebar, SidebarItem,
-    SidebarSearch, SidebarSection, TextAlignment, TextColor, TextStyle, TitleBar, WindowAppMenu,
-    WindowStyle,
+    SidebarSearch, SidebarSection, TextAlignment, TextColor, TextStyle, TitleBar, Toolbar,
+    ToolbarItem, WindowAppMenu, WindowStyle,
 };
 pub use zintl_ui_graphics as graphics;
 pub use zintl_ui_graphics::{Color, Rect};
@@ -70,6 +70,8 @@ pub enum ViewKind {
         /// The plain-text font; `None` uses the platform's standard editor font.
         font: Option<graphics::Font>,
         editable: bool,
+        /// Each increase makes the editor take keyboard focus.
+        focus: u64,
     },
     Switch {
         on: bool,
@@ -141,6 +143,9 @@ pub enum RenderNode {
         title_bar: TitleBar,
         id: Option<String>,
         style: WindowStyle,
+        toolbar: Option<Toolbar>,
+        /// Saves the frame under this name and restores it on the next launch.
+        autosave: Option<String>,
     },
     View {
         kind: ViewKind,

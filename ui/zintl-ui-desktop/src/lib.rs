@@ -41,8 +41,8 @@ pub use zintl_ui_native::{
     MenuLocalizer, Modifier, Modifiers, NamedKey, NativeView, PointerButton, PointerEvent,
     PointerPhase, Popover, PopoverEdge, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAxes,
     ScrollEvent, ScrollStatus, Shortcut, Sidebar, SidebarItem, SidebarSection, StandardAction,
-    StandardMenu, StandardText, TextAlignment, TextColor, TextEditor, TitleBar, ViewKind, graphics,
-    list,
+    StandardMenu, StandardText, TextAlignment, TextColor, TextEditor, TitleBar, Toolbar,
+    ToolbarItem, ViewKind, graphics, list,
 };
 
 native_view!(Text, Button, TextField, HStack, VStack, Spacer);
@@ -104,6 +104,18 @@ impl Window {
 
     pub fn id(mut self, id: impl Into<String>) -> Self {
         self.inner = self.inner.id(id);
+        self
+    }
+
+    /// Shows toolbar items; with a sidebar they sit over the content.
+    pub fn toolbar(mut self, toolbar: Toolbar) -> Self {
+        self.inner = self.inner.toolbar(toolbar);
+        self
+    }
+
+    /// Saves the window frame under `name` and restores it on the next launch.
+    pub fn autosave(mut self, name: impl Into<String>) -> Self {
+        self.inner = self.inner.autosave(name);
         self
     }
 
@@ -864,6 +876,8 @@ mod tests {
                 title_bar: TitleBar::Standard,
                 id: None,
                 style: zintl_ui_native::WindowStyle::Normal,
+                toolbar: None,
+                autosave: None,
             }
         );
     }

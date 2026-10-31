@@ -177,6 +177,15 @@ impl Library {
         self.notes.iter().find(|note| note.id == id)
     }
 
+    /// Notes outside Recently Deleted whose text contains `query`, ignoring case.
+    pub fn search(&self, query: &str) -> Vec<&Note> {
+        let query = query.to_lowercase();
+        self.notes_in(SmartFolder::ALL)
+            .into_iter()
+            .filter(|note| note.body.text().to_lowercase().contains(&query))
+            .collect()
+    }
+
     /// Notes shown for a sidebar selection: pinned first, then most recently edited.
     pub fn notes_in(&self, folder: &str) -> Vec<&Note> {
         let mut notes: Vec<&Note> = self
@@ -288,6 +297,16 @@ mod tests {
         let b = library.create("notes");
         library.set_body(a, &AttributedText::new());
         assert_eq!(library.notes_in("notes")[0].id, b);
+    }
+
+    // Search matches any note's text without regard to case and skips deleted notes.
+    #[test]
+    fn search_ignores_case_and_deleted_notes() {
+        let mut library = Library::sample();
+        let ids: Vec<_> = library.search("ROUX").iter().map(|note| note.id).collect();
+        assert_eq!(ids.len(), 1);
+        library.delete(ids[0]);
+        assert!(library.search("roux").is_empty());
     }
 
     // Deleting moves a note to Recently Deleted; deleting it there removes it.

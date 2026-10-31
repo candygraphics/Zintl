@@ -393,6 +393,37 @@ impl Shared for Vec<ui::RichRun> {
     }
 }
 
+impl Native for core::Toolbar {
+    type Output = ui::Toolbar;
+
+    fn native(&self) -> ui::Toolbar {
+        ui::Toolbar {
+            items: self
+                .items
+                .iter()
+                .map(|item| match item {
+                    core::ToolbarItem::Button {
+                        id,
+                        label,
+                        system_image,
+                        enabled,
+                    } => ui::ToolbarItem::Button {
+                        id: id.clone(),
+                        label: label.clone(),
+                        system_image: system_image.clone(),
+                        enabled: *enabled,
+                    },
+                    core::ToolbarItem::Search { value, placeholder } => ui::ToolbarItem::Search {
+                        value: value.clone(),
+                        placeholder: placeholder.clone(),
+                    },
+                    core::ToolbarItem::FlexibleSpace => ui::ToolbarItem::FlexibleSpace,
+                })
+                .collect(),
+        }
+    }
+}
+
 impl Native for core::NumberFormat {
     type Output = ui::NumberFormat;
 
@@ -548,6 +579,8 @@ impl Shared for zpd_appkit::actor::WindowEventKind {
             },
             Native::SidebarSelectionChanged { id } => Shared::SidebarSelectionChanged { id },
             Native::SidebarSearchChanged { value } => Shared::SidebarSearchChanged { value },
+            Native::ToolbarItemClicked { id } => Shared::ToolbarItemClicked { id },
+            Native::ToolbarSearchChanged { value } => Shared::ToolbarSearchChanged { value },
             Native::ListSelectionChanged { id } => Shared::ListSelectionChanged { id },
             Native::StateChanged { on } => Shared::StateChanged { on },
             Native::ValueChanged { value } => Shared::ValueChanged { value },

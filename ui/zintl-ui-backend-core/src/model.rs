@@ -2,6 +2,29 @@
 
 use zintl_ui_graphics::{Color, Font};
 
+/// The items of a window toolbar, in order.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Toolbar {
+    pub items: Vec<ToolbarItem>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ToolbarItem {
+    /// A button with an SF Symbol; clicks report [`crate::Event::ToolbarItemClicked`].
+    Button {
+        id: String,
+        label: String,
+        system_image: String,
+        enabled: bool,
+    },
+    /// A search field; edits report [`crate::Event::ToolbarSearchChanged`].
+    Search {
+        value: String,
+        placeholder: Option<String>,
+    },
+    FlexibleSpace,
+}
+
 /// A titled group of rows in a [`crate::ViewKind::List`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ListSection {

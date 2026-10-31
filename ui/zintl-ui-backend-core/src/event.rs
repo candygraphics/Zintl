@@ -19,6 +19,8 @@ pub enum EventKind {
     Canvas,
     SidebarSelectionChanged,
     ListSelectionChanged,
+    ToolbarItemClicked,
+    ToolbarSearchChanged,
     SidebarSearchChanged,
     MenuItemSelected,
     PopoverClosed,
@@ -67,6 +69,14 @@ pub enum Event {
     SidebarSelectionChanged {
         id: String,
     },
+    /// A toolbar button with this ID was clicked.
+    ToolbarItemClicked {
+        id: String,
+    },
+    /// The toolbar search field's text changed.
+    ToolbarSearchChanged {
+        value: String,
+    },
     /// The user selected a list row, or cleared the selection.
     ListSelectionChanged {
         id: Option<String>,
@@ -109,6 +119,8 @@ impl EventTrait for Event {
             Self::Canvas(_) => EventKind::Canvas,
             Self::SidebarSelectionChanged { .. } => EventKind::SidebarSelectionChanged,
             Self::ListSelectionChanged { .. } => EventKind::ListSelectionChanged,
+            Self::ToolbarItemClicked { .. } => EventKind::ToolbarItemClicked,
+            Self::ToolbarSearchChanged { .. } => EventKind::ToolbarSearchChanged,
             Self::SidebarSearchChanged { .. } => EventKind::SidebarSearchChanged,
             Self::MenuItemSelected { .. } => EventKind::MenuItemSelected,
             Self::PopoverClosed => EventKind::PopoverClosed,

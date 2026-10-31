@@ -73,6 +73,14 @@ pub enum WindowEventKind {
     SidebarSearchChanged {
         value: String,
     },
+    /// A toolbar button with this ID was clicked.
+    ToolbarItemClicked {
+        id: String,
+    },
+    /// The toolbar search field's text changed.
+    ToolbarSearchChanged {
+        value: String,
+    },
     /// A two-state control such as a switch, checkbox, or toggle button changed.
     StateChanged {
         on: bool,
