@@ -53,5 +53,59 @@ inset are ignored by the WinUI 3 backend (it passes an inset of 0). With
 ## Canvas2D: follow-ups
 
 - IME and marked text (`NSTextInputClient`) for canvases that accept text.
-- Cursor shape control from the handler.
+- Cursor shape control from the handler. `SplitView`'s divider needs a resize
+  cursor (`NSCursor.resizeLeftRight`).
 - An opt-in render thread (`Canvas2D::threaded`) for heavy drawing.
+
+## Text styling on Windows
+
+`TextStyle` (font, color, alignment, line limit on `ViewKind::TextField`) is
+ignored by the WinUI 3 backend. Map it to `TextBlock`/`TextBox` `FontSize`,
+`FontWeight`, `Foreground` (theme brushes for semantic colors),
+`TextAlignment`, and `MaxLines` with `TextTrimming::CharacterEllipsis`.
+
+## SplitView on Windows
+
+`SplitView`'s divider is a `Canvas2D`, which does not draw or receive input on
+WinUI 3 yet, so the split shows no divider there and cannot be resized.
+
+## List on Windows
+
+`ViewKind::List` falls back to a `ScrollViewer` that stacks the rows, with no
+selection or section headers. Use a WinUI `ListView` with grouped items,
+`SelectionMode::Single`, and row content hosted as item templates, and report
+`Event::ListSelectionChanged`.
+
+## TextEditor on Windows
+
+`ViewKind::TextEditor` maps to a multiline `TextBox`, but it does not fill the
+column with scrolling like `NSTextView`. Set `AcceptsReturn`,
+`TextWrapping::Wrap`, and vertical scrolling.
+
+## Rich text on Windows
+
+`TextEditor` edits plain text on WinUI 3: the backend shows
+`AttributedText::text` in a `TextBox` and reports edits as body paragraphs,
+which drops styles. Use a
+`RichEditBox`, map paragraph styles to character formats, and report
+`Event::RichTextChanged`. The paragraph style and font trait menu items are
+omitted from WinUI menus.
+
+## App exit on Windows
+
+`App::on_exit` runs after the WinUI 3 message loop returns. It does not run
+when Windows ends the session; handle `WM_QUERYENDSESSION`/`WM_ENDSESSION`
+(or `Application.Suspending`) and call it there.
+
+## Toolbar and window autosave on Windows
+
+`RenderNode::Window::toolbar` and `autosave` are ignored by the WinUI 3
+backend. Show toolbar items in a `CommandBar` in the title bar area, the search
+item as an `AutoSuggestBox`, and save the window placement in app settings.
+`TextEditor::focus_on` should call `Focus(FocusState::Programmatic)`.
+
+## Sidebar badges and menus on Windows
+
+`SidebarItem::badge` and `SidebarItem::context_menu` are ignored by the WinUI 3
+navigation view. Use `NavigationViewItem.InfoBadge` and a `ContextFlyout` per
+item that reports `Event::MenuItemSelected` on the window route.

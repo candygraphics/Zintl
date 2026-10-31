@@ -28,14 +28,9 @@ struct Resources {
 
 impl Resources {
     fn font(&mut self, font: &Font) -> &native::Font {
-        self.fonts.entry(font.clone()).or_insert_with(|| {
-            native::Font::new(
-                font.family.as_deref(),
-                font.size(),
-                font.weight.0,
-                font.italic,
-            )
-        })
+        self.fonts
+            .entry(font.clone())
+            .or_insert_with(|| font.native())
     }
 
     /// Drops images the last frame did not draw.

@@ -167,6 +167,8 @@ fn main() {
                         id: "home".into(),
                         title: "Home".into(),
                         system_image: Some("house".into()),
+                        badge: None,
+                        menu: Vec::new(),
                     }],
                 }],
                 selected_id: Some("home".into()),

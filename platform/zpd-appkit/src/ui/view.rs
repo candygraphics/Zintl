@@ -230,6 +230,19 @@ pub(crate) fn set_layout_callback(
     })
 }
 
+/// Installs a layout callback on a view created by [`new_layout_view`].
+///
+/// # Safety
+/// `view` must be a live view created by `new_layout_view`.
+pub(crate) unsafe fn set_layout_callback_on(
+    view: zpd_objc::Id,
+    callback: impl FnMut(Rect, f64) + 'static,
+) {
+    let callback: Box<dyn FnMut(Rect, f64)> = Box::new(callback);
+    // SAFETY: Guaranteed by the caller.
+    unsafe { LAYOUT_CALLBACK.set(view, Rc::new(RefCell::new(callback))) }
+}
+
 pub(crate) struct ViewActor {
     actor: ActorRef,
     _main_thread: PhantomData<Rc<()>>,
@@ -334,6 +347,18 @@ impl<'view> ViewRef<'view> {
         tree.reparent(child.actor, self.actor)
             .map_err(UiError::from)
     }
+    /// Returns whether this view is a direct subview of `parent`.
+    pub fn is_subview_of(self, parent: ViewRef<'_>) -> Result<bool, UiError> {
+        parent.with(|parent| {
+            self.with(|view| {
+                // SAFETY: Both views are live; superview returns nil or a live view.
+                let superview = unsafe {
+                    zpd_objc::msg_send!(view, zpd_objc::sel!("superview"), () => zpd_objc::Id)
+                };
+                superview == parent
+            })
+        })?
+    }
     pub fn remove_from_superview(self) -> Result<(), UiError> {
         self.with(|view| unsafe {
             zpd_objc::msg_send!(view, zpd_objc::sel!("removeFromSuperview"), () => ())
@@ -362,6 +387,18 @@ impl<'view> ViewRef<'view> {
             unsafe { zpd_objc::msg_send!(view, zpd_objc::sel!("bounds"), () => native::Rect) }
         })?;
         Ok(bounds.into())
+    }
+    /// Returns the size the view's content needs; `None` marks an axis without one.
+    pub fn intrinsic_content_size(self) -> Result<(Option<f64>, Option<f64>), UiError> {
+        let size = self.with(|view| {
+            // SAFETY: NSView's intrinsicContentSize returns an NSSize for a live view.
+            unsafe {
+                zpd_objc::msg_send!(view, zpd_objc::sel!("intrinsicContentSize"), () => native::Size)
+            }
+        })?;
+        // NSViewNoIntrinsicMetric is -1.
+        let metric = |value: f64| (value >= 0.0).then_some(value);
+        Ok((metric(size.width), metric(size.height)))
     }
     pub fn set_identifier(self, identifier: Option<&str>) -> Result<(), UiError> {
         let identifier = identifier.map(native::nsstring);

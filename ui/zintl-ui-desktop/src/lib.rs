@@ -12,13 +12,15 @@ macro_rules! native_view {
 }
 
 mod controls;
+mod split_view;
 
 pub use controls::{
     ColorWell, ComboBox, NumberField, Picker, PickerStyle, ScrollView, SearchField, Slider, Tab,
     TabView, Toggle, ToggleStyle,
 };
+pub use split_view::SplitView;
 use zintl_ui::composer::Composer;
-pub use zintl_ui::element::{Element, ElementFactory, IntoElement};
+pub use zintl_ui::element::{Element, ElementFactory, IntoElement, KeyedElement};
 #[cfg(test)]
 use zintl_ui::event::EventRouteId;
 use zintl_ui::renderer::RenderBackend;
@@ -28,21 +30,22 @@ pub use zintl_ui_layout::{
     Axis, ChildSizing, CrossAxisAlignment, LayoutDimension, LayoutStyle, MainAxisDistribution, Size,
 };
 pub use zintl_ui_native::graphics::{
-    FillRule, Font, FontWeight, GradientStop, Graphics2D, Image, LineCap, LineJoin, Paint, Path,
-    Point, StrokeStyle, TextMetrics, Transform,
+    AttributedText, FillRule, Font, FontWeight, GradientStop, Graphics2D, Image, LineCap, LineJoin,
+    Paint, ParagraphStyle, Path, Point, SpanStyle, StrokeStyle, TextMetrics, Transform,
 };
 pub use zintl_ui_native::{
     Alert, AlertButton, AlertStyle, Attach, Attachments, ButtonRole, Canvas2D, Canvas2DHandler,
     CanvasEvent, CanvasEventContext, CanvasSetup, Color, ColorPanel, Context, EnglishMenuLocalizer,
     Event, EventKind, FileDialog, Frame, Invalidator, JapaneseMenuLocalizer, Key, KeyEvent,
-    KeyPhase, ListFactory, MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, Modifiers, NamedKey,
-    NativeView, PointerButton, PointerEvent, PointerPhase, Popover, PopoverEdge, Rect, Redraw,
-    RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, ScrollStatus, Shortcut, Sidebar,
-    SidebarItem, SidebarSection, StandardAction, StandardMenu, StandardText, TitleBar, ViewKind,
-    graphics, list,
+    KeyPhase, List, ListFactory, ListRow, ListSection, ListStyle, MainMenu, Menu, MenuItem,
+    MenuLocalizer, Modifier, Modifiers, NamedKey, NativeView, PointerButton, PointerEvent,
+    PointerPhase, Popover, PopoverEdge, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAxes,
+    ScrollEvent, ScrollStatus, Shortcut, Sidebar, SidebarItem, SidebarSection, StandardAction,
+    StandardMenu, StandardText, TextAlignment, TextColor, TextEditor, TitleBar, Toolbar,
+    ToolbarItem, ViewKind, graphics, list,
 };
 
-native_view!(Text, Button, TextField, HStack, VStack);
+native_view!(Text, Button, TextField, HStack, VStack, Spacer);
 
 #[derive(Clone)]
 pub struct Window {
@@ -104,6 +107,18 @@ impl Window {
         self
     }
 
+    /// Shows toolbar items; with a sidebar they sit over the content.
+    pub fn toolbar(mut self, toolbar: Toolbar) -> Self {
+        self.inner = self.inner.toolbar(toolbar);
+        self
+    }
+
+    /// Saves the window frame under `name` and restores it on the next launch.
+    pub fn autosave(mut self, name: impl Into<String>) -> Self {
+        self.inner = self.inner.autosave(name);
+        self
+    }
+
     /// Extends the content under the title bar or hides it, leaving the window buttons.
     pub fn title_bar(mut self, title_bar: TitleBar) -> Self {
         self.inner = self.inner.title_bar(title_bar);
@@ -147,6 +162,36 @@ impl Text {
 
     pub fn minimum_size(mut self, size: Size) -> Self {
         self.inner = self.inner.minimum_size(size);
+        self
+    }
+
+    pub fn font(mut self, font: Font) -> Self {
+        self.inner = self.inner.font(font);
+        self
+    }
+
+    pub fn color(mut self, color: TextColor) -> Self {
+        self.inner = self.inner.color(color);
+        self
+    }
+
+    pub fn alignment(mut self, alignment: TextAlignment) -> Self {
+        self.inner = self.inner.alignment(alignment);
+        self
+    }
+
+    /// Shows at most `lines` lines and truncates the rest with an ellipsis.
+    ///
+    /// A limited label no longer reserves its text's width, so give it one
+    /// with `fill_width` or a stretching parent.
+    pub fn line_limit(mut self, lines: usize) -> Self {
+        self.inner = self.inner.line_limit(lines);
+        self
+    }
+
+    /// Takes the parent's full width.
+    pub fn fill_width(mut self) -> Self {
+        self.inner = self.inner.fill_width();
         self
     }
 }
@@ -286,6 +331,12 @@ impl TextField {
         self
     }
 
+    /// Runs after each edit, once the bound Store is updated.
+    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static) -> Self {
+        self.inner = self.inner.on_change(action);
+        self
+    }
+
     pub fn multiline(mut self) -> Self {
         self.inner = self.inner.multiline();
         self
@@ -345,143 +396,134 @@ impl Stack {
     }
 }
 
-#[derive(Clone)]
-pub struct HStack {
-    stack: Stack,
-}
-
-impl HStack {
-    pub fn new(children: ListFactory<RenderNode>) -> Self {
-        Self {
-            stack: Stack::new(Axis::Horizontal, children),
+/// Implements the shared builder methods of a stack type.
+macro_rules! stack {
+    ($name:ident, $axis:expr) => {
+        #[derive(Clone)]
+        pub struct $name {
+            stack: Stack,
         }
-    }
 
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.stack.id = Some(id.into());
-        self
-    }
+        impl $name {
+            pub fn new(children: ListFactory<RenderNode>) -> Self {
+                Self {
+                    stack: Stack::new($axis, children),
+                }
+            }
 
-    pub fn spacing(mut self, spacing: f32) -> Self {
-        self.stack.layout.gap = spacing;
-        self
-    }
+            pub fn id(mut self, id: impl Into<String>) -> Self {
+                self.stack.id = Some(id.into());
+                self
+            }
 
-    pub fn fill_width(mut self) -> Self {
-        self.stack.layout.width = LayoutDimension::Percent(1.0);
-        self
-    }
+            pub fn spacing(mut self, spacing: f32) -> Self {
+                self.stack.layout.gap = spacing;
+                self
+            }
 
-    pub fn space_between(mut self) -> Self {
-        self.stack.layout.main_axis_distribution = MainAxisDistribution::SpaceBetween;
-        self
-    }
+            pub fn fill_width(mut self) -> Self {
+                self.stack.layout.width = LayoutDimension::Percent(1.0);
+                self
+            }
 
-    pub fn equal_width_children(mut self) -> Self {
-        self.stack.layout.child_sizing = ChildSizing::Equal;
-        self
-    }
+            /// Fixes the width in points.
+            pub fn width(mut self, width: f32) -> Self {
+                self.stack.layout.width = LayoutDimension::Points(width);
+                self
+            }
 
-    pub fn minimum_size(mut self, size: Size) -> Self {
-        self.stack.layout.minimum_size = size;
-        self
-    }
+            /// Fixes the height in points.
+            pub fn height(mut self, height: f32) -> Self {
+                self.stack.layout.height = LayoutDimension::Points(height);
+                self
+            }
 
-    /// Insets the children from every edge.
-    pub fn padding(mut self, padding: f32) -> Self {
-        self.stack.layout.padding = padding;
-        self
-    }
+            /// Places the first and last children at both ends.
+            pub fn space_between(mut self) -> Self {
+                self.stack.layout.main_axis_distribution = MainAxisDistribution::SpaceBetween;
+                self
+            }
 
-    /// Takes the remaining space along the parent's main axis.
-    pub fn grow(mut self) -> Self {
-        self.stack.layout.grow = 1.0;
-        self
-    }
+            /// Gives every child the same share of the main axis.
+            pub fn equal_width_children(mut self) -> Self {
+                self.stack.layout.child_sizing = ChildSizing::Equal;
+                self
+            }
 
-    /// As a window's content, extends under its title bar instead of starting below it.
-    pub fn ignores_safe_area(mut self) -> Self {
-        self.stack.layout.ignores_safe_area = true;
-        self
+            /// Positions children across the main axis; they stretch by default.
+            pub fn alignment(mut self, alignment: CrossAxisAlignment) -> Self {
+                self.stack.layout.cross_axis_alignment = alignment;
+                self
+            }
+
+            pub fn minimum_size(mut self, size: Size) -> Self {
+                self.stack.layout.minimum_size = size;
+                self
+            }
+
+            /// Insets the children from every edge.
+            pub fn padding(mut self, padding: f32) -> Self {
+                self.stack.layout.padding = padding;
+                self
+            }
+
+            /// Takes the remaining space along the parent's main axis.
+            pub fn grow(mut self) -> Self {
+                self.stack.layout.grow = 1.0;
+                self
+            }
+
+            /// As a window's content, extends under its title bar instead of starting below it.
+            pub fn ignores_safe_area(mut self) -> Self {
+                self.stack.layout.ignores_safe_area = true;
+                self
+            }
+        }
+
+        impl NativeView for $name {
+            fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+                self.stack.native_element(cx)
+            }
+
+            fn attachments(&self) -> &Attachments {
+                &self.stack.attachments
+            }
+
+            fn attachments_mut(&mut self) -> &mut Attachments {
+                &mut self.stack.attachments
+            }
+        }
+    };
+}
+
+stack!(HStack, Axis::Horizontal);
+stack!(VStack, Axis::Vertical);
+
+/// Empty space that takes the remaining room along its stack's axis.
+#[derive(Clone, Default)]
+pub struct Spacer {
+    attachments: Attachments,
+}
+
+impl Spacer {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
-impl NativeView for HStack {
+impl NativeView for Spacer {
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        self.stack.native_element(cx)
+        let mut layout = LayoutStyle::leaf(Size::new(0.0, 0.0));
+        layout.grow = 1.0;
+        zintl_ui_native::View::new(layout, Vec::new()).native_element(cx)
     }
 
     fn attachments(&self) -> &Attachments {
-        &self.stack.attachments
+        &self.attachments
     }
 
     fn attachments_mut(&mut self) -> &mut Attachments {
-        &mut self.stack.attachments
-    }
-}
-
-#[derive(Clone)]
-pub struct VStack {
-    stack: Stack,
-}
-
-impl VStack {
-    pub fn new(children: ListFactory<RenderNode>) -> Self {
-        Self {
-            stack: Stack::new(Axis::Vertical, children),
-        }
-    }
-
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.stack.id = Some(id.into());
-        self
-    }
-
-    pub fn spacing(mut self, spacing: f32) -> Self {
-        self.stack.layout.gap = spacing;
-        self
-    }
-
-    pub fn fill_width(mut self) -> Self {
-        self.stack.layout.width = LayoutDimension::Percent(1.0);
-        self
-    }
-
-    pub fn minimum_size(mut self, size: Size) -> Self {
-        self.stack.layout.minimum_size = size;
-        self
-    }
-
-    /// Insets the children from every edge.
-    pub fn padding(mut self, padding: f32) -> Self {
-        self.stack.layout.padding = padding;
-        self
-    }
-
-    /// Takes the remaining space along the parent's main axis.
-    pub fn grow(mut self) -> Self {
-        self.stack.layout.grow = 1.0;
-        self
-    }
-
-    /// As a window's content, extends under its title bar instead of starting below it.
-    pub fn ignores_safe_area(mut self) -> Self {
-        self.stack.layout.ignores_safe_area = true;
-        self
-    }
-}
-
-impl NativeView for VStack {
-    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        self.stack.native_element(cx)
-    }
-
-    fn attachments(&self) -> &Attachments {
-        &self.stack.attachments
-    }
-
-    fn attachments_mut(&mut self) -> &mut Attachments {
-        &mut self.stack.attachments
+        &mut self.attachments
     }
 }
 
@@ -505,6 +547,7 @@ type DesktopNodeId = <DesktopBackend as RenderBackend<RenderNode>>::NodeId;
 
 pub struct App {
     composer: Composer<RenderNode, DesktopBackend>,
+    on_exit: Option<Box<dyn FnOnce()>>,
 }
 
 impl App {
@@ -519,7 +562,10 @@ impl App {
         backend.set_default_main_menu(MainMenu::standard().commands());
         let mut composer = Composer::new(backend);
         composer.mount(root);
-        Self { composer }
+        Self {
+            composer,
+            on_exit: None,
+        }
     }
 
     pub fn render(&self) -> RenderNode {
@@ -552,14 +598,26 @@ impl App {
         }
     }
 
+    /// Runs once before the process ends, whether the last window closed or
+    /// the user quit, for example to finish saving.
+    ///
+    /// On macOS, ⌘Q exits the process without returning from [`App::run`],
+    /// so work after `run` is not enough.
+    pub fn on_exit(mut self, action: impl FnOnce() + 'static) -> Self {
+        self.on_exit = Some(Box::new(action));
+        self
+    }
+
     #[cfg(all(target_os = "macos", not(test)))]
     pub fn run(self) -> Result<(), AppError> {
-        zintl_ui_appkit_backend::run_composer(self.composer)
+        let on_exit = self.on_exit.unwrap_or_else(|| Box::new(|| {}));
+        zintl_ui_appkit_backend::run_composer(self.composer, on_exit)
     }
 
     #[cfg(all(target_os = "windows", not(test)))]
     pub fn run(self) -> Result<(), AppError> {
-        zintl_ui_winui3_backend::run_composer(self.composer)
+        let on_exit = self.on_exit.unwrap_or_else(|| Box::new(|| {}));
+        zintl_ui_winui3_backend::run_composer(self.composer, on_exit)
     }
 
     #[cfg(test)]
@@ -679,6 +737,43 @@ mod tests {
         assert_view::<TextField>();
         assert_view::<HStack>();
         assert_view::<VStack>();
+        assert_view::<Spacer>();
+    }
+
+    #[test]
+    fn stack_sizes_and_alignment_reach_the_layout() {
+        // Verifies fixed sizes and cross-axis alignment are carried on the stack's layout style.
+        let stack = App::new(
+            VStack::new(list![])
+                .width(240.0)
+                .height(80.0)
+                .alignment(CrossAxisAlignment::Start),
+        )
+        .render();
+
+        let RenderNode::View { layout, .. } = stack else {
+            panic!("expected a view, got {stack:?}");
+        };
+        assert_eq!(layout.width, LayoutDimension::Points(240.0));
+        assert_eq!(layout.height, LayoutDimension::Points(80.0));
+        assert_eq!(layout.cross_axis_alignment, CrossAxisAlignment::Start);
+    }
+
+    #[test]
+    fn spacer_is_an_empty_growing_container() {
+        // Verifies a spacer takes free main-axis space without a minimum size.
+        let spacer = App::new(Spacer::new()).render();
+
+        let RenderNode::View {
+            kind: ViewKind::Container,
+            layout,
+            ..
+        } = spacer
+        else {
+            panic!("expected a container, got {spacer:?}");
+        };
+        assert_eq!(layout.grow, 1.0);
+        assert_eq!(layout.minimum_size, Size::new(0.0, 0.0));
     }
 
     #[test]
@@ -709,6 +804,34 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn text_style_reaches_the_render_node_and_sizes_the_label() {
+        // Verifies text style is forwarded, and a line limit lets the label shrink to any width.
+        let text = App::new(
+            Text::new("Groceries")
+                .font(Font::system(20.0).bold())
+                .color(TextColor::Secondary)
+                .alignment(TextAlignment::Center)
+                .line_limit(2),
+        )
+        .render();
+
+        let RenderNode::View {
+            kind: ViewKind::TextField { style, .. },
+            layout,
+            ..
+        } = text
+        else {
+            panic!("expected a text field, got {text:?}");
+        };
+        assert_eq!(style.font, Some(Font::system(20.0).bold()));
+        assert_eq!(style.color, TextColor::Secondary);
+        assert_eq!(style.alignment, TextAlignment::Center);
+        assert_eq!(style.line_limit, Some(2));
+        assert_eq!(layout.minimum_size.width, 0.0);
+        assert!(layout.minimum_size.height >= 50.0);
     }
 
     #[test]
@@ -753,6 +876,8 @@ mod tests {
                 title_bar: TitleBar::Standard,
                 id: None,
                 style: zintl_ui_native::WindowStyle::Normal,
+                toolbar: None,
+                autosave: None,
             }
         );
     }

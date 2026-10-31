@@ -11,12 +11,18 @@ use zpd_objc::{Id, RcIvar, Strong};
 struct Row {
     id: Option<String>,
     cell: Strong,
+    /// The item's context menu, owned by the table Actor.
+    menu: Option<ActorRef>,
 }
 
 struct TableState {
     rows: RefCell<Vec<Row>>,
     ready: Cell<bool>,
     callback: RefCell<Box<dyn FnMut(&str)>>,
+    /// The table Actor, which owns item menus; set once the table exists.
+    table: RefCell<Option<ActorRef>>,
+    /// The window, whose route receives item menu selections.
+    window: ActorRef,
 }
 
 static TABLE_STATE: RcIvar<TableState> = RcIvar::new(c"_sidebarState");
@@ -87,6 +93,44 @@ unsafe extern "C" fn selection_changed(object: Id, _: zpd_objc::Sel, notificatio
     });
 }
 
+/// Fills the table menu with the clicked item's context menu.
+unsafe extern "C" fn menu_needs_update(object: Id, _: zpd_objc::Sel, menu: Id) {
+    TableState::with(object, |state| {
+        // SAFETY: AppKit passes the live table menu, whose delegate is this object.
+        unsafe {
+            zpd_objc::msg_send!(menu, zpd_objc::sel!("removeAllItems"), () => ());
+            let table = state
+                .table
+                .borrow()
+                .as_ref()
+                .and_then(|table| table.with(|table| table).ok());
+            let Some(table) = table else {
+                return;
+            };
+            let row = zpd_objc::msg_send!(table, zpd_objc::sel!("clickedRow"), () => i64);
+            let rows = state.rows.borrow();
+            let Some(source) = usize::try_from(row)
+                .ok()
+                .and_then(|row| rows.get(row))
+                .and_then(|row| row.menu.as_ref())
+                .and_then(|menu| menu.with(|menu| menu).ok())
+            else {
+                return;
+            };
+            let count = zpd_objc::msg_send!(source, zpd_objc::sel!("numberOfItems"), () => i64);
+            for index in 0..count {
+                let item = zpd_objc::msg_send!(source, zpd_objc::sel!("itemAtIndex:"), ((index): i64) => Id);
+                // Copies keep the original target, which the item's menu Actor owns.
+                if let Some(copy) = Strong::from_retained(
+                    zpd_objc::msg_send!(item, zpd_objc::sel!("copy"), () => Id),
+                ) {
+                    zpd_objc::msg_send!(menu, zpd_objc::sel!("addItem:"), ((copy.as_ptr()): Id) => ());
+                }
+            }
+        }
+    });
+}
+
 fn release(object: Id) {
     // SAFETY: The caller passes a delegate created by `install`.
     drop(unsafe { TABLE_STATE.take(object) });
@@ -111,6 +155,7 @@ fn delegate_class() -> zpd_objc::Class {
                 "tableView:isGroupRow:": "B@:@q" => is_group,
                 "tableView:shouldSelectRow:": "B@:@q" => should_select,
                 "tableViewSelectionDidChange:": "v@:@" => selection_changed,
+                "menuNeedsUpdate:": "v@:@" => menu_needs_update,
                 "dealloc": "v@:" => dealloc,
             }
         }) as usize
@@ -131,7 +176,13 @@ pub(crate) fn constrain(
     }
 }
 
-fn cell(title: &str, symbol: Option<&str>, group: bool) -> Strong {
+/// Builds a text cell, with a symbol unless it is a group row.
+pub(crate) fn cell(title: &str, symbol: Option<&str>, group: bool) -> Strong {
+    badged_cell(title, symbol, None, group)
+}
+
+/// Builds a text cell with an optional trailing badge such as a count.
+fn badged_cell(title: &str, symbol: Option<&str>, badge: Option<&str>, group: bool) -> Strong {
     let cell = native::alloc_init(zpd_objc::class!("NSTableCellView"));
     let text = native::alloc_init(zpd_objc::class!("NSTextField"));
     // SAFETY: The retained cell owns its text/image subviews and active layout constraints.
@@ -145,12 +196,50 @@ fn cell(title: &str, symbol: Option<&str>, group: bool) -> Strong {
         zpd_objc::msg_send!(text.as_ptr(), zpd_objc::sel!("setTranslatesAutoresizingMaskIntoConstraints:"), ((false): bool) => ());
         zpd_objc::msg_send!(cell.as_ptr(), zpd_objc::sel!("addSubview:"), ((text.as_ptr()): zpd_objc::Id) => ());
         zpd_objc::msg_send!(cell.as_ptr(), zpd_objc::sel!("setTextField:"), ((text.as_ptr()): zpd_objc::Id) => ());
+        let trailing = match badge {
+            Some(badge) => {
+                let label = native::alloc_init(zpd_objc::class!("NSTextField"));
+                zpd_objc::msg_send!(label.as_ptr(), zpd_objc::sel!("setStringValue:"), ((native::nsstring(badge).as_ptr()): zpd_objc::Id) => ());
+                for selector in [
+                    zpd_objc::sel!("setEditable:"),
+                    zpd_objc::sel!("setSelectable:"),
+                    zpd_objc::sel!("setBordered:"),
+                    zpd_objc::sel!("setDrawsBackground:"),
+                ] {
+                    zpd_objc::msg_send!(label.as_ptr(), selector, ((false): bool) => ());
+                }
+                zpd_objc::msg_send!(label.as_ptr(), zpd_objc::sel!("setTextColor:"), ((zpd_objc::msg_send!(zpd_objc::class!("NSColor"), zpd_objc::sel!("secondaryLabelColor"), () => zpd_objc::Id)): zpd_objc::Id) => ());
+                zpd_objc::msg_send!(label.as_ptr(), zpd_objc::sel!("setTranslatesAutoresizingMaskIntoConstraints:"), ((false): bool) => ());
+                zpd_objc::msg_send!(cell.as_ptr(), zpd_objc::sel!("addSubview:"), ((label.as_ptr()): zpd_objc::Id) => ());
+                constrain(
+                    label.as_ptr(),
+                    LayoutAttribute::Trailing,
+                    cell.as_ptr(),
+                    LayoutAttribute::Trailing,
+                    -8.0,
+                );
+                constrain(
+                    label.as_ptr(),
+                    LayoutAttribute::CenterY,
+                    cell.as_ptr(),
+                    LayoutAttribute::CenterY,
+                    0.0,
+                );
+                label
+            }
+            None => cell.clone(),
+        };
+        let (attribute, inset) = if badge.is_some() {
+            (LayoutAttribute::Leading, -4.0)
+        } else {
+            (LayoutAttribute::Trailing, -4.0)
+        };
         constrain(
             text.as_ptr(),
             LayoutAttribute::Trailing,
-            cell.as_ptr(),
-            LayoutAttribute::Trailing,
-            -4.0,
+            trailing.as_ptr(),
+            attribute,
+            inset,
         );
         constrain(
             text.as_ptr(),
@@ -220,23 +309,55 @@ fn cell(title: &str, symbol: Option<&str>, group: bool) -> Strong {
 }
 
 /// Builds table rows: section titles become group rows without IDs.
-fn rows(sidebar: &Sidebar) -> Vec<Row> {
+/// Builds table rows: section titles become group rows without IDs.
+///
+/// Item menus become Actors under `table`; choosing an item reports
+/// `MenuItemSelected` from `window`.
+fn rows(sidebar: &Sidebar, table: &ActorRef, window: &ActorRef) -> Result<Vec<Row>, UiError> {
+    let tree = table.tree_handle().ok_or(UiError::Closed)?;
+    let emit = Rc::new(super::callback::emitter(window));
+    let selected: super::commands::MenuCallback = Rc::new(RefCell::new(move |id: &str| {
+        emit(crate::actor::WindowEventKind::MenuItemSelected { id: id.into() })
+    }));
     let mut rows = Vec::new();
     for section in &sidebar.sections {
         if let Some(title) = &section.title {
             rows.push(Row {
                 id: None,
                 cell: cell(title, None, true),
+                menu: None,
             });
         }
         for item in &section.items {
+            let menu = (!item.menu.is_empty())
+                .then(|| super::commands::build_menu(&tree, table, "", &item.menu, &selected))
+                .transpose()?;
             rows.push(Row {
                 id: Some(item.id.clone()),
-                cell: cell(&item.title, item.system_image.as_deref(), false),
+                cell: badged_cell(
+                    &item.title,
+                    item.system_image.as_deref(),
+                    item.badge.as_deref(),
+                    false,
+                ),
+                menu,
             });
         }
     }
-    rows
+    Ok(rows)
+}
+
+impl TableState {
+    /// Replaces the rows, removing the menus of the old ones.
+    fn set_rows(&self, sidebar: &Sidebar) -> Result<(), UiError> {
+        let table = self.table.borrow().clone().ok_or(UiError::Closed)?;
+        let rows = rows(sidebar, &table, &self.window)?;
+        let old = std::mem::replace(&mut *self.rows.borrow_mut(), rows);
+        for menu in old.into_iter().filter_map(|row| row.menu) {
+            menu.remove();
+        }
+        Ok(())
+    }
 }
 
 /// Selects the row for `selected_id` without reporting a user selection.
@@ -268,7 +389,7 @@ pub(crate) struct SidebarTable {
 impl SidebarTable {
     pub(crate) fn update(&self, sidebar: &Sidebar) -> Result<(), UiError> {
         self.state.ready.set(false);
-        *self.state.rows.borrow_mut() = rows(sidebar);
+        self.state.set_rows(sidebar)?;
         let result = self.table.with(|table| {
             // SAFETY: The Actor holds the live table backed by this state.
             unsafe {
@@ -282,6 +403,7 @@ impl SidebarTable {
 }
 
 pub(crate) fn install(
+    window: &ActorRef,
     controller: &ActorRef,
     sidebar: &Sidebar,
     callback: impl FnMut(&str) + 'static,
@@ -296,10 +418,13 @@ pub(crate) fn install(
         .insert_child(&scroll_actor, table.clone())
         .map_err(UiError::from)?;
     let state = Rc::new(TableState {
-        rows: RefCell::new(rows(sidebar)),
+        rows: RefCell::new(Vec::new()),
         ready: Cell::new(false),
         callback: RefCell::new(Box::new(callback)),
+        table: RefCell::new(Some(table_actor.clone())),
+        window: window.clone(),
     });
+    state.set_rows(sidebar)?;
     let delegate = native::alloc_init(delegate_class());
     // SAFETY: The registered delegate class declares the `_sidebarState` ivar.
     unsafe { TABLE_STATE.set(delegate.as_ptr(), state.clone()) };
@@ -313,6 +438,10 @@ pub(crate) fn install(
         unsafe {
             zpd_objc::msg_send!(table, zpd_objc::sel!("setDelegate:"), ((zpd_objc::NIL): zpd_objc::Id) => ());
             zpd_objc::msg_send!(table, zpd_objc::sel!("setDataSource:"), ((zpd_objc::NIL): zpd_objc::Id) => ());
+            let menu = zpd_objc::msg_send!(table, zpd_objc::sel!("menu"), () => zpd_objc::Id);
+            if !menu.is_null() {
+                zpd_objc::msg_send!(menu, zpd_objc::sel!("setDelegate:"), ((zpd_objc::NIL): zpd_objc::Id) => ());
+            }
         }
     })
     .map_err(UiError::from)?;
@@ -334,6 +463,10 @@ pub(crate) fn install(
         zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setAllowsMultipleSelection:"), ((false): bool) => ());
         zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setDataSource:"), ((delegate.as_ptr()): zpd_objc::Id) => ());
         zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setDelegate:"), ((delegate.as_ptr()): zpd_objc::Id) => ());
+        // Right-clicks show the clicked item's menu, copied in by the delegate.
+        let menu = native::alloc_init(zpd_objc::class!("NSMenu"));
+        zpd_objc::msg_send!(menu.as_ptr(), zpd_objc::sel!("setDelegate:"), ((delegate.as_ptr()): zpd_objc::Id) => ());
+        zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setMenu:"), ((menu.as_ptr()): zpd_objc::Id) => ());
         zpd_objc::msg_send!(scroll.as_ptr(), zpd_objc::sel!("setDocumentView:"), ((table.as_ptr()): zpd_objc::Id) => ());
         zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("reloadData"), () => ());
         select(table.as_ptr(), &state, sidebar.selected_id.as_deref());

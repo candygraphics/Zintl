@@ -5,9 +5,10 @@ use zintl_ui::list;
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
 
+use crate::menu::MenuActions;
 use crate::{
     Alert, ColorPanel, Context, Element, EventKind, FileDialog, Rect, RenderNode, Sidebar,
-    TitleBar, WindowStyle,
+    TitleBar, Toolbar, WindowStyle,
 };
 
 type Action = dyn for<'a> Fn(&mut Context<'a>);
@@ -42,6 +43,8 @@ pub struct Window {
     attachments: Vec<WindowAttachment>,
     open: Option<Store<bool>>,
     on_close: Option<Rc<Action>>,
+    toolbar: Option<Toolbar>,
+    autosave: Option<String>,
 }
 
 impl Window {
@@ -57,6 +60,8 @@ impl Window {
             attachments: Vec::new(),
             open: None,
             on_close: None,
+            toolbar: None,
+            autosave: None,
         }
     }
 
@@ -67,6 +72,17 @@ impl Window {
 
     pub fn id(mut self, id: impl Into<String>) -> Self {
         self.id = Some(id.into());
+        self
+    }
+
+    pub fn toolbar(mut self, toolbar: Toolbar) -> Self {
+        self.toolbar = Some(toolbar);
+        self
+    }
+
+    /// Saves the window frame under `name` and restores it when the window is created again.
+    pub fn autosave(mut self, name: impl Into<String>) -> Self {
+        self.autosave = Some(name.into());
         self
     }
 
@@ -131,18 +147,27 @@ impl View for Window {
             .iter()
             .map(|attachment| attachment.element(cx))
             .collect::<Vec<_>>();
+        let mut actions = MenuActions::default();
         let mut element = Element::node(RenderNode::Window {
-            sidebar: self.sidebar.as_ref().map(|sidebar| sidebar.state(cx)),
+            sidebar: self
+                .sidebar
+                .as_ref()
+                .map(|sidebar| sidebar.state(cx, &mut actions)),
             bounds: self.bounds,
             title: self.title.clone(),
             title_bar: self.title_bar,
             id: self.id.clone(),
             style: self.style,
+            toolbar: self.toolbar.as_ref().map(|toolbar| toolbar.state(cx)),
+            autosave: self.autosave.clone(),
         })
         .with_children([self.children.clone().into_element()])
         .with_children(attachments);
         if let Some(sidebar) = &self.sidebar {
-            element = sidebar.route(element);
+            element = actions.route(sidebar.route(element));
+        }
+        if let Some(toolbar) = &self.toolbar {
+            element = toolbar.route(element);
         }
         if self.open.is_some() || self.on_close.is_some() {
             let open = self.open;

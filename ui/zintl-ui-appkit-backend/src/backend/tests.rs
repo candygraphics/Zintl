@@ -34,6 +34,8 @@ impl Nodes {
             title_bar: crate::TitleBar::Standard,
             id: None,
             style,
+            toolbar: None,
+            autosave: None,
         }
     }
 }

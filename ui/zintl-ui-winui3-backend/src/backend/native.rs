@@ -5,7 +5,7 @@ use messageloop_dispatcherqueue::Sender;
 use zintl_ui::event::EventRouteId;
 use zintl_ui_backend_core::layout::{HostLayout, LayoutNative, LayoutSnapshot};
 use zintl_ui_backend_core::tree::ErrorSlot;
-use zintl_ui_backend_core::{BezelStyle, ButtonType, Color, Event, ViewKind};
+use zintl_ui_backend_core::{BezelStyle, ButtonType, Color, Event, ViewKind, graphics};
 use zintl_ui_layout::{LayoutStyle, Rect as LayoutRect, Size};
 use zpd_winui3::{
     AsElement, BoolProperty, Control, ControlEvent, ControlKind, NumberProperty, TextProperty,
@@ -97,7 +97,9 @@ impl NativeNode {
                 ButtonType::Checkbox => ControlKind::CheckBox,
                 ButtonType::Radio => ControlKind::RadioButton,
             },
-            ViewKind::TextField { editable: true, .. } => ControlKind::TextBox,
+            ViewKind::TextField { editable: true, .. } | ViewKind::TextEditor { .. } => {
+                ControlKind::TextBox
+            }
             ViewKind::TextField { .. } => ControlKind::TextBlock,
             ViewKind::Switch { .. } => ControlKind::ToggleSwitch,
             ViewKind::Slider { .. } => ControlKind::Slider,
@@ -107,7 +109,8 @@ impl NativeNode {
             ViewKind::NumberField { .. } => ControlKind::NumberBox,
             ViewKind::SearchField { .. } => ControlKind::AutoSuggestBox,
             ViewKind::ColorWell { .. } => ControlKind::ColorButton,
-            ViewKind::ScrollView { .. } => ControlKind::ScrollViewer,
+            // TODO: Use a ListView with selection; see TODO.md.
+            ViewKind::ScrollView { .. } | ViewKind::List { .. } => ControlKind::ScrollViewer,
             ViewKind::TabView { .. } => ControlKind::TabView,
             // TODO: Draw with Direct2D on a SwapChainPanel; see TODO.md.
             ViewKind::Canvas2D { .. } => ControlKind::Canvas,
@@ -177,6 +180,7 @@ impl NativeNode {
             restore: Cell::new(None),
         };
         native.apply(None, kind)?;
+        let editor = matches!(kind, ViewKind::TextEditor { .. });
         let sender = sender.clone();
         native.control.set_event_handler(move |event| {
             if let ControlEvent::SizeChanged { width, height } = event {
@@ -185,7 +189,7 @@ impl NativeNode {
                 }
                 return;
             }
-            if let (Some(route), Some(event)) = (route.get(), Self::event(event)) {
+            if let (Some(route), Some(event)) = (route.get(), Self::event(event, editor)) {
                 let _ = sender.send(Message::Event { route, event });
             }
         })?;
@@ -193,9 +197,14 @@ impl NativeNode {
     }
 
     /// Converts a routed control event; size changes are handled locally.
-    pub(super) fn event(event: ControlEvent) -> Option<Event> {
+    ///
+    /// A text editor's `TextBox` edits plain text, reported as body paragraphs.
+    pub(super) fn event(event: ControlEvent, editor: bool) -> Option<Event> {
         Some(match event {
             ControlEvent::Clicked => Event::Activated,
+            ControlEvent::TextChanged(value) if editor => Event::RichTextChanged {
+                text: graphics::AttributedText::from(value.as_str()),
+            },
             ControlEvent::TextChanged(value) => Event::TextChanged { value },
             ControlEvent::StateChanged(on) => Event::StateChanged { on },
             ControlEvent::ValueChanged(value) => Event::ValueChanged { value },
@@ -269,6 +278,16 @@ impl NativeNode {
                         TextProperty::Placeholder,
                         placeholder.as_deref().unwrap_or(""),
                     )?;
+                }
+            }
+            ViewKind::TextEditor { text, .. } => {
+                // Only outside changes are written back, so typing keeps the caret.
+                // TODO: Edit rich text with a RichEditBox; see TODO.md.
+                if control.text(TextProperty::Text)? != text.text() {
+                    control.set_text(TextProperty::Text, text.text())?;
+                }
+                if old.is_none() {
+                    control.set_bool(BoolProperty::Multiline, true)?;
                 }
             }
             ViewKind::Switch { on } => {
@@ -371,6 +390,12 @@ impl NativeNode {
                 // Later offsets echo the user's scrolling, so only a new view restores one.
                 if old.is_none() {
                     self.restore.set(*offset);
+                }
+            }
+            ViewKind::List { .. } => {
+                if old.is_none() {
+                    control.set_bool(BoolProperty::HorizontalScroll, false)?;
+                    control.set_bool(BoolProperty::VerticalScroll, true)?;
                 }
             }
             ViewKind::TabView { titles, selected } => {

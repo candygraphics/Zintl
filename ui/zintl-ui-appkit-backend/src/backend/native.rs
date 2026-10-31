@@ -1,16 +1,23 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
-    AsView, Button, CanvasView, ColorWell, ComboBox, NumberField, PopUpButton, ScrollView,
-    SearchField, SegmentedControl, Slider, Switch, TabView, TextField, UiError, View, ViewRef,
+    AsView, Button, CanvasView, ColorWell, ComboBox, ListView, NumberField, PopUpButton,
+    ScrollView, SearchField, SegmentedControl, Slider, Switch, TabView, TextEditor, TextField,
+    UiError, View, ViewRef,
 };
 
+use zintl_ui_layout::Size;
 use zpd_appkit::geometry::Rect;
 
+use zintl_ui_backend_core::layout::HostLayout;
+use zintl_ui_backend_core::tree::ErrorSlot;
+
+use super::AppError;
 use super::canvas::CanvasBridge;
-use crate::convert::Native;
+use crate::convert::{Native, Shared};
 use crate::{ButtonType, MainTaskSender, ViewKind};
 
 /// A native view created for a [`ViewKind`].
@@ -18,6 +25,7 @@ pub(super) enum NativeNode {
     Container(View),
     Button(Button),
     TextField(TextField),
+    TextEditor(TextEditor),
     Switch(Switch),
     Slider(Slider),
     PopUpButton(PopUpButton),
@@ -30,6 +38,14 @@ pub(super) enum NativeNode {
     ScrollView(ScrollView, Cell<Option<(f64, f64)>>),
     TabView(TabView),
     Canvas(CanvasView),
+    List(ListView, ListRows),
+}
+
+/// The layouts of a list's rows; each lays out one row at its cell bounds.
+pub(super) struct ListRows {
+    pub(super) layouts: RefCell<Vec<Rc<RefCell<HostLayout<NativeNode>>>>>,
+    /// Rows lay out when AppKit displays them, outside the backend's update.
+    pub(super) errors: ErrorSlot<AppError>,
 }
 
 impl NativeNode {
@@ -38,6 +54,7 @@ impl NativeNode {
             Self::Container(view) => view.as_view(),
             Self::Button(view) => view.as_view(),
             Self::TextField(view) => view.as_view(),
+            Self::TextEditor(view) => view.as_view(),
             Self::Switch(view) => view.as_view(),
             Self::Slider(view) => view.as_view(),
             Self::PopUpButton(view) => view.as_view(),
@@ -49,16 +66,19 @@ impl NativeNode {
             Self::ScrollView(view, _) => view.as_view(),
             Self::TabView(view) => view.as_view(),
             Self::Canvas(view) => view.as_view(),
+            Self::List(view, _) => view.as_view(),
         }
     }
 
     /// Creates a native view and applies every property of `kind`.
     ///
-    /// `main_tasks` lets canvas invalidators reach the main thread.
+    /// `main_tasks` lets canvas invalidators reach the main thread; `errors`
+    /// receives failures of layout that AppKit starts later, such as list rows.
     pub(super) fn create(
         application: &Application,
         kind: &ViewKind,
         main_tasks: Arc<MainTaskSender>,
+        errors: &ErrorSlot<AppError>,
     ) -> Result<Self, UiError> {
         let native = match kind {
             ViewKind::Container => {
@@ -70,6 +90,7 @@ impl NativeNode {
             ViewKind::TextField { value, .. } => {
                 Self::TextField(TextField::with_string(application, value)?)
             }
+            ViewKind::TextEditor { .. } => Self::TextEditor(TextEditor::new(application)?),
             ViewKind::Switch { .. } => Self::Switch(Switch::new(application)?),
             ViewKind::Slider { .. } => Self::Slider(Slider::new(application)?),
             ViewKind::PopUpButton { .. } => Self::PopUpButton(PopUpButton::new(application)?),
@@ -84,6 +105,13 @@ impl NativeNode {
                 Self::ScrollView(ScrollView::new(application)?, Cell::new(None))
             }
             ViewKind::TabView { .. } => Self::TabView(TabView::new(application)?),
+            ViewKind::List { .. } => Self::List(
+                ListView::new(application)?,
+                ListRows {
+                    layouts: RefCell::new(Vec::new()),
+                    errors: errors.clone(),
+                },
+            ),
             ViewKind::Canvas2D { canvas, .. } => {
                 let view = CanvasView::new(application)?;
                 CanvasBridge::install(&view, canvas, main_tasks);
@@ -92,6 +120,39 @@ impl NativeNode {
         };
         native.apply(None, kind)?;
         Ok(native)
+    }
+
+    /// Raises declared minimums to the size the control's content needs.
+    ///
+    /// Views declare estimates; AppKit measures the actual title and font.
+    /// Line-limited labels keep their declared width so they can truncate.
+    pub(super) fn minimum_size(&self, kind: &ViewKind, declared: Size) -> Result<Size, UiError> {
+        let (measure_width, measure_height) = match kind {
+            ViewKind::Button(_)
+            | ViewKind::Switch { .. }
+            | ViewKind::PopUpButton { .. }
+            | ViewKind::SegmentedControl { .. } => (true, true),
+            // Wrapping labels need a width before they have a height.
+            ViewKind::TextField {
+                editable: false,
+                multiline: false,
+                style,
+                ..
+            } => (style.line_limit.is_none(), true),
+            _ => (false, false),
+        };
+        if !measure_width && !measure_height {
+            return Ok(declared);
+        }
+        let (width, height) = self.as_view().intrinsic_content_size()?;
+        let raise = |declared: f32, measure: bool, size: Option<f64>| match (measure, size) {
+            (true, Some(size)) => declared.max(size.ceil() as f32),
+            _ => declared,
+        };
+        Ok(Size::new(
+            raise(declared.width, measure_width, width),
+            raise(declared.height, measure_height, height),
+        ))
     }
 
     pub(super) fn set_enabled(&self, enabled: bool) -> Result<(), UiError> {
@@ -160,6 +221,7 @@ impl NativeNode {
                     bordered,
                     draws_background,
                     multiline,
+                    style,
                 },
             ) => {
                 if field.string_value()? != *value {
@@ -170,7 +232,46 @@ impl NativeNode {
                 field.set_selectable(*selectable)?;
                 field.set_bordered(*bordered)?;
                 field.set_draws_background(*draws_background)?;
-                field.set_multiline(*multiline)?;
+                let old_style = match old {
+                    Some(ViewKind::TextField {
+                        multiline, style, ..
+                    }) => Some((multiline, style)),
+                    _ => None,
+                };
+                if old_style.is_none_or(|(old_multiline, old)| {
+                    old_multiline != multiline || old.line_limit != style.line_limit
+                }) {
+                    field.set_multiline(*multiline)?;
+                    if let Some(lines) = style.line_limit {
+                        field.set_line_limit(lines)?;
+                    }
+                }
+                let old_style = old_style.map(|(_, style)| style);
+                if old_style.is_none_or(|old| old.font != style.font) {
+                    field.set_font(style.font.as_ref().map(Native::native).as_ref())?;
+                }
+                if old_style.is_none_or(|old| old.color != style.color) {
+                    field.set_text_color(style.color.native())?;
+                }
+                if old_style.is_none_or(|old| old.alignment != style.alignment) {
+                    field.set_alignment(style.alignment.native())?;
+                }
+            }
+            (Self::TextEditor(editor), ViewKind::TextEditor { text, focus }) => {
+                let (old_text, old_focus) = match old {
+                    Some(ViewKind::TextEditor { text, focus }) => (Some(text), Some(*focus)),
+                    _ => (None, None),
+                };
+                // Each new focus request moves keyboard focus to the editor.
+                if *focus > 0 && old_focus != Some(*focus) {
+                    editor.focus()?;
+                }
+                // Text the editor already shows is not written back, so typing keeps
+                // the insertion point. Unchanged text is skipped too: AppKit cannot
+                // keep a paragraph style on an empty last line.
+                if old_text != Some(text) && editor.rich_text()?.shared() != *text {
+                    editor.set_rich_text(&text.native())?;
+                }
             }
             (Self::Switch(switch), ViewKind::Switch { on }) => {
                 if switch.is_on()? != *on {
@@ -296,6 +397,20 @@ impl NativeNode {
                 }
                 if old_focusable != Some(focusable) {
                     view.set_focusable(*focusable);
+                }
+            }
+            (
+                Self::List(list, _),
+                ViewKind::List {
+                    selected, style, ..
+                },
+            ) => {
+                if !matches!(old, Some(ViewKind::List { style: old, .. }) if old == style) {
+                    list.set_style(style.native())?;
+                }
+                // Rows are applied while attaching children; selection follows them.
+                if list.selected_id()? != *selected {
+                    list.select(selected.as_deref())?;
                 }
             }
             _ => return Err(UiError::InvalidHierarchy),

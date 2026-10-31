@@ -1,5 +1,79 @@
 //! Plain UI descriptions that every native backend reads.
 
+use zintl_ui_graphics::{Color, Font};
+
+/// The items of a window toolbar, in order.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Toolbar {
+    pub items: Vec<ToolbarItem>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ToolbarItem {
+    /// A button with an SF Symbol; clicks report [`crate::Event::ToolbarItemClicked`].
+    Button {
+        id: String,
+        label: String,
+        system_image: String,
+        enabled: bool,
+    },
+    /// A search field; edits report [`crate::Event::ToolbarSearchChanged`].
+    Search {
+        value: String,
+        placeholder: Option<String>,
+    },
+    FlexibleSpace,
+}
+
+/// A titled group of rows in a [`crate::ViewKind::List`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ListSection {
+    pub title: Option<String>,
+    /// Row IDs; the list's children are the row views in the same order.
+    pub ids: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ListStyle {
+    /// Inset rows with rounded selection, like Notes and Mail.
+    #[default]
+    Inset,
+    /// Rows that span the full width.
+    Plain,
+}
+
+/// How a text field draws its text.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TextStyle {
+    /// `None` keeps the control's standard font.
+    pub font: Option<Font>,
+    pub color: TextColor,
+    pub alignment: TextAlignment,
+    /// Lines shown before the last one is truncated with an ellipsis.
+    ///
+    /// `None` keeps the control's own wrapping.
+    pub line_limit: Option<usize>,
+}
+
+/// A text color that follows the system appearance unless it is `Custom`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum TextColor {
+    #[default]
+    Primary,
+    Secondary,
+    Tertiary,
+    Accent,
+    Custom(Color),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextAlignment {
+    #[default]
+    Leading,
+    Center,
+    Trailing,
+}
+
 /// How a button responds to clicks.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ButtonType {
@@ -105,6 +179,23 @@ pub enum CommandRole {
     Paste,
     Delete,
     SelectAll,
+    Find,
+    FindAndReplace,
+    FindNext,
+    FindPrevious,
+    UseSelectionForFind,
+    Bold,
+    Italic,
+    Underline,
+    TitleStyle,
+    HeadingStyle,
+    SubheadingStyle,
+    BodyStyle,
+    MonospacedStyle,
+    BulletedList,
+    DashedList,
+    NumberedList,
+    Checklist,
     ToggleSidebar,
     ToggleFullScreen,
     Minimize,
@@ -228,7 +319,7 @@ impl Default for ScrollAxes {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Sidebar {
     pub sections: Vec<SidebarSection>,
     pub selected_id: Option<String>,
@@ -242,17 +333,21 @@ pub struct SidebarSearch {
     pub placeholder: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SidebarSection {
     pub title: Option<String>,
     pub items: Vec<SidebarItem>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SidebarItem {
     pub id: String,
     pub title: String,
     pub system_image: Option<String>,
+    /// Trailing text such as a count.
+    pub badge: Option<String>,
+    /// The item's context menu; selections report `Event::MenuItemSelected` on the window.
+    pub menu: Vec<CommandItem>,
 }
 
 /// How the title bar relates to the window content.

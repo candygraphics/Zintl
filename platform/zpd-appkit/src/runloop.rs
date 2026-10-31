@@ -138,6 +138,18 @@ impl Application {
             _application: PhantomData,
         })
     }
+    /// Runs `callback` when AppKit is about to exit the process, such as after ⌘Q.
+    ///
+    /// AppKit calls `exit` right after, so code after [`Application::run`]
+    /// does not run on that path.
+    pub fn on_will_terminate(&self, mut callback: impl FnMut() + 'static) -> Result<(), UiError> {
+        crate::ui::callback::install_observer(
+            &self.actor,
+            "NSApplicationWillTerminateNotification",
+            zpd_objc::NIL,
+            move |_| callback(),
+        )
+    }
     pub fn set_commands<F>(&self, commands: &CommandSet, callback: F) -> Result<(), UiError>
     where
         F: FnMut(&str) + 'static,

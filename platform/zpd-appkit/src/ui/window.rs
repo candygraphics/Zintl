@@ -113,6 +113,9 @@ pub struct Window<'application> {
     content_controller: ActorRef,
     sidebar: RefCell<Option<SidebarNative>>,
     sidebar_toolbar: RefCell<Option<super::sidebar_toolbar::SidebarToolbar>>,
+    /// The declared toolbar; it includes the sidebar toggle when there is a sidebar.
+    toolbar: RefCell<Option<super::toolbar::Toolbar>>,
+    window_toolbar: RefCell<Option<super::toolbar::WindowToolbar>>,
     _application: PhantomData<&'application Application>,
     _main_thread: PhantomData<Rc<()>>,
 }
@@ -226,6 +229,8 @@ impl<'application> Window<'application> {
             content_controller,
             sidebar: RefCell::new(None),
             sidebar_toolbar: RefCell::new(None),
+            toolbar: RefCell::new(None),
+            window_toolbar: RefCell::new(None),
             _application: PhantomData,
             _main_thread: PhantomData,
         })
@@ -409,12 +414,7 @@ impl<'application> Window<'application> {
                 }
             })?;
         *self.sidebar.borrow_mut() = Some(native);
-        if self.sidebar_toolbar.borrow().is_none() {
-            *self.sidebar_toolbar.borrow_mut() = Some(
-                super::sidebar_toolbar::SidebarToolbar::install(&self.actor)?,
-            );
-        }
-        Ok(())
+        self.sync_toolbar()
     }
     /// Applies `sidebar`, keeping native views when only items, selection, or search text change.
     pub fn update_sidebar(&self, sidebar: &Sidebar) -> Result<(), UiError> {
@@ -431,9 +431,70 @@ impl<'application> Window<'application> {
         if let Some(sidebar) = self.sidebar.borrow_mut().take() {
             sidebar.clear(&self.actor)?;
         }
+        self.sync_toolbar()
+    }
+    /// Shows `toolbar`, or only the sidebar toggle when there is none.
+    pub fn set_toolbar(&self, toolbar: Option<&super::toolbar::Toolbar>) -> Result<(), UiError> {
+        self.ensure_open()?;
+        *self.toolbar.borrow_mut() = toolbar.cloned();
+        self.sync_toolbar()
+    }
+    /// Restores the frame saved under `name` and keeps saving it there.
+    ///
+    /// Returns whether a saved frame was restored.
+    pub fn set_frame_autosave_name(&self, name: &str) -> Result<bool, UiError> {
+        let name = native::nsstring(name);
+        self.actor
+            .with(|window| {
+                // SAFETY: The live window copies the name and reads the saved frame from defaults.
+                unsafe {
+                    zpd_objc::msg_send!(window, zpd_objc::sel!("setFrameAutosaveName:"), ((name.as_ptr()): zpd_objc::Id) => bool);
+                    zpd_objc::msg_send!(window, zpd_objc::sel!("setFrameUsingName:"), ((name.as_ptr()): zpd_objc::Id) => bool)
+                }
+            })
+            .map_err(Into::into)
+    }
+    /// Installs the toolbar that matches the declared toolbar and sidebar.
+    fn sync_toolbar(&self) -> Result<(), UiError> {
+        let has_sidebar = self.sidebar.borrow().is_some();
+        let declared = self.toolbar.borrow().clone();
+        let Some(declared) = declared else {
+            if let Some(toolbar) = self.window_toolbar.borrow_mut().take() {
+                toolbar.clear(&self.actor)?;
+            }
+            let mut sidebar_toolbar = self.sidebar_toolbar.borrow_mut();
+            match (has_sidebar, sidebar_toolbar.is_some()) {
+                (true, false) => {
+                    *sidebar_toolbar = Some(super::sidebar_toolbar::SidebarToolbar::install(
+                        &self.actor,
+                    )?);
+                }
+                (false, true) => {
+                    if let Some(toolbar) = sidebar_toolbar.take() {
+                        toolbar.clear(&self.actor)?;
+                    }
+                }
+                _ => {}
+            }
+            return Ok(());
+        };
         if let Some(toolbar) = self.sidebar_toolbar.borrow_mut().take() {
             toolbar.clear(&self.actor)?;
         }
+        let mut installed = self.window_toolbar.borrow_mut();
+        if let Some(toolbar) = installed.as_mut()
+            && toolbar.can_update(&declared, has_sidebar)
+        {
+            return toolbar.update(&declared);
+        }
+        if let Some(toolbar) = installed.take() {
+            toolbar.clear(&self.actor)?;
+        }
+        *installed = Some(super::toolbar::WindowToolbar::install(
+            &self.actor,
+            &declared,
+            has_sidebar,
+        )?);
         Ok(())
     }
     #[cfg(feature = "wgpu")]

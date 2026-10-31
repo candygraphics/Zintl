@@ -94,10 +94,15 @@ impl MessageLoopHandler<Message> for AppHandler {
 }
 
 /// Runs `composer` in a WinUI application until its last normal window closes.
-pub fn run_composer(composer: Composer<RenderNode, WinUI3Backend>) -> Result<(), AppError> {
+/// Runs the app until its last window closes; `on_exit` runs once afterwards.
+// TODO: Also run `on_exit` when Windows ends the session; see TODO.md.
+pub fn run_composer(
+    composer: Composer<RenderNode, WinUI3Backend>,
+    on_exit: Box<dyn FnOnce()>,
+) -> Result<(), AppError> {
     let application = Application::new().map_err(AppError::Application)?;
     let error = Rc::new(RefCell::new(None));
-    MessageLoopDispatcherQueue::new(
+    let result = MessageLoopDispatcherQueue::new(
         application,
         AppHandler {
             composer,
@@ -105,6 +110,8 @@ pub fn run_composer(composer: Composer<RenderNode, WinUI3Backend>) -> Result<(),
         },
     )
     .run()
-    .map_err(AppError::MessageLoop)?;
+    .map_err(AppError::MessageLoop);
+    on_exit();
+    result?;
     error.borrow_mut().take().map_or(Ok(()), Err)
 }

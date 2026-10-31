@@ -307,6 +307,11 @@ impl Font {
         }
     }
 
+    /// Returns the `NSFont`, which lives as long as `self`.
+    pub(crate) fn as_ptr(&self) -> Id {
+        self.native.as_ptr()
+    }
+
     fn system_weight(weight: u16) -> f64 {
         // SAFETY: AppKit exports these weights as immutable constants.
         unsafe {

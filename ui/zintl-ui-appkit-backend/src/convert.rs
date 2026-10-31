@@ -78,6 +78,23 @@ same_variants!(core::CommandRole => ui::CommandRole {
     Paste,
     Delete,
     SelectAll,
+    Find,
+    FindAndReplace,
+    FindNext,
+    FindPrevious,
+    UseSelectionForFind,
+    Bold,
+    Italic,
+    Underline,
+    TitleStyle,
+    HeadingStyle,
+    SubheadingStyle,
+    BodyStyle,
+    MonospacedStyle,
+    BulletedList,
+    DashedList,
+    NumberedList,
+    Checklist,
     ToggleSidebar,
     ToggleFullScreen,
     Minimize,
@@ -266,6 +283,147 @@ impl Shared for ui::Color {
     }
 }
 
+impl Native for shared::Font {
+    type Output = graphics::Font;
+
+    fn native(&self) -> graphics::Font {
+        graphics::Font::new(
+            self.family.as_deref(),
+            self.size(),
+            self.weight.0,
+            self.italic,
+        )
+    }
+}
+
+same_variants!(core::ListStyle => ui::ListStyle { Inset, Plain });
+same_variants!(core::TextAlignment => ui::TextAlignment { Leading, Center, Trailing });
+
+impl Native for core::TextColor {
+    type Output = ui::TextColor;
+
+    fn native(&self) -> ui::TextColor {
+        match self {
+            Self::Primary => ui::TextColor::Label,
+            Self::Secondary => ui::TextColor::SecondaryLabel,
+            Self::Tertiary => ui::TextColor::TertiaryLabel,
+            Self::Accent => ui::TextColor::Accent,
+            Self::Custom(color) => ui::TextColor::Custom(color.native()),
+        }
+    }
+}
+
+impl Native for shared::ParagraphStyle {
+    type Output = ui::RichParagraph;
+
+    fn native(&self) -> ui::RichParagraph {
+        match *self {
+            Self::Title => ui::RichParagraph::Title,
+            Self::Heading => ui::RichParagraph::Heading,
+            Self::Subheading => ui::RichParagraph::Subheading,
+            Self::Body => ui::RichParagraph::Body,
+            Self::Monospaced => ui::RichParagraph::Monospaced,
+            Self::Bulleted => ui::RichParagraph::Bulleted,
+            Self::Dashed => ui::RichParagraph::Dashed,
+            Self::Numbered => ui::RichParagraph::Numbered,
+            Self::Checklist { done } => ui::RichParagraph::Checklist { done },
+        }
+    }
+}
+
+impl Shared for ui::RichParagraph {
+    type Output = shared::ParagraphStyle;
+
+    fn shared(self) -> shared::ParagraphStyle {
+        match self {
+            Self::Title => shared::ParagraphStyle::Title,
+            Self::Heading => shared::ParagraphStyle::Heading,
+            Self::Subheading => shared::ParagraphStyle::Subheading,
+            Self::Body => shared::ParagraphStyle::Body,
+            Self::Monospaced => shared::ParagraphStyle::Monospaced,
+            Self::Bulleted => shared::ParagraphStyle::Bulleted,
+            Self::Dashed => shared::ParagraphStyle::Dashed,
+            Self::Numbered => shared::ParagraphStyle::Numbered,
+            Self::Checklist { done } => shared::ParagraphStyle::Checklist { done },
+        }
+    }
+}
+
+impl Native for shared::AttributedText {
+    type Output = Vec<ui::RichRun>;
+
+    fn native(&self) -> Vec<ui::RichRun> {
+        self.segments()
+            .into_iter()
+            .map(|(text, span, paragraph)| ui::RichRun {
+                text: text.to_owned(),
+                style: ui::RichStyle {
+                    paragraph: paragraph.native(),
+                    bold: span.bold,
+                    italic: span.italic,
+                    underline: span.underline,
+                    strikethrough: span.strikethrough,
+                    monospace: span.monospace,
+                    link: span.link.clone(),
+                },
+            })
+            .collect()
+    }
+}
+
+/// Splits native runs at paragraph ends, where paragraph styles may change.
+impl Shared for Vec<ui::RichRun> {
+    type Output = shared::AttributedText;
+
+    fn shared(self) -> shared::AttributedText {
+        shared::AttributedText::from_segments(self.iter().flat_map(|run| {
+            let span = shared::SpanStyle {
+                bold: run.style.bold,
+                italic: run.style.italic,
+                underline: run.style.underline,
+                strikethrough: run.style.strikethrough,
+                monospace: run.style.monospace,
+                link: run.style.link.clone(),
+            };
+            let paragraph = run.style.paragraph.shared();
+            run.text
+                .split_inclusive('\n')
+                .map(move |piece| (piece.to_owned(), span.clone(), paragraph))
+        }))
+    }
+}
+
+impl Native for core::Toolbar {
+    type Output = ui::Toolbar;
+
+    fn native(&self) -> ui::Toolbar {
+        ui::Toolbar {
+            items: self
+                .items
+                .iter()
+                .map(|item| match item {
+                    core::ToolbarItem::Button {
+                        id,
+                        label,
+                        system_image,
+                        enabled,
+                    } => ui::ToolbarItem::Button {
+                        id: id.clone(),
+                        label: label.clone(),
+                        system_image: system_image.clone(),
+                        enabled: *enabled,
+                    },
+                    core::ToolbarItem::Search { value, placeholder } => ui::ToolbarItem::Search {
+                        value: value.clone(),
+                        placeholder: placeholder.clone(),
+                    },
+                    core::ToolbarItem::FlexibleSpace => ui::ToolbarItem::FlexibleSpace,
+                })
+                .collect(),
+        }
+    }
+}
+
 impl Native for core::NumberFormat {
     type Output = ui::NumberFormat;
 
@@ -307,6 +465,8 @@ impl Native for core::Sidebar {
                             id: item.id.clone(),
                             title: item.title.clone(),
                             system_image: item.system_image.clone(),
+                            badge: item.badge.clone(),
+                            menu: item.menu.iter().map(Native::native).collect(),
                         })
                         .collect(),
                 })
@@ -416,8 +576,14 @@ impl Shared for zpd_appkit::actor::WindowEventKind {
             Native::DidClose => Shared::WindowDidClose,
             Native::ButtonClicked => Shared::Activated,
             Native::TextChanged { value } => Shared::TextChanged { value },
+            Native::RichTextChanged { runs } => Shared::RichTextChanged {
+                text: runs.shared(),
+            },
             Native::SidebarSelectionChanged { id } => Shared::SidebarSelectionChanged { id },
             Native::SidebarSearchChanged { value } => Shared::SidebarSearchChanged { value },
+            Native::ToolbarItemClicked { id } => Shared::ToolbarItemClicked { id },
+            Native::ToolbarSearchChanged { value } => Shared::ToolbarSearchChanged { value },
+            Native::ListSelectionChanged { id } => Shared::ListSelectionChanged { id },
             Native::StateChanged { on } => Shared::StateChanged { on },
             Native::ValueChanged { value } => Shared::ValueChanged { value },
             Native::SelectionChanged { index } => Shared::SelectionChanged { index },
@@ -434,5 +600,68 @@ impl Shared for zpd_appkit::actor::WindowEventKind {
             Native::ColorPanelClosed => Shared::ColorPanelClosed,
             Native::CanvasInput(input) => Shared::Canvas(input.shared()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Rich text survives a trip through native runs, including paragraph styles per line.
+    #[test]
+    fn attributed_text_round_trips_through_native_runs() {
+        let mut text = shared::AttributedText::new();
+        text.push("Title\nbody ", shared::SpanStyle::default());
+        text.push(
+            "link",
+            shared::SpanStyle {
+                underline: true,
+                link: Some("https://example.com".into()),
+                ..shared::SpanStyle::default()
+            },
+        );
+        text.push("\ncode", shared::SpanStyle::default());
+        text.set_paragraph(0, shared::ParagraphStyle::Title);
+        text.set_paragraph(2, shared::ParagraphStyle::Monospaced);
+
+        let runs = text.native();
+        assert_eq!(runs[0].style.paragraph, ui::RichParagraph::Title);
+        assert_eq!(
+            runs.last().unwrap().style.paragraph,
+            ui::RichParagraph::Monospaced
+        );
+        assert_eq!(runs.shared(), text);
+    }
+
+    // Checklist state and list styles survive the trip to native runs and back.
+    #[test]
+    fn list_paragraphs_round_trip() {
+        let mut text = shared::AttributedText::from("Milk\nEggs\nStep");
+        text.set_paragraph(0, shared::ParagraphStyle::Checklist { done: true });
+        text.set_paragraph(1, shared::ParagraphStyle::Checklist { done: false });
+        text.set_paragraph(2, shared::ParagraphStyle::Numbered);
+
+        let runs = text.native();
+        assert_eq!(
+            runs[0].style.paragraph,
+            ui::RichParagraph::Checklist { done: true }
+        );
+        assert_eq!(runs.shared(), text);
+    }
+
+    // Native runs that span several paragraphs give each paragraph the run's style.
+    #[test]
+    fn native_runs_across_paragraphs_split_into_paragraphs() {
+        let runs = vec![ui::RichRun {
+            text: "a\nb".into(),
+            style: ui::RichStyle {
+                paragraph: ui::RichParagraph::Heading,
+                ..ui::RichStyle::default()
+            },
+        }];
+        assert_eq!(
+            runs.shared().paragraphs(),
+            [shared::ParagraphStyle::Heading; 2]
+        );
     }
 }

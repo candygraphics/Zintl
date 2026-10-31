@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use zintl_ui::event::Event as EventTrait;
 
+use crate::graphics::AttributedText;
 use crate::{CanvasEvent, Color};
 
 /// Selects the event an element route handles.
@@ -9,6 +10,7 @@ use crate::{CanvasEvent, Color};
 pub enum EventKind {
     Activated,
     TextChanged,
+    RichTextChanged,
     StateChanged,
     ValueChanged,
     SelectionChanged,
@@ -16,6 +18,9 @@ pub enum EventKind {
     Scrolled,
     Canvas,
     SidebarSelectionChanged,
+    ListSelectionChanged,
+    ToolbarItemClicked,
+    ToolbarSearchChanged,
     SidebarSearchChanged,
     MenuItemSelected,
     PopoverClosed,
@@ -34,6 +39,10 @@ pub enum Event {
     Activated,
     TextChanged {
         value: String,
+    },
+    /// A rich text editor's content changed.
+    RichTextChanged {
+        text: AttributedText,
     },
     /// A switch, checkbox, radio button, or toggle button changed.
     StateChanged {
@@ -59,6 +68,18 @@ pub enum Event {
     Canvas(CanvasEvent),
     SidebarSelectionChanged {
         id: String,
+    },
+    /// A toolbar button with this ID was clicked.
+    ToolbarItemClicked {
+        id: String,
+    },
+    /// The toolbar search field's text changed.
+    ToolbarSearchChanged {
+        value: String,
+    },
+    /// The user selected a list row, or cleared the selection.
+    ListSelectionChanged {
+        id: Option<String>,
     },
     SidebarSearchChanged {
         value: String,
@@ -89,6 +110,7 @@ impl EventTrait for Event {
         match self {
             Self::Activated => EventKind::Activated,
             Self::TextChanged { .. } => EventKind::TextChanged,
+            Self::RichTextChanged { .. } => EventKind::RichTextChanged,
             Self::StateChanged { .. } => EventKind::StateChanged,
             Self::ValueChanged { .. } => EventKind::ValueChanged,
             Self::SelectionChanged { .. } => EventKind::SelectionChanged,
@@ -96,6 +118,9 @@ impl EventTrait for Event {
             Self::Scrolled { .. } => EventKind::Scrolled,
             Self::Canvas(_) => EventKind::Canvas,
             Self::SidebarSelectionChanged { .. } => EventKind::SidebarSelectionChanged,
+            Self::ListSelectionChanged { .. } => EventKind::ListSelectionChanged,
+            Self::ToolbarItemClicked { .. } => EventKind::ToolbarItemClicked,
+            Self::ToolbarSearchChanged { .. } => EventKind::ToolbarSearchChanged,
             Self::SidebarSearchChanged { .. } => EventKind::SidebarSearchChanged,
             Self::MenuItemSelected { .. } => EventKind::MenuItemSelected,
             Self::PopoverClosed => EventKind::PopoverClosed,

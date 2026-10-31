@@ -63,15 +63,31 @@ pub enum WindowEventKind {
     TextChanged {
         value: String,
     },
+    /// A rich text view's content changed; the runs cover the whole text.
+    RichTextChanged {
+        runs: Vec<crate::ui::RichRun>,
+    },
     SidebarSelectionChanged {
         id: String,
     },
     SidebarSearchChanged {
         value: String,
     },
+    /// A toolbar button with this ID was clicked.
+    ToolbarItemClicked {
+        id: String,
+    },
+    /// The toolbar search field's text changed.
+    ToolbarSearchChanged {
+        value: String,
+    },
     /// A two-state control such as a switch, checkbox, or toggle button changed.
     StateChanged {
         on: bool,
+    },
+    /// The user selected a list row, or `None` when the selection was cleared.
+    ListSelectionChanged {
+        id: Option<String>,
     },
     /// A continuous control such as a slider or stepper changed.
     ValueChanged {

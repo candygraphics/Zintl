@@ -23,8 +23,9 @@ pub use headless::HeadlessBackend;
 pub use model::{
     AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, CommandItem,
     CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig, FileDialogMode,
-    MenuRole, NumberFormat, PopoverEdge, ScrollAxes, Sidebar, SidebarItem, SidebarSearch,
-    SidebarSection, TitleBar, WindowAppMenu, WindowStyle,
+    ListSection, ListStyle, MenuRole, NumberFormat, PopoverEdge, ScrollAxes, Sidebar, SidebarItem,
+    SidebarSearch, SidebarSection, TextAlignment, TextColor, TextStyle, TitleBar, Toolbar,
+    ToolbarItem, WindowAppMenu, WindowStyle,
 };
 pub use zintl_ui_graphics as graphics;
 pub use zintl_ui_graphics::{Color, Rect};
@@ -59,6 +60,13 @@ pub enum ViewKind {
         bordered: bool,
         draws_background: bool,
         multiline: bool,
+        style: TextStyle,
+    },
+    /// A scrolling rich text editor that fills its parent.
+    TextEditor {
+        text: graphics::AttributedText,
+        /// Each increase makes the editor take keyboard focus.
+        focus: u64,
     },
     Switch {
         on: bool,
@@ -105,6 +113,12 @@ pub enum ViewKind {
         titles: Vec<String>,
         selected: usize,
     },
+    /// A selectable list; each child is the row for the ID at the same position.
+    List {
+        sections: Vec<ListSection>,
+        selected: Option<String>,
+        style: ListStyle,
+    },
     /// A view drawn by its canvas handler.
     Canvas2D {
         canvas: CanvasNode,
@@ -124,6 +138,9 @@ pub enum RenderNode {
         title_bar: TitleBar,
         id: Option<String>,
         style: WindowStyle,
+        toolbar: Option<Toolbar>,
+        /// Saves the frame under this name and restores it on the next launch.
+        autosave: Option<String>,
     },
     View {
         kind: ViewKind,

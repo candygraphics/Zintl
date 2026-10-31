@@ -100,6 +100,75 @@ warns), and SF Symbols through `system_image`.
 fill their parent's width and the remaining space. Stacks accept `padding` and
 `grow`.
 
+## Text editing
+
+`TextEditor` is a scrolling rich text editor (`NSTextView` on macOS) that fills
+its parent, with undo and a find bar. `TextField` and `TextEditor` take
+`on_change`, which runs after each edit once the bound Store is updated.
+
+```rust,ignore
+TextEditor::new()
+    .bind(self.draft)
+    .on_change(|cx| { /* save */ })
+```
+
+Replacing the bound text from code moves the insertion point to the end and
+clears the editor's undo history, since it describes the replaced text.
+
+The editor edits an `AttributedText`: plain text with styled runs (bold,
+italic, underline, strikethrough, monospace, link) and one `ParagraphStyle`
+per line (Title, Heading, Subheading, Body, Monospaced, or a bulleted, dashed,
+numbered, or checklist item). List markers are drawn beside the text and are
+not part of it. Clicking a checklist circle toggles it; Return continues a
+list, ends it on an empty item, and returns to body text after a heading. Formatting comes from
+standard actions that the focused editor performs, so it is undoable and the
+menu shows the current paragraph style with a check mark.
+
+```rust,ignore
+MainMenu::standard().menu(Menu::new("Format", [
+    MenuItem::standard(StandardAction::TitleStyle),   // ⇧⌘T
+    MenuItem::standard(StandardAction::BodyStyle),    // ⇧⌘B
+    MenuItem::separator(),
+    MenuItem::standard(StandardAction::Bold),         // ⌘B
+]));
+```
+
+## Lists
+
+`List` is a native `NSTableView` with inset rows, rounded selection, arrow-key
+navigation, and section headers. Each row is any view; it lays out at the
+cell's width and its content decides the row height.
+
+```rust,ignore
+List::new([
+    ListSection::new(pinned.iter().map(|note| ListRow::new(note.id(), NoteRow::new(note))))
+        .title("Pinned"),
+    ListSection::new(others.iter().map(|note| ListRow::new(note.id(), NoteRow::new(note)))),
+])
+.bind(self.selection)                    // Store<Option<String>> of row IDs
+.on_select(|cx, id| { /* … */ })
+```
+
+Row IDs must be unique across the list; rows are keyed by ID. `on_select`
+runs after the bound Store is updated, for user changes only. On Windows the
+rows are shown in a scroll view without selection for now.
+
+## Split views
+
+`SplitView` places two panes on either side of a divider. Dragging the
+divider resizes the first pane within `range`; the second pane takes the rest.
+Nest split views for more panes.
+
+```rust,ignore
+SplitView::horizontal(NoteList::new(), Editor::new())
+    .position(260.0)       // the first pane's starting width
+    .range(200.0..=420.0)
+    .bind(self.list_width) // optional; keeps the width in a Store
+```
+
+The divider is a `Canvas2D`, so dragging it re-renders the split view. It does
+not change the pointer to a resize cursor yet.
+
 ## Context menus and popovers
 
 `context_menu` and `popover` attach to any built-in view through the `Attach`
@@ -146,6 +215,19 @@ Window::panel(bounds, "Inspector").bind_open(self.inspector)
 
 Only one `ColorPanel` should be presented at a time because AppKit shares it.
 
+## Quitting
+
+The app quits when its last normal window closes or the user chooses Quit.
+`App::on_exit` runs once before the process ends on either path; use it to
+finish saving. On macOS, Quit (⌘Q) exits the process from inside AppKit
+without returning from `App::run`, so code after `run` alone is not enough.
+
+```rust,ignore
+App::new(Root::new(saver.clone()))
+    .on_exit(move || saver.flush())
+    .run()
+```
+
 ## Main menu
 
 Declare a `MainMenu` at the root next to the windows. `MainMenu::standard()`
@@ -164,6 +246,11 @@ list![
 ]
 ```
 
+The standard Edit menu ends with a Find submenu (Find…, Find and Replace…,
+Find Next, Find Previous, Use Selection for Find) that drives the focused text
+view's find bar. `StandardAction::Bold`, `Italic`, and `Underline` apply font
+traits to the selection of a rich text view; put them in your own Format menu.
+
 Standard titles are resolved through a `MenuLocalizer`. Each `StandardText`
 has a stable catalog key (`StandardText::key`, such as `menu.edit.copy`).
 `EnglishMenuLocalizer` is the default and `JapaneseMenuLocalizer` is provided;
@@ -174,6 +261,38 @@ such as Settings and Quit (shown as Exit) join the File menu, editing items act
 on the focused text box, and macOS-only items such as Hide and Services are
 omitted. Shortcuts use Control in place of Command; only letter and digit keys
 are shown, because WinUI menus cannot display OEM keys such as the comma.
+
+## Toolbar
+
+`Window::toolbar` shows buttons with SF Symbols, flexible space, and a search
+field bound to a Store. With a sidebar, the sidebar toggle comes first and the
+items sit over the content. Changing only enabled states or search text
+updates the items in place.
+
+```rust,ignore
+Window::new(bounds, "Notes")
+    .autosave("notes.main") // remembers the frame between launches
+    .toolbar(Toolbar::new([
+        ToolbarItem::button("new", "New Note", "square.and.pencil").on_click(new_note),
+        ToolbarItem::flexible_space(),
+        ToolbarItem::search(self.query).placeholder("Search"),
+    ]))
+```
+
+`TextEditor::focus_on(store)` moves keyboard focus to the editor whenever the
+`u64` in `store` increases, for example after creating a note.
+
+## Sidebar badges and menus
+
+`SidebarItem::badge` shows trailing text such as a count, and
+`SidebarItem::context_menu` shows a menu on secondary click. Rows in a `List`
+take `context_menu` like any view; the table shows the clicked row's menu.
+
+```rust,ignore
+SidebarItem::new(folder.id.clone(), folder.name)
+    .badge(count.to_string())
+    .context_menu([MenuItem::new("Rename Folder…").on_select(rename)])
+```
 
 ## Sidebar search
 

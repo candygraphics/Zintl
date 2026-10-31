@@ -5,10 +5,12 @@ mod button;
 mod canvas;
 mod containers;
 mod controls;
+mod list;
 mod menu;
 mod presentation;
 mod sidebar;
 mod text_field;
+mod toolbar;
 mod types;
 mod view;
 mod window;
@@ -20,6 +22,7 @@ pub use containers::{ScrollView, TabView, TabViewItem};
 pub use controls::{
     ColorWell, ComboBox, NumberField, PopUpButton, SearchField, SegmentedControl, Slider, Switch,
 };
+pub use list::{List, ListRow, ListSection};
 pub use menu::{
     EnglishMenuLocalizer, JapaneseMenuLocalizer, MainMenu, Menu, MenuItem, MenuItemState,
     MenuLocalizer, MenuRole, MenuState, Modifier, Shortcut, StandardAction, StandardMenu,
@@ -27,7 +30,8 @@ pub use menu::{
 };
 pub use presentation::{Alert, AlertButton, ColorPanel, FileDialog, Popover};
 pub use sidebar::{Sidebar, SidebarItem, SidebarSection};
-pub use text_field::TextField;
+pub use text_field::{TextEditor, TextField};
+pub use toolbar::{Toolbar, ToolbarItem};
 pub use types::{ButtonRole, ScrollStatus};
 pub use view::View;
 pub use window::Window;
@@ -37,9 +41,9 @@ pub use zintl_ui::store::Store;
 pub use zintl_ui_backend_core::{
     AlertStyle, BezelStyle, ButtonType, Canvas2DHandler, CanvasEvent, CanvasEventContext,
     CanvasNode, CanvasSetup, Color, Event, EventKind, Frame, Invalidator, Key, KeyEvent, KeyPhase,
-    Modifiers, NamedKey, NodeId, PointerButton, PointerEvent, PointerPhase, PopoverEdge, Rect,
-    Redraw, RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, TitleBar, ViewKind, WindowStyle,
-    graphics,
+    ListStyle, Modifiers, NamedKey, NodeId, PointerButton, PointerEvent, PointerPhase, PopoverEdge,
+    Rect, Redraw, RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, TextAlignment, TextColor,
+    TextStyle, TitleBar, ViewKind, WindowStyle, graphics,
 };
 pub use zintl_ui_layout::{LayoutStyle, Size};
 

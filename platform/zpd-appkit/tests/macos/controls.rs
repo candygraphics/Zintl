@@ -4,12 +4,14 @@ use std::rc::Rc;
 
 use zpd_appkit::actor::WindowEventKind;
 use zpd_appkit::geometry::Rect;
+use zpd_appkit::graphics::Font;
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
     AlertButton, AlertButtonRole, AlertConfig, AlertSheet, AsView, Button, ButtonType, Color,
-    ColorWell, CommandItem, CommandMenu, CommandRole, CommandSet, ContextMenu, MenuRole,
+    ColorWell, ListEntry, ListView, CommandItem, CommandMenu, CommandRole, CommandSet, ContextMenu, MenuRole,
     NumberField, NumberFormat, PopUpButton, Popover, ScrollView, SegmentedControl, Sidebar,
-    SidebarItem, SidebarSearch, SidebarSection, Slider, Switch, TabView, View, WindowStyle,
+    SidebarItem, SidebarSearch, SidebarSection, Slider, Switch, TabView, TextAlignment, TextColor,
+    RichParagraph, RichRun, RichStyle, TextEditor, TextField, Toolbar, ToolbarItem, View, WindowStyle,
 };
 use zpd_objc::Id;
 
@@ -84,6 +86,23 @@ impl Checks {
 }
 
 /// Reads an NSString as UTF-8.
+/// Returns an empty `NSRange` at `location` in its C layout.
+fn empty_range(location: u64) -> [u64; 2] {
+    [location, 0]
+}
+
+/// Returns an autoreleased `NSString` for `value`.
+///
+/// # Safety
+/// Must run on the main thread inside the test's autorelease scope.
+unsafe fn ns_string(value: &str) -> Id {
+    let bytes = std::ffi::CString::new(value).unwrap();
+    // SAFETY: Guaranteed by the caller; the C string outlives the call.
+    unsafe {
+        zpd_objc::msg_send!(zpd_objc::class!("NSString"), zpd_objc::sel!("stringWithUTF8String:"), ((bytes.as_ptr()): *const std::ffi::c_char) => Id)
+    }
+}
+
 unsafe fn rust_string(value: Id) -> String {
     // SAFETY: The caller passes a live NSString.
     unsafe {
@@ -215,6 +234,276 @@ fn main() {
     let color = well.color().unwrap();
     assert!((color.red - 1.0).abs() < 0.01 && (color.green - 0.5).abs() < 0.01);
 
+    // Verifies label styling sets the font, semantic color, alignment, and tail truncation.
+    let label = TextField::label_with_string(&application, "A long title").unwrap();
+    content.add_subview(&label).unwrap();
+    label
+        .set_font(Some(&Font::new(None, 20.0, 700, false)))
+        .unwrap();
+    label.set_text_color(TextColor::SecondaryLabel).unwrap();
+    label.set_alignment(TextAlignment::Center).unwrap();
+    label.set_multiline(false).unwrap();
+    label.set_line_limit(2).unwrap();
+    let label_native = Checks::native(&label);
+    // SAFETY: The label is a live NSTextField; the getters return live objects or scalars.
+    unsafe {
+        let font = zpd_objc::msg_send!(label_native, zpd_objc::sel!("font"), () => Id);
+        assert_eq!(
+            zpd_objc::msg_send!(font, zpd_objc::sel!("pointSize"), () => f64),
+            20.0
+        );
+        let color = zpd_objc::msg_send!(label_native, zpd_objc::sel!("textColor"), () => Id);
+        let secondary = zpd_objc::msg_send!(zpd_objc::class!("NSColor"), zpd_objc::sel!("secondaryLabelColor"), () => Id);
+        assert!(zpd_objc::msg_send!(color, zpd_objc::sel!("isEqual:"), ((secondary): Id) => bool));
+        let center = zpd_objc::msg_send!(label_native, zpd_objc::sel!("alignment"), () => isize);
+        assert!(center == 1 || center == 2);
+        assert_eq!(
+            zpd_objc::msg_send!(label_native, zpd_objc::sel!("maximumNumberOfLines"), () => isize),
+            2
+        );
+    }
+    label.set_font(None).unwrap();
+    // SAFETY: The label is a live NSTextField with a font.
+    let size = unsafe {
+        let font = zpd_objc::msg_send!(label_native, zpd_objc::sel!("font"), () => Id);
+        zpd_objc::msg_send!(font, zpd_objc::sel!("pointSize"), () => f64)
+    };
+    assert_eq!(size, 13.0);
+
+    // Verifies lists host row views under group headers, select silently, and report user selection.
+    let list = ListView::new(&application).unwrap();
+    content.add_subview(&list).unwrap();
+    list.as_view()
+        .set_frame(Rect::new(0.0, 0.0, 240.0, 200.0))
+        .unwrap();
+    let first = View::new(&application, Rect::new(0.0, 0.0, 10.0, 10.0)).unwrap();
+    let second = View::new(&application, Rect::new(0.0, 0.0, 10.0, 10.0)).unwrap();
+    let entries = [
+        ListEntry::Header("Pinned".into()),
+        ListEntry::Row("a".into()),
+        ListEntry::Header("Notes".into()),
+        ListEntry::Row("b".into()),
+    ];
+    list.set_entries(&entries, &[first.as_view(), second.as_view()])
+        .unwrap();
+    // Replacing entries with headers again must leave the old cells intact.
+    list.set_entries(&entries, &[first.as_view(), second.as_view()])
+        .unwrap();
+    list.set_row_heights(&[50.0, 30.0]).unwrap();
+    list.select(Some("b")).unwrap();
+    assert_eq!(list.selected_id().unwrap().as_deref(), Some("b"));
+    assert!(take().is_empty());
+    // SAFETY: The list's document view is its live NSTableView; table row 1 is row "a".
+    unsafe {
+        let scroll = Checks::native(&list);
+        let table = zpd_objc::msg_send!(scroll, zpd_objc::sel!("documentView"), () => Id);
+        assert_eq!(
+            zpd_objc::msg_send!(table, zpd_objc::sel!("numberOfRows"), () => i64),
+            4
+        );
+        let rect = zpd_objc::msg_send!(table, zpd_objc::sel!("rectOfRow:"), ((1): i64) => zpd_appkit::geometry::Rect);
+        assert_eq!(rect.height, 50.0);
+        let indexes = zpd_objc::msg_send!(zpd_objc::class!("NSIndexSet"), zpd_objc::sel!("indexSetWithIndex:"), ((1): u64) => Id);
+        zpd_objc::msg_send!(table, zpd_objc::sel!("selectRowIndexes:byExtendingSelection:"), ((indexes): Id, (false): bool) => ());
+    }
+    assert_eq!(
+        take(),
+        vec![WindowEventKind::ListSelectionChanged {
+            id: Some("a".into())
+        }]
+    );
+
+    // Verifies rich runs round-trip, and the paragraph action restyles undoably and validates its items.
+    let rich = TextEditor::new(&application).unwrap();
+    content.add_subview(&rich).unwrap();
+    let runs = vec![
+        RichRun {
+            text: "Title\n".into(),
+            style: RichStyle {
+                paragraph: RichParagraph::Title,
+                ..RichStyle::default()
+            },
+        },
+        RichRun {
+            text: "plain ".into(),
+            style: RichStyle::default(),
+        },
+        RichRun {
+            text: "bold".into(),
+            style: RichStyle {
+                bold: true,
+                italic: true,
+                underline: true,
+                ..RichStyle::default()
+            },
+        },
+    ];
+    rich.set_rich_text(&runs).unwrap();
+    assert_eq!(rich.rich_text().unwrap(), runs);
+    assert!(take().is_empty());
+    // SAFETY: The editor's document view is its live text view; the menu item is retained here.
+    let (text, item) = unsafe {
+        let text = zpd_objc::msg_send!(Checks::native(&rich), zpd_objc::sel!("documentView"), () => Id);
+        zpd_objc::msg_send!(text, zpd_objc::sel!("setSelectedRange:"), ((empty_range(8)): [u64; 2]) => ());
+        let item = zpd_objc::msg_send!(zpd_objc::msg_send!(zpd_objc::class!("NSMenuItem"), zpd_objc::sel!("alloc"), () => Id), zpd_objc::sel!("initWithTitle:action:keyEquivalent:"), ((ns_string("Heading")): Id, (zpd_objc::sel!("zintlApplyParagraphStyle:")): zpd_objc::Sel, (ns_string("")): Id) => Id);
+        zpd_objc::msg_send!(item, zpd_objc::sel!("setTag:"), ((RichParagraph::Heading.tag()): i64) => ());
+        (text, item)
+    };
+    // SAFETY: The live text view validates and performs the action for the live item.
+    unsafe {
+        assert!(zpd_objc::msg_send!(text, zpd_objc::sel!("validateMenuItem:"), ((item): Id) => bool));
+        assert_eq!(zpd_objc::msg_send!(item, zpd_objc::sel!("state"), () => isize), 0);
+        zpd_objc::msg_send!(text, zpd_objc::sel!("zintlApplyParagraphStyle:"), ((item): Id) => ());
+        assert!(zpd_objc::msg_send!(text, zpd_objc::sel!("validateMenuItem:"), ((item): Id) => bool));
+        assert_eq!(zpd_objc::msg_send!(item, zpd_objc::sel!("state"), () => isize), 1);
+    }
+    let heading = |style: RichStyle| RichStyle {
+        paragraph: RichParagraph::Heading,
+        ..style
+    };
+    let mut expected = runs.clone();
+    expected[1].style = heading(expected[1].style.clone());
+    // A bold span adds nothing to a bold heading font, so it reads back without bold.
+    expected[2].style = heading(RichStyle {
+        bold: false,
+        ..expected[2].style.clone()
+    });
+    assert_eq!(rich.rich_text().unwrap(), expected);
+    assert_eq!(
+        take(),
+        vec![WindowEventKind::RichTextChanged { runs: expected }]
+    );
+    // SAFETY: The window's undo manager is live; the item is released after use.
+    unsafe {
+        let undo = zpd_objc::msg_send!(text, zpd_objc::sel!("undoManager"), () => Id);
+        assert!(zpd_objc::msg_send!(undo, zpd_objc::sel!("canUndo"), () => bool));
+        zpd_objc::msg_send!(undo, zpd_objc::sel!("undo"), () => ());
+        zpd_objc::msg_send!(item, zpd_objc::sel!("release"), () => ());
+    }
+    assert_eq!(rich.rich_text().unwrap(), runs);
+    take();
+
+    // Verifies Return continues a checklist unchecked, then ends it on an empty item.
+    let list = TextEditor::new(&application).unwrap();
+    content.add_subview(&list).unwrap();
+    list.set_rich_text(&[RichRun {
+        text: "Milk".into(),
+        style: RichStyle {
+            paragraph: RichParagraph::Checklist { done: true },
+            ..RichStyle::default()
+        },
+    }])
+    .unwrap();
+    take();
+    // SAFETY: The editor's document view is its live text view; the caret is at the end.
+    unsafe {
+        let text = zpd_objc::msg_send!(Checks::native(&list), zpd_objc::sel!("documentView"), () => Id);
+        zpd_objc::msg_send!(text, zpd_objc::sel!("insertNewline:"), ((zpd_objc::NIL): Id) => ());
+        zpd_objc::msg_send!(text, zpd_objc::sel!("insertText:"), ((ns_string("Eggs")): Id) => ());
+    }
+    let paragraphs = |runs: Vec<RichRun>| {
+        runs.into_iter()
+            .map(|run| (run.text, run.style.paragraph))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        paragraphs(list.rich_text().unwrap()),
+        [
+            ("Milk\n".to_owned(), RichParagraph::Checklist { done: true }),
+            ("Eggs".to_owned(), RichParagraph::Checklist { done: false }),
+        ]
+    );
+    take();
+    // SAFETY: The live text view handles Return and paragraph actions at the caret.
+    unsafe {
+        let text = zpd_objc::msg_send!(Checks::native(&list), zpd_objc::sel!("documentView"), () => Id);
+        // Return on the empty item ends the list instead of adding a line.
+        zpd_objc::msg_send!(text, zpd_objc::sel!("insertNewline:"), ((zpd_objc::NIL): Id) => ());
+        zpd_objc::msg_send!(text, zpd_objc::sel!("insertNewline:"), ((zpd_objc::NIL): Id) => ());
+        zpd_objc::msg_send!(text, zpd_objc::sel!("insertText:"), ((ns_string("Note")): Id) => ());
+        // Return after a title continues in body text.
+        let item = zpd_objc::msg_send!(zpd_objc::msg_send!(zpd_objc::class!("NSMenuItem"), zpd_objc::sel!("alloc"), () => Id), zpd_objc::sel!("initWithTitle:action:keyEquivalent:"), ((ns_string("Title")): Id, (zpd_objc::sel!("zintlApplyParagraphStyle:")): zpd_objc::Sel, (ns_string("")): Id) => Id);
+        zpd_objc::msg_send!(item, zpd_objc::sel!("setTag:"), ((RichParagraph::Title.tag()): i64) => ());
+        zpd_objc::msg_send!(text, zpd_objc::sel!("zintlApplyParagraphStyle:"), ((item): Id) => ());
+        zpd_objc::msg_send!(text, zpd_objc::sel!("insertNewline:"), ((zpd_objc::NIL): Id) => ());
+        zpd_objc::msg_send!(text, zpd_objc::sel!("insertText:"), ((ns_string("Body")): Id) => ());
+        zpd_objc::msg_send!(item, zpd_objc::sel!("release"), () => ());
+    }
+    assert_eq!(
+        paragraphs(list.rich_text().unwrap()),
+        [
+            ("Milk\n".to_owned(), RichParagraph::Checklist { done: true }),
+            ("Eggs\n".to_owned(), RichParagraph::Checklist { done: false }),
+            ("Note\n".to_owned(), RichParagraph::Title),
+            ("Body".to_owned(), RichParagraph::Body),
+        ]
+    );
+    // A list action on a paragraph that already has it turns the list off.
+    // SAFETY: The live text view performs the action on the caret paragraph.
+    unsafe {
+        let text = zpd_objc::msg_send!(Checks::native(&list), zpd_objc::sel!("documentView"), () => Id);
+        let item = zpd_objc::msg_send!(zpd_objc::msg_send!(zpd_objc::class!("NSMenuItem"), zpd_objc::sel!("alloc"), () => Id), zpd_objc::sel!("initWithTitle:action:keyEquivalent:"), ((ns_string("Checklist")): Id, (zpd_objc::sel!("zintlApplyParagraphStyle:")): zpd_objc::Sel, (ns_string("")): Id) => Id);
+        zpd_objc::msg_send!(item, zpd_objc::sel!("setTag:"), ((RichParagraph::Checklist { done: false }.tag()): i64) => ());
+        for _ in 0..2 {
+            zpd_objc::msg_send!(text, zpd_objc::sel!("zintlApplyParagraphStyle:"), ((item): Id) => ());
+        }
+        zpd_objc::msg_send!(item, zpd_objc::sel!("release"), () => ());
+    }
+    assert_eq!(
+        list.rich_text().unwrap().last().map(|run| run.style.paragraph),
+        Some(RichParagraph::Body)
+    );
+    take();
+
+    // Verifies controls inside list rows report events through the window.
+    let rows = ListView::new(&application).unwrap();
+    content.add_subview(&rows).unwrap();
+    let row_button = Button::with_title(&application, "Row").unwrap();
+    rows.as_view()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 100.0))
+        .unwrap();
+    rows.set_entries(&[ListEntry::Row("row".into())], &[row_button.as_view()])
+        .unwrap();
+    rows.set_row_heights(&[30.0]).unwrap();
+    // The table creates row views when it lays out.
+    rows.as_view().layout_subtree_if_needed().unwrap();
+    take();
+    // SAFETY: performClick: sends the live button's action.
+    unsafe {
+        zpd_objc::msg_send!(Checks::native(&row_button), zpd_objc::sel!("performClick:"), ((zpd_objc::NIL): Id) => ())
+    };
+    assert_eq!(take(), vec![WindowEventKind::ButtonClicked]);
+
+    // Verifies the editor reports typing as rich runs, replaces text silently, and drops stale undo history.
+    let editor = TextEditor::new(&application).unwrap();
+    content.add_subview(&editor).unwrap();
+    assert!(editor.as_view().is_subview_of(content).unwrap());
+    let body = |text: &str| RichRun {
+        text: text.into(),
+        style: RichStyle::default(),
+    };
+    editor.set_rich_text(&[body("Title\nBody")]).unwrap();
+    assert_eq!(editor.rich_text().unwrap(), [body("Title\nBody")]);
+    assert!(take().is_empty());
+    // SAFETY: The editor's document view is its live NSTextView in a window with an undo manager.
+    let undo = unsafe {
+        let text = zpd_objc::msg_send!(Checks::native(&editor), zpd_objc::sel!("documentView"), () => Id);
+        let typed = ns_string("!");
+        zpd_objc::msg_send!(text, zpd_objc::sel!("insertText:"), ((typed): Id) => ());
+        zpd_objc::msg_send!(text, zpd_objc::sel!("undoManager"), () => Id)
+    };
+    assert_eq!(
+        take(),
+        vec![WindowEventKind::RichTextChanged {
+            runs: vec![body("Title\nBody!")]
+        }]
+    );
+    // SAFETY: The window's undo manager is live.
+    assert!(unsafe { zpd_objc::msg_send!(undo, zpd_objc::sel!("canUndo"), () => bool) });
+    editor.set_rich_text(&[body("Other")]).unwrap();
+    // SAFETY: The window's undo manager is live.
+    assert!(!unsafe { zpd_objc::msg_send!(undo, zpd_objc::sel!("canUndo"), () => bool) });
+
     // Verifies scroll views host a flipped document that can grow past the viewport.
     let scroll = ScrollView::new(&application).unwrap();
     content.add_subview(&scroll).unwrap();
@@ -293,6 +582,8 @@ fn main() {
                     id: (*id).into(),
                     title: (*id).into(),
                     system_image: None,
+                    badge: None,
+                    menu: Vec::new(),
                 })
                 .collect(),
         }],
@@ -374,6 +665,66 @@ fn main() {
     });
     assert!(floating);
 
+    // Verifies toolbar buttons report clicks and state changes update items in place.
+    let button = |enabled| ToolbarItem::Button {
+        id: "new".into(),
+        label: "New".into(),
+        system_image: "plus".into(),
+        enabled,
+    };
+    let declared = |enabled| Toolbar {
+        items: vec![
+            button(enabled),
+            ToolbarItem::FlexibleSpace,
+            ToolbarItem::Search {
+                value: String::new(),
+                placeholder: Some("Search".into()),
+            },
+        ],
+    };
+    take();
+    window.set_toolbar(Some(&declared(true))).unwrap();
+    // SAFETY: The window owns its toolbar; items and the action target are live.
+    let item = unsafe {
+        let windows = Checks::windows();
+        let toolbar = windows
+            .iter()
+            .map(|window| zpd_objc::msg_send!(*window, zpd_objc::sel!("toolbar"), () => Id))
+            .find(|toolbar| !toolbar.is_null())
+            .expect("the window shows a toolbar");
+        // The window has a sidebar here, so its toggle and separator come first.
+        let items = zpd_objc::msg_send!(toolbar, zpd_objc::sel!("items"), () => Id);
+        assert_eq!(zpd_objc::msg_send!(items, zpd_objc::sel!("count"), () => u64), 5);
+        let item = zpd_objc::msg_send!(items, zpd_objc::sel!("objectAtIndex:"), ((2): u64) => Id);
+        let identifier = zpd_objc::msg_send!(item, zpd_objc::sel!("itemIdentifier"), () => Id);
+        assert_eq!(rust_string(identifier), "zintl.toolbar.0");
+        let action = zpd_objc::msg_send!(item, zpd_objc::sel!("action"), () => zpd_objc::Sel);
+        let target = zpd_objc::msg_send!(item, zpd_objc::sel!("target"), () => Id);
+        zpd_objc::msg_send!(target, action, ((item): Id) => ());
+        item
+    };
+    assert_eq!(
+        take(),
+        vec![WindowEventKind::ToolbarItemClicked { id: "new".into() }]
+    );
+    window.set_toolbar(Some(&declared(false))).unwrap();
+    // SAFETY: The same item stays installed when only its state changes.
+    assert!(!unsafe { zpd_objc::msg_send!(item, zpd_objc::sel!("isEnabled"), () => bool) });
+    window.set_toolbar(None).unwrap();
+
+    // Verifies the will-terminate hook runs when AppKit announces that it is exiting.
+    let exited = Rc::new(std::cell::Cell::new(0));
+    let count = exited.clone();
+    application
+        .on_will_terminate(move || count.set(count.get() + 1))
+        .unwrap();
+    // SAFETY: Posting the notification on the main thread runs observers synchronously.
+    unsafe {
+        let center = zpd_objc::msg_send!(zpd_objc::class!("NSNotificationCenter"), zpd_objc::sel!("defaultCenter"), () => Id);
+        zpd_objc::msg_send!(center, zpd_objc::sel!("postNotificationName:object:"), ((ns_string("NSApplicationWillTerminateNotification")): Id, (zpd_objc::NIL): Id) => ());
+    }
+    assert_eq!(exited.get(), 1);
+
     // Verifies standard roles use responder-chain actions and register NSApp menus.
     application
         .set_commands(
@@ -390,17 +741,52 @@ fn main() {
         .unwrap();
     let mut copy = CommandItem::new("Copy");
     copy.role = Some(CommandRole::Copy);
+    // Find items carry their text finder action as a tag; Bold targets the font manager.
+    let roles = [
+        (CommandRole::Find, zpd_objc::sel!("performTextFinderAction:"), 1),
+        (CommandRole::FindNext, zpd_objc::sel!("performTextFinderAction:"), 2),
+        (CommandRole::Bold, zpd_objc::sel!("addFontTrait:"), 2),
+        (CommandRole::Underline, zpd_objc::sel!("underline:"), 0),
+        (
+            CommandRole::Checklist,
+            zpd_objc::sel!("zintlApplyParagraphStyle:"),
+            8,
+        ),
+    ];
+    let mut items = vec![copy];
+    items.extend(roles.iter().map(|(role, _, _)| {
+        let mut item = CommandItem::new(format!("{role:?}"));
+        item.role = Some(*role);
+        item
+    }));
     application
         .set_commands(
             &CommandSet {
                 app_menu: None,
                 menus: vec![CommandMenu {
                     title: "Edit".into(),
-                    items: vec![copy],
+                    items,
                     role: None,
                 }],
             },
             |_| {},
         )
         .unwrap();
+    // SAFETY: NSApp's main menu and its items are live after installation.
+    unsafe {
+        let app = zpd_objc::msg_send!(zpd_objc::class!("NSApplication"), zpd_objc::sel!("sharedApplication"), () => Id);
+        let main = zpd_objc::msg_send!(app, zpd_objc::sel!("mainMenu"), () => Id);
+        let count = zpd_objc::msg_send!(main, zpd_objc::sel!("numberOfItems"), () => i64);
+        let edit = zpd_objc::msg_send!(zpd_objc::msg_send!(main, zpd_objc::sel!("itemAtIndex:"), ((count - 1): i64) => Id), zpd_objc::sel!("submenu"), () => Id);
+        let font_manager = zpd_objc::msg_send!(zpd_objc::class!("NSFontManager"), zpd_objc::sel!("sharedFontManager"), () => Id);
+        for (index, (role, action, tag)) in roles.iter().enumerate() {
+            let item = zpd_objc::msg_send!(edit, zpd_objc::sel!("itemAtIndex:"), ((index as i64 + 1): i64) => Id);
+            let selector = zpd_objc::msg_send!(item, zpd_objc::sel!("action"), () => zpd_objc::Sel);
+            assert_eq!(selector, *action, "{role:?}");
+            assert_eq!(zpd_objc::msg_send!(item, zpd_objc::sel!("tag"), () => i64), *tag, "{role:?}");
+            let target = zpd_objc::msg_send!(item, zpd_objc::sel!("target"), () => Id);
+            let expected = if *role == CommandRole::Bold { font_manager } else { zpd_objc::NIL };
+            assert_eq!(target, expected, "{role:?}");
+        }
+    }
 }

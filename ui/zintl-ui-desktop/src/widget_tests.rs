@@ -621,6 +621,43 @@ fn menu_localizers_translate_standard_text() {
 }
 
 #[test]
+fn standard_edit_menu_ends_with_a_find_submenu() {
+    // Verifies the Edit menu offers text finder actions with macOS shortcuts and translated titles.
+    let roots = App::new(list![
+        MainMenu::standard().localizer(JapaneseMenuLocalizer),
+        Window::new(Rect::new(0.0, 0.0, 200.0, 200.0), "Demo"),
+    ])
+    .render_roots();
+    let RenderNode::MainMenu(commands) = &roots[0].value else {
+        panic!("the main menu renders as a root node");
+    };
+    let find = commands.menus[1]
+        .items
+        .last()
+        .and_then(|item| item.submenu.as_ref())
+        .expect("the Edit menu ends with the Find submenu");
+    let items = find
+        .items
+        .iter()
+        .map(|item| (item.title.as_str(), item.role, item.key.as_deref()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        items,
+        [
+            ("検索…", Some(CommandRole::Find), Some("f")),
+            ("検索と置換…", Some(CommandRole::FindAndReplace), Some("f")),
+            ("次を検索", Some(CommandRole::FindNext), Some("g")),
+            ("前を検索", Some(CommandRole::FindPrevious), Some("g")),
+            (
+                "選択部分を検索に使用",
+                Some(CommandRole::UseSelectionForFind),
+                Some("e")
+            ),
+        ]
+    );
+}
+
+#[test]
 fn sidebar_search_updates_its_query_store() {
     // Verifies a searchable sidebar renders its query and writes native edits back.
     let (mut app, query) = Harness::mount(
@@ -856,4 +893,245 @@ fn canvas_keeps_handler_state_across_store_updates() {
             rule: FillRule::NonZero,
         }]
     );
+}
+
+#[test]
+fn split_view_divider_drag_resizes_the_first_pane_within_its_range() {
+    // Verifies dragging the divider moves it by the pointer's distance from the grab point and clamps it.
+    let (mut app, width) = Harness::mount(
+        |cx| cx.store(200.0_f32),
+        |width| {
+            SplitView::horizontal(Text::new("List"), Text::new("Detail"))
+                .range(100.0..=300.0)
+                .bind(width)
+        },
+    );
+    let pointer = |phase, x| {
+        Event::Canvas(CanvasEvent::Pointer(PointerEvent {
+            phase,
+            button: Some(PointerButton::Primary),
+            location: graphics::Point::new(x, 10.0),
+            modifiers: Modifiers::default(),
+            click_count: 1,
+        }))
+    };
+    let first_width = |app: &App| match &app.render_tree().children[0].value {
+        RenderNode::View { layout, .. } => layout.width,
+        other => panic!("expected the first pane, got {other:?}"),
+    };
+
+    // The divider is the second child of the root stack.
+    app.dispatch_at(&[0, 1], pointer(PointerPhase::Down, 3.0));
+    app.dispatch_at(&[0, 1], pointer(PointerPhase::Moved, 23.0));
+    assert_eq!(app.get(width), 220.0);
+    assert_eq!(first_width(&app), LayoutDimension::Points(220.0));
+
+    app.dispatch_at(&[0, 1], pointer(PointerPhase::Moved, 503.0));
+    assert_eq!(app.get(width), 300.0);
+
+    // Moves after the button is released do not resize.
+    app.dispatch_at(&[0, 1], pointer(PointerPhase::Up, 503.0));
+    app.dispatch_at(&[0, 1], pointer(PointerPhase::Moved, 0.0));
+    assert_eq!(app.get(width), 300.0);
+}
+
+#[test]
+fn split_view_starts_at_its_position_inside_the_range() {
+    // Verifies an unbound split view starts at its declared size, clamped to the range.
+    let app = App::new(
+        SplitView::vertical(Text::new("Top"), Text::new("Bottom"))
+            .position(40.0)
+            .range(80.0..=200.0),
+    );
+
+    let RenderNode::View { layout, .. } = &app.render_tree().children[0].value else {
+        panic!("expected the first pane");
+    };
+    assert_eq!(layout.height, LayoutDimension::Points(80.0));
+}
+
+#[test]
+fn list_describes_sections_and_writes_user_selection() {
+    // Verifies a list renders its sections and selection, one child per row, and reports user picks.
+    let picked = Rc::new(RefCell::new(Vec::new()));
+    let recorded = picked.clone();
+    let (mut app, selection) = Harness::mount(
+        |cx| cx.store(Some("b".to_owned())),
+        move |selection| {
+            let recorded = recorded.clone();
+            List::new([
+                ListSection::new([ListRow::new("a", Text::new("A"))]).title("Pinned"),
+                ListSection::new([
+                    ListRow::new("b", Text::new("B")),
+                    ListRow::new("c", Text::new("C")),
+                ]),
+            ])
+            .bind(selection)
+            .on_select(move |_, id| recorded.borrow_mut().push(id.map(str::to_owned)))
+        },
+    );
+
+    let tree = app.render_tree();
+    let RenderNode::View {
+        kind: ViewKind::List {
+            sections, selected, ..
+        },
+        ..
+    } = &tree.value
+    else {
+        panic!("expected a list, got {:?}", tree.value);
+    };
+    assert_eq!(sections[0].title.as_deref(), Some("Pinned"));
+    assert_eq!(sections[1].ids, ["b", "c"]);
+    assert_eq!(selected.as_deref(), Some("b"));
+    assert_eq!(tree.children.len(), 3);
+
+    assert!(app.dispatch_at(
+        &[0],
+        Event::ListSelectionChanged {
+            id: Some("c".into())
+        }
+    ));
+    assert_eq!(app.get(selection).as_deref(), Some("c"));
+    assert!(app.dispatch_at(&[0], Event::ListSelectionChanged { id: None }));
+    assert_eq!(app.get(selection), None);
+    assert_eq!(*picked.borrow(), [Some("c".to_owned()), None]);
+}
+
+#[test]
+fn text_field_updates_its_store_before_on_change() {
+    // Verifies a field writes the bound Store, then passes the new text to `on_change`.
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let recorded = seen.clone();
+    let (mut app, _) = Harness::mount(
+        |cx| cx.store(String::new()),
+        move |title| {
+            let recorded = recorded.clone();
+            TextField::new().bind(title).on_change(move |cx, text| {
+                recorded
+                    .borrow_mut()
+                    .push((cx.get(title).clone(), text.to_owned()))
+            })
+        },
+    );
+
+    app.dispatch_at(&[0], Event::TextChanged { value: "T".into() });
+
+    assert_eq!(*seen.borrow(), [("T".to_owned(), "T".to_owned())]);
+}
+
+#[test]
+fn text_editor_updates_its_store_before_on_change() {
+    // Verifies the editor renders styled text and stores native edits before `on_change` runs.
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let recorded = seen.clone();
+    let (mut app, body) = Harness::mount(
+        |cx| {
+            let mut text = AttributedText::from("Title");
+            text.set_paragraph(0, ParagraphStyle::Title);
+            cx.store(text)
+        },
+        move |body| {
+            let recorded = recorded.clone();
+            TextEditor::new()
+                .bind(body)
+                .on_change(move |cx| recorded.borrow_mut().push(cx.get(body).text().to_owned()))
+        },
+    );
+
+    assert!(matches!(
+        &app.render_tree().value,
+        RenderNode::View { kind: ViewKind::TextEditor { text, .. }, .. }
+            if text.paragraphs() == [ParagraphStyle::Title]
+    ));
+    let mut edited = AttributedText::from("Title\n");
+    edited.set_paragraph(0, ParagraphStyle::Title);
+    edited.push(
+        "bold",
+        SpanStyle {
+            bold: true,
+            ..SpanStyle::default()
+        },
+    );
+    assert!(app.dispatch_at(
+        &[0],
+        Event::RichTextChanged {
+            text: edited.clone()
+        }
+    ));
+
+    assert_eq!(app.get(body), edited);
+    assert_eq!(*seen.borrow(), ["Title\nbold"]);
+}
+
+#[test]
+fn toolbar_describes_items_and_routes_clicks_and_search() {
+    // Verifies toolbar items render with state, buttons run their actions, and search writes its Store.
+    let clicks = Calls::default();
+    let click = clicks.clone();
+    let (mut app, query) = Harness::mount(
+        |cx| cx.store(String::new()),
+        move |query| {
+            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Toolbar").toolbar(Toolbar::new([
+                ToolbarItem::button("new", "New", "plus").on_click(click.action()),
+                ToolbarItem::flexible_space(),
+                ToolbarItem::search(query).placeholder("Search"),
+            ]))
+        },
+    );
+
+    let RenderNode::Window {
+        toolbar: Some(toolbar),
+        ..
+    } = &app.render_tree().value
+    else {
+        panic!("expected a window with a toolbar");
+    };
+    assert_eq!(toolbar.items.len(), 3);
+    assert!(matches!(
+        &toolbar.items[2],
+        zintl_ui_backend_core::ToolbarItem::Search { placeholder: Some(text), .. } if text == "Search"
+    ));
+
+    assert!(app.dispatch_at(&[0], Event::ToolbarItemClicked { id: "new".into() }));
+    assert!(app.dispatch_at(
+        &[0],
+        Event::ToolbarSearchChanged {
+            value: "roux".into()
+        }
+    ));
+    assert_eq!(clicks.count(), 1);
+    assert_eq!(app.get(query), "roux");
+}
+
+#[test]
+fn sidebar_items_show_badges_and_route_their_menus() {
+    // Verifies item badges render and item menu selections run actions through the window.
+    let renames = Calls::default();
+    let rename = renames.clone();
+    let (mut app, ()) = Harness::mount(
+        |_| (),
+        move |()| {
+            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Folders").sidebar(Sidebar::new([
+                SidebarSection::new([SidebarItem::new("ideas", "Ideas")
+                    .badge("3")
+                    .context_menu([MenuItem::new("Rename").on_select(rename.action())])]),
+            ]))
+        },
+    );
+
+    let RenderNode::Window {
+        sidebar: Some(sidebar),
+        ..
+    } = &app.render_tree().value
+    else {
+        panic!("expected a window with a sidebar");
+    };
+    let item = &sidebar.sections[0].items[0];
+    assert_eq!(item.badge.as_deref(), Some("3"));
+    assert_eq!(item.menu.len(), 1);
+    let id = item.menu[0].id.clone().expect("custom items have IDs");
+
+    assert!(app.dispatch_at(&[0], Event::MenuItemSelected { id }));
+    assert_eq!(renames.count(), 1);
 }

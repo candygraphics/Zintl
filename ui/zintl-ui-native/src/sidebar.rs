@@ -1,6 +1,10 @@
 use std::rc::Rc;
 
-use crate::{Context, Element, Event, EventKind, RenderNode, Store};
+use crate::menu::MenuActions;
+use crate::{
+    Context, Element, EnglishMenuLocalizer, Event, EventKind, Menu, MenuItemState, RenderNode,
+    Store,
+};
 
 type SelectionAction = dyn for<'a> Fn(&mut Context<'a>, &str);
 
@@ -17,7 +21,7 @@ impl std::fmt::Debug for Sidebar {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("Sidebar")
-            .field("sections", &self.sections)
+            .field("sections", &self.sections.len())
             .field("selection", &self.selection)
             .field("has_action", &self.action.is_some())
             .field("search", &self.search)
@@ -25,7 +29,7 @@ impl std::fmt::Debug for Sidebar {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct SidebarSection {
     pub title: Option<String>,
     pub items: Vec<SidebarItem>,
@@ -45,11 +49,13 @@ impl SidebarSection {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct SidebarItem {
     pub id: String,
     pub title: String,
     pub system_image: Option<String>,
+    badge: Option<String>,
+    menu: Option<Menu>,
 }
 
 impl SidebarItem {
@@ -59,11 +65,25 @@ impl SidebarItem {
             id: id.into(),
             title: title.into(),
             system_image: None,
+            badge: None,
+            menu: None,
         }
     }
 
     pub fn system_image(mut self, name: impl Into<String>) -> Self {
         self.system_image = Some(name.into());
+        self
+    }
+
+    /// Shows trailing text, such as a note count.
+    pub fn badge(mut self, text: impl Into<String>) -> Self {
+        self.badge = Some(text.into());
+        self
+    }
+
+    /// Shows `menu` when the item is secondary-clicked.
+    pub fn context_menu(mut self, menu: impl Into<Menu>) -> Self {
+        self.menu = Some(menu.into());
         self
     }
 }
@@ -104,7 +124,13 @@ impl Sidebar {
     }
 
     /// Describes the sidebar with its current selection and search text.
-    pub(crate) fn state(&self, cx: &mut Context<'_>) -> zintl_ui_backend_core::Sidebar {
+    ///
+    /// Item menu actions are collected into `actions` for the window to route.
+    pub(crate) fn state(
+        &self,
+        cx: &mut Context<'_>,
+        actions: &mut MenuActions,
+    ) -> zintl_ui_backend_core::Sidebar {
         zintl_ui_backend_core::Sidebar {
             sections: self
                 .sections
@@ -118,6 +144,12 @@ impl Sidebar {
                             id: item.id.clone(),
                             title: item.title.clone(),
                             system_image: item.system_image.clone(),
+                            badge: item.badge.clone(),
+                            menu: item.menu.as_ref().map_or_else(Vec::new, |menu| {
+                                let path = format!("sidebar.{}", item.id);
+                                let menu = menu.resolve(&EnglishMenuLocalizer, "", &path, actions);
+                                MenuItemState::commands(&menu.items)
+                            }),
                         })
                         .collect(),
                 })

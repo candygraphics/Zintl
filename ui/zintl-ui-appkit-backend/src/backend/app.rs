@@ -102,8 +102,27 @@ impl MessageLoopHandler<Message> for AppHandler<'_> {
     }
 }
 
-pub fn run_composer(composer: Composer<RenderNode, AppKitBackend>) -> Result<(), AppError> {
+/// Runs the app until its last window closes or the user quits.
+///
+/// `on_exit` runs once before the process ends: after the loop returns, or
+/// when AppKit terminates the process directly, as it does for ⌘Q.
+pub fn run_composer(
+    composer: Composer<RenderNode, AppKitBackend>,
+    on_exit: Box<dyn FnOnce()>,
+) -> Result<(), AppError> {
     let application = Application::new().map_err(AppError::Application)?;
+    let on_exit = Rc::new(RefCell::new(Some(on_exit)));
+    let exit = {
+        let on_exit = on_exit.clone();
+        move || {
+            if let Some(action) = on_exit.borrow_mut().take() {
+                action();
+            }
+        }
+    };
+    application
+        .on_will_terminate(exit.clone())
+        .map_err(AppError::Ui)?;
     let error = Rc::new(RefCell::new(None));
     let message_loop = MessageLoopAppkit::new(
         &application,
@@ -114,6 +133,8 @@ pub fn run_composer(composer: Composer<RenderNode, AppKitBackend>) -> Result<(),
         },
     )
     .map_err(AppError::MessageLoop)?;
-    message_loop.run().map_err(AppError::MessageLoop)?;
+    let result = message_loop.run().map_err(AppError::MessageLoop);
+    exit();
+    result?;
     error.borrow_mut().take().map_or(Ok(()), Err)
 }
