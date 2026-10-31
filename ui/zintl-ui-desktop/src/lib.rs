@@ -12,11 +12,13 @@ macro_rules! native_view {
 }
 
 mod controls;
+mod split_view;
 
 pub use controls::{
     ColorWell, ComboBox, NumberField, Picker, PickerStyle, ScrollView, SearchField, Slider, Tab,
     TabView, Toggle, ToggleStyle,
 };
+pub use split_view::SplitView;
 use zintl_ui::composer::Composer;
 pub use zintl_ui::element::{Element, ElementFactory, IntoElement, KeyedElement};
 #[cfg(test)]

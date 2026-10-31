@@ -29,8 +29,7 @@ Out of scope: iCloud sync, sharing/collaboration, locking, drawing, scanning.
    note list as buttons in a `ScrollView`; plain multiline `TextField` editor
    with a draft committed on selection change; File menu items.
 2. **Layout** — three-column split, list rows with styled text, column widths.
-   Needs A1–A4. A2, A3, A5, and A6 are done, and A4 is partly done; A1 and the
-   rest of A4 remain.
+   Needs A1–A4. A1, A2, A3, A5, and A6 are done, and A4 is partly done.
 3. **List** — native selectable list with sections, keyboard navigation, and
    row context menus. Needs B1–B3.
 4. **Editing** — live autosave, rich text editor, Format menu, checklists.
@@ -49,7 +48,11 @@ Found while writing phase 1 (see `TODO` comments in `src/main.rs`).
 
 ### A. Layout and styling
 
-- **A1 Split view / supplementary column.** `Window` has only `sidebar` +
+- **A1 Split view (done, simple).** `SplitView` is a regular view: two panes
+  and a `Canvas2D` divider that resizes the first pane while dragging. The
+  list and editor use it inside the window content. Not done yet: a resize
+  cursor, and a native `NSSplitView` column with collapse and autosave.
+  Formerly: `Window` has only `sidebar` +
   `content`. Notes needs a third, resizable column (`NSSplitViewController`
   with a content-list item, like SwiftUI `NavigationSplitView`). Today the list
   and editor sit in an `HStack` with no divider and widths decided by content.

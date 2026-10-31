@@ -127,10 +127,9 @@ impl View for NotesApp {
                     .on_select(move |cx, _| state.select_folder(cx)),
                 )
                 .content(
-                    HStack::new(list![NoteList { state }, Editor { state }])
-                        .spacing(1.0)
-                        .fill_width()
-                        .grow(),
+                    SplitView::horizontal(NoteList { state }, Editor { state })
+                        .position(260.0)
+                        .range(200.0..=420.0),
                 ),
         ]
     }
@@ -182,10 +181,7 @@ impl View for NoteList {
                 .fill_width()
             ]);
         }
-        VStack::new(list![ScrollView::new(
-            VStack::new(rows).spacing(12.0).padding(12.0).fill_width()
-        )])
-        .width(260.0)
+        ScrollView::new(VStack::new(rows).spacing(12.0).padding(12.0).fill_width())
     }
 }
 

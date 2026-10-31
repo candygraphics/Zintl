@@ -857,3 +857,58 @@ fn canvas_keeps_handler_state_across_store_updates() {
         }]
     );
 }
+
+#[test]
+fn split_view_divider_drag_resizes_the_first_pane_within_its_range() {
+    // Verifies dragging the divider moves it by the pointer's distance from the grab point and clamps it.
+    let (mut app, width) = Harness::mount(
+        |cx| cx.store(200.0_f32),
+        |width| {
+            SplitView::horizontal(Text::new("List"), Text::new("Detail"))
+                .range(100.0..=300.0)
+                .bind(width)
+        },
+    );
+    let pointer = |phase, x| {
+        Event::Canvas(CanvasEvent::Pointer(PointerEvent {
+            phase,
+            button: Some(PointerButton::Primary),
+            location: graphics::Point::new(x, 10.0),
+            modifiers: Modifiers::default(),
+            click_count: 1,
+        }))
+    };
+    let first_width = |app: &App| match &app.render_tree().children[0].value {
+        RenderNode::View { layout, .. } => layout.width,
+        other => panic!("expected the first pane, got {other:?}"),
+    };
+
+    // The divider is the second child of the root stack.
+    app.dispatch_at(&[0, 1], pointer(PointerPhase::Down, 3.0));
+    app.dispatch_at(&[0, 1], pointer(PointerPhase::Moved, 23.0));
+    assert_eq!(app.get(width), 220.0);
+    assert_eq!(first_width(&app), LayoutDimension::Points(220.0));
+
+    app.dispatch_at(&[0, 1], pointer(PointerPhase::Moved, 503.0));
+    assert_eq!(app.get(width), 300.0);
+
+    // Moves after the button is released do not resize.
+    app.dispatch_at(&[0, 1], pointer(PointerPhase::Up, 503.0));
+    app.dispatch_at(&[0, 1], pointer(PointerPhase::Moved, 0.0));
+    assert_eq!(app.get(width), 300.0);
+}
+
+#[test]
+fn split_view_starts_at_its_position_inside_the_range() {
+    // Verifies an unbound split view starts at its declared size, clamped to the range.
+    let app = App::new(
+        SplitView::vertical(Text::new("Top"), Text::new("Bottom"))
+            .position(40.0)
+            .range(80.0..=200.0),
+    );
+
+    let RenderNode::View { layout, .. } = &app.render_tree().children[0].value else {
+        panic!("expected the first pane");
+    };
+    assert_eq!(layout.height, LayoutDimension::Points(80.0));
+}

@@ -100,6 +100,22 @@ warns), and SF Symbols through `system_image`.
 fill their parent's width and the remaining space. Stacks accept `padding` and
 `grow`.
 
+## Split views
+
+`SplitView` places two panes on either side of a divider. Dragging the
+divider resizes the first pane within `range`; the second pane takes the rest.
+Nest split views for more panes.
+
+```rust,ignore
+SplitView::horizontal(NoteList::new(), Editor::new())
+    .position(260.0)       // the first pane's starting width
+    .range(200.0..=420.0)
+    .bind(self.list_width) // optional; keeps the width in a Store
+```
+
+The divider is a `Canvas2D`, so dragging it re-renders the split view. It does
+not change the pointer to a resize cursor yet.
+
 ## Context menus and popovers
 
 `context_menu` and `popover` attach to any built-in view through the `Attach`
