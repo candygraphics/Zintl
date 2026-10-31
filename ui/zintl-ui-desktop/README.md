@@ -100,6 +100,21 @@ warns), and SF Symbols through `system_image`.
 fill their parent's width and the remaining space. Stacks accept `padding` and
 `grow`.
 
+## Text editing
+
+`TextEditor` is a scrolling multiline editor (`NSTextView` on macOS) that fills
+its parent, with undo and a find bar. `TextField` and `TextEditor` take
+`on_change`, which runs after each edit once the bound Store is updated.
+
+```rust,ignore
+TextEditor::new()
+    .bind(self.draft)
+    .on_change(|cx, text| { /* save */ })
+```
+
+Replacing the bound text from code moves the insertion point to the end and
+clears the editor's undo history, since it describes the replaced text.
+
 ## Lists
 
 `List` is a native `NSTableView` with inset rows, rounded selection, arrow-key

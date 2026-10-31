@@ -13,7 +13,7 @@ struct State {
     selected: Store<Option<NoteId>>,
     /// The list's selection, which mirrors `selected` as a row ID.
     row: Store<Option<String>>,
-    /// Text of the selected note while it is edited.
+    /// The editor's text, which mirrors the selected note's body.
     draft: Store<String>,
 }
 
@@ -24,18 +24,15 @@ impl State {
             .unwrap_or_else(|| SmartFolder::ALL.to_owned())
     }
 
-    /// Writes the draft back to the selected note.
-    // TODO: Save on every edit once text fields report changes.
-    fn commit(&self, cx: &mut Context<'_>) {
+    /// Stores an edit of the selected note, which moves it to the top of its list.
+    fn save(&self, cx: &mut Context<'_>, text: &str) {
         let Some(id) = *cx.get(self.selected) else {
             return;
         };
-        let draft = cx.get(self.draft).clone();
-        cx.update(self.library, |library| library.set_body(id, &draft));
+        cx.update(self.library, |library| library.set_body(id, text));
     }
 
     fn select(&self, cx: &mut Context<'_>, id: Option<NoteId>) {
-        self.commit(cx);
         let body = id
             .and_then(|id| cx.get(self.library).note(id))
             .map(|note| note.body.clone())
@@ -57,7 +54,6 @@ impl State {
     }
 
     fn new_note(&self, cx: &mut Context<'_>) {
-        self.commit(cx);
         let folder = self.folder_id(cx);
         let id = cx.update(self.library, |library| library.create(&folder));
         self.select(cx, Some(id));
@@ -212,7 +208,7 @@ impl View for NoteList {
 }
 
 /// The detail column: the selected note's text.
-// TODO: Replace with a rich text editor.
+// TODO: Edit rich text; see PLAN.md (C3, C4).
 #[derive(Clone)]
 struct Editor {
     state: State,
@@ -235,14 +231,13 @@ impl View for Editor {
                     .system_image("trash")
                     .style(ButtonStyle::Borderless)
                     .on_click(move |cx| state.delete_selected(cx)),
-            ]),
-            TextField::new()
-                .multiline()
-                .placeholder("Start typing")
-                .bind(state.draft),
+            ])
+            .padding(8.0),
+            TextEditor::new()
+                .bind(state.draft)
+                .on_change(move |cx, text| state.save(cx, text)),
         ])
-        .spacing(8.0)
-        .padding(12.0)
+        .spacing(0.0)
         .fill_width()
         .grow()
     }

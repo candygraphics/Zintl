@@ -11,7 +11,7 @@ use zpd_appkit::ui::{
     ColorWell, ListEntry, ListView, CommandItem, CommandMenu, CommandRole, CommandSet, ContextMenu, MenuRole,
     NumberField, NumberFormat, PopUpButton, Popover, ScrollView, SegmentedControl, Sidebar,
     SidebarItem, SidebarSearch, SidebarSection, Slider, Switch, TabView, TextAlignment, TextColor,
-    TextField, View, WindowStyle,
+    TextEditor, TextField, View, WindowStyle,
 };
 use zpd_objc::Id;
 
@@ -86,6 +86,18 @@ impl Checks {
 }
 
 /// Reads an NSString as UTF-8.
+/// Returns an autoreleased `NSString` for `value`.
+///
+/// # Safety
+/// Must run on the main thread inside the test's autorelease scope.
+unsafe fn ns_string(value: &str) -> Id {
+    let bytes = std::ffi::CString::new(value).unwrap();
+    // SAFETY: Guaranteed by the caller; the C string outlives the call.
+    unsafe {
+        zpd_objc::msg_send!(zpd_objc::class!("NSString"), zpd_objc::sel!("stringWithUTF8String:"), ((bytes.as_ptr()): *const std::ffi::c_char) => Id)
+    }
+}
+
 unsafe fn rust_string(value: Id) -> String {
     // SAFETY: The caller passes a live NSString.
     unsafe {
@@ -295,6 +307,32 @@ fn main() {
             id: Some("a".into())
         }]
     );
+
+    // Verifies the editor reports user edits, replaces text silently, and drops stale undo history.
+    let editor = TextEditor::new(&application).unwrap();
+    content.add_subview(&editor).unwrap();
+    assert!(editor.as_view().is_subview_of(content).unwrap());
+    editor.set_string_value("Title\nBody").unwrap();
+    assert_eq!(editor.string_value().unwrap(), "Title\nBody");
+    assert!(take().is_empty());
+    // SAFETY: The editor's document view is its live NSTextView in a window with an undo manager.
+    let undo = unsafe {
+        let text = zpd_objc::msg_send!(Checks::native(&editor), zpd_objc::sel!("documentView"), () => Id);
+        let typed = ns_string("!");
+        zpd_objc::msg_send!(text, zpd_objc::sel!("insertText:"), ((typed): Id) => ());
+        zpd_objc::msg_send!(text, zpd_objc::sel!("undoManager"), () => Id)
+    };
+    assert_eq!(
+        take(),
+        vec![WindowEventKind::TextChanged {
+            value: "Title\nBody!".into()
+        }]
+    );
+    // SAFETY: The window's undo manager is live.
+    assert!(unsafe { zpd_objc::msg_send!(undo, zpd_objc::sel!("canUndo"), () => bool) });
+    editor.set_string_value("Other").unwrap();
+    // SAFETY: The window's undo manager is live.
+    assert!(!unsafe { zpd_objc::msg_send!(undo, zpd_objc::sel!("canUndo"), () => bool) });
 
     // Verifies scroll views host a flipped document that can grow past the viewport.
     let scroll = ScrollView::new(&application).unwrap();

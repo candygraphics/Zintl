@@ -29,7 +29,7 @@ pub use menu::{
 };
 pub use presentation::{Alert, AlertButton, ColorPanel, FileDialog, Popover};
 pub use sidebar::{Sidebar, SidebarItem, SidebarSection};
-pub use text_field::TextField;
+pub use text_field::{TextEditor, TextField};
 pub use types::{ButtonRole, ScrollStatus};
 pub use view::View;
 pub use window::Window;

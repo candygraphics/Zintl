@@ -15,6 +15,7 @@ mod sidebar;
 mod sidebar_table;
 mod sidebar_toolbar;
 mod tab_view;
+mod text_editor;
 mod text_field;
 mod view;
 mod window;
@@ -44,6 +45,7 @@ pub use popover::{Popover, PopoverEdge};
 pub use scroll_view::{ScrollAxes, ScrollView};
 pub use sidebar::{Sidebar, SidebarItem, SidebarSearch, SidebarSection};
 pub use tab_view::TabView;
+pub use text_editor::TextEditor;
 pub use text_field::{TextAlignment, TextColor, TextField};
 pub use view::{AsView, View, ViewRef};
 #[cfg(feature = "wgpu")]

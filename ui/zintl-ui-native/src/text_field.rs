@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use zintl_ui::element::IntoElement;
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
@@ -8,10 +10,13 @@ use zintl_ui_layout::{LayoutDimension, LayoutStyle, Size};
 use crate::attach::attachments;
 use crate::{Attachments, Context, Element, Event, EventKind, NativeView, RenderNode};
 
+type ChangeAction = dyn for<'a> Fn(&mut Context<'a>, &str);
+
 #[derive(Clone)]
 pub struct TextField {
     value: String,
     binding: Option<Store<String>>,
+    action: Option<Rc<ChangeAction>>,
     placeholder: Option<String>,
     editable: bool,
     selectable: bool,
@@ -33,6 +38,7 @@ impl TextField {
         Self {
             value: value.into(),
             binding: None,
+            action: None,
             placeholder: None,
             editable: true,
             selectable: true,
@@ -114,6 +120,12 @@ impl TextField {
         self
     }
 
+    /// Runs after each edit, once the bound Store is updated.
+    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static) -> Self {
+        self.action = Some(Rc::new(action));
+        self
+    }
+
     pub fn multiline(mut self) -> Self {
         self.multiline = true;
         self
@@ -169,14 +181,125 @@ impl NativeView for TextField {
             enabled: true,
             title_bar_interactive: false,
         });
-        if let Some(store) = self.binding {
-            element.on_event(EventKind::TextChanged, move |cx, event| {
-                if let Event::TextChanged { value } = event {
-                    cx.update(store, |current| *current = value);
-                }
-            })
-        } else {
-            element
+        TextChange::route(element, self.binding, self.action.clone())
+    }
+}
+
+/// Routes text edits to a bound Store and a change action.
+pub(crate) struct TextChange;
+
+impl TextChange {
+    pub(crate) fn route(
+        element: Element<RenderNode>,
+        binding: Option<Store<String>>,
+        action: Option<Rc<ChangeAction>>,
+    ) -> Element<RenderNode> {
+        if binding.is_none() && action.is_none() {
+            return element;
         }
+        element.on_event(EventKind::TextChanged, move |cx, event| {
+            if let Event::TextChanged { value } = event {
+                if let Some(store) = binding {
+                    cx.update(store, |current| current.clone_from(&value));
+                }
+                if let Some(action) = &action {
+                    action(cx, &value);
+                }
+            }
+        })
+    }
+}
+
+/// A scrolling multiline editor that fills its parent, like a document body.
+#[derive(Clone)]
+pub struct TextEditor {
+    binding: Option<Store<String>>,
+    action: Option<Rc<ChangeAction>>,
+    font: Option<Font>,
+    editable: bool,
+    layout: LayoutStyle,
+    id: Option<String>,
+    attachments: Attachments,
+}
+
+impl TextEditor {
+    pub fn new() -> Self {
+        Self {
+            binding: None,
+            action: None,
+            font: None,
+            editable: true,
+            layout: LayoutStyle::fill(Size::new(80.0, 40.0)),
+            id: None,
+            attachments: Attachments::default(),
+        }
+    }
+
+    pub fn bind(mut self, store: Store<String>) -> Self {
+        self.binding = Some(store);
+        self
+    }
+
+    /// Runs after each edit, once the bound Store is updated.
+    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static) -> Self {
+        self.action = Some(Rc::new(action));
+        self
+    }
+
+    pub fn font(mut self, font: Font) -> Self {
+        self.font = Some(font);
+        self
+    }
+
+    pub fn editable(mut self, editable: bool) -> Self {
+        self.editable = editable;
+        self
+    }
+
+    pub fn id(mut self, id: impl Into<String>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    pub fn minimum_size(mut self, size: Size) -> Self {
+        self.layout.minimum_size = size;
+        self
+    }
+}
+
+impl Default for TextEditor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl NativeView for TextEditor {
+    attachments!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        let value = self
+            .binding
+            .map(|store| cx.get(store).clone())
+            .unwrap_or_default();
+        let element = Element::node(RenderNode::View {
+            kind: ViewKind::TextEditor {
+                value,
+                font: self.font.clone(),
+                editable: self.editable,
+            },
+            layout: self.layout,
+            id: self.id.clone(),
+            enabled: true,
+            title_bar_interactive: false,
+        });
+        TextChange::route(element, self.binding, self.action.clone())
+    }
+}
+
+impl View for TextEditor {
+    type Output = RenderNode;
+
+    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
+        self.native_element(cx)
     }
 }

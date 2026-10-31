@@ -459,8 +459,11 @@ impl AppKitBackend {
             let Some(native) = self.state(*child).native.as_ref() else {
                 continue;
             };
-            native.as_view().remove_from_superview()?;
-            parent.add_subview(&native.as_view())?;
+            // Views already in place stay attached, so they keep keyboard focus.
+            if !native.as_view().is_subview_of(parent)? {
+                native.as_view().remove_from_superview()?;
+                parent.add_subview(&native.as_view())?;
+            }
             self.attach_contents(*child, native)?;
         }
         Ok(())

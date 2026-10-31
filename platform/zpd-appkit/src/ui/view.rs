@@ -347,6 +347,18 @@ impl<'view> ViewRef<'view> {
         tree.reparent(child.actor, self.actor)
             .map_err(UiError::from)
     }
+    /// Returns whether this view is a direct subview of `parent`.
+    pub fn is_subview_of(self, parent: ViewRef<'_>) -> Result<bool, UiError> {
+        parent.with(|parent| {
+            self.with(|view| {
+                // SAFETY: Both views are live; superview returns nil or a live view.
+                let superview = unsafe {
+                    zpd_objc::msg_send!(view, zpd_objc::sel!("superview"), () => zpd_objc::Id)
+                };
+                superview == parent
+            })
+        })?
+    }
     pub fn remove_from_superview(self) -> Result<(), UiError> {
         self.with(|view| unsafe {
             zpd_objc::msg_send!(view, zpd_objc::sel!("removeFromSuperview"), () => ())

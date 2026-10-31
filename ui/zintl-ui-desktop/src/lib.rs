@@ -41,7 +41,8 @@ pub use zintl_ui_native::{
     MenuLocalizer, Modifier, Modifiers, NamedKey, NativeView, PointerButton, PointerEvent,
     PointerPhase, Popover, PopoverEdge, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAxes,
     ScrollEvent, ScrollStatus, Shortcut, Sidebar, SidebarItem, SidebarSection, StandardAction,
-    StandardMenu, StandardText, TextAlignment, TextColor, TitleBar, ViewKind, graphics, list,
+    StandardMenu, StandardText, TextAlignment, TextColor, TextEditor, TitleBar, ViewKind, graphics,
+    list,
 };
 
 native_view!(Text, Button, TextField, HStack, VStack, Spacer);
@@ -315,6 +316,12 @@ impl TextField {
 
     pub fn bind(mut self, store: Store<String>) -> Self {
         self.inner = self.inner.bind(store);
+        self
+    }
+
+    /// Runs after each edit, once the bound Store is updated.
+    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static) -> Self {
+        self.inner = self.inner.on_change(action);
         self
     }
 

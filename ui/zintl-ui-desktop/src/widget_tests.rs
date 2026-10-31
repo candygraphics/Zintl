@@ -960,3 +960,46 @@ fn list_describes_sections_and_writes_user_selection() {
     assert_eq!(app.get(selection), None);
     assert_eq!(*picked.borrow(), [Some("c".to_owned()), None]);
 }
+
+#[test]
+fn text_views_update_their_store_before_on_change() {
+    // Verifies editors and fields write the bound Store, then pass the new text to `on_change`.
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let recorded = seen.clone();
+    let (mut app, (body, title)) = Harness::mount(
+        |cx| (cx.store("Body".to_owned()), cx.store(String::new())),
+        move |(body, title)| {
+            let (editor, field) = (recorded.clone(), recorded.clone());
+            VStack::new(list![
+                TextEditor::new()
+                    .bind(body)
+                    .on_change(move |cx, text| editor
+                        .borrow_mut()
+                        .push((cx.get(body).clone(), text.to_owned()))),
+                TextField::new().bind(title).on_change(move |cx, text| field
+                    .borrow_mut()
+                    .push((cx.get(title).clone(), text.to_owned()))),
+            ])
+        },
+    );
+
+    assert!(matches!(
+        &app.render_tree().children[0].value,
+        RenderNode::View { kind: ViewKind::TextEditor { value, editable: true, .. }, .. } if value == "Body"
+    ));
+    app.dispatch_at(
+        &[0, 0],
+        Event::TextChanged {
+            value: "Body!".into(),
+        },
+    );
+    app.dispatch_at(&[0, 1], Event::TextChanged { value: "T".into() });
+
+    assert_eq!(
+        *seen.borrow(),
+        [
+            ("Body!".to_owned(), "Body!".to_owned()),
+            ("T".to_owned(), "T".to_owned())
+        ]
+    );
+}

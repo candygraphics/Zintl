@@ -33,7 +33,7 @@ Out of scope: iCloud sync, sharing/collaboration, locking, drawing, scanning.
 3. **List** — native selectable list with sections, keyboard navigation, and
    row context menus. Needs B1–B3. B1 is done.
 4. **Editing** — live autosave, rich text editor, Format menu, checklists.
-   Needs C1–C5.
+   Needs C1–C5. C1 and C2 are done: the note saves on every keystroke.
 5. **Toolbar and search** — toolbar items, toolbar search field, focus control.
    Needs D1–D3.
 6. **Sidebar polish** — counts, folder editing, nested folders, drag and drop.
@@ -88,10 +88,12 @@ Found while writing phase 1 (see `TODO` comments in `src/main.rs`).
 
 ### C. Text editing
 
-- **C1 Change events.** `TextField` has `bind` but no `on_change`, so the
+- **C1 Change events (done).** `TextField::on_change` and
+  `TextEditor::on_change`. Formerly: `TextField` has `bind` but no `on_change`, so the
   app cannot autosave, update the list title live, or bump the modified date.
   Phase 1 commits the draft only when the selection changes.
-- **C2 Growing multiline editor.** A multiline `TextField` shows one line and
+- **C2 Growing multiline editor (done).** `TextEditor` wraps a scrolling
+  `NSTextView` with undo and a find bar. Formerly: A multiline `TextField` shows one line and
   does not fill the column; it should be a scrolling `NSTextView`.
 - **C3 Rich text model.** An `AttributedText` (runs with font, traits,
   paragraph style, lists, checklist items, links) bound to the editor, with a

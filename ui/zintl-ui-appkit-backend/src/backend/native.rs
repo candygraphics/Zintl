@@ -5,8 +5,8 @@ use std::sync::Arc;
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
     AsView, Button, CanvasView, ColorWell, ComboBox, ListView, NumberField, PopUpButton,
-    ScrollView, SearchField, SegmentedControl, Slider, Switch, TabView, TextField, UiError, View,
-    ViewRef,
+    ScrollView, SearchField, SegmentedControl, Slider, Switch, TabView, TextEditor, TextField,
+    UiError, View, ViewRef,
 };
 
 use zintl_ui_layout::Size;
@@ -25,6 +25,7 @@ pub(super) enum NativeNode {
     Container(View),
     Button(Button),
     TextField(TextField),
+    TextEditor(TextEditor),
     Switch(Switch),
     Slider(Slider),
     PopUpButton(PopUpButton),
@@ -53,6 +54,7 @@ impl NativeNode {
             Self::Container(view) => view.as_view(),
             Self::Button(view) => view.as_view(),
             Self::TextField(view) => view.as_view(),
+            Self::TextEditor(view) => view.as_view(),
             Self::Switch(view) => view.as_view(),
             Self::Slider(view) => view.as_view(),
             Self::PopUpButton(view) => view.as_view(),
@@ -88,6 +90,7 @@ impl NativeNode {
             ViewKind::TextField { value, .. } => {
                 Self::TextField(TextField::with_string(application, value)?)
             }
+            ViewKind::TextEditor { .. } => Self::TextEditor(TextEditor::new(application)?),
             ViewKind::Switch { .. } => Self::Switch(Switch::new(application)?),
             ViewKind::Slider { .. } => Self::Slider(Slider::new(application)?),
             ViewKind::PopUpButton { .. } => Self::PopUpButton(PopUpButton::new(application)?),
@@ -252,6 +255,26 @@ impl NativeNode {
                 }
                 if old_style.is_none_or(|old| old.alignment != style.alignment) {
                     field.set_alignment(style.alignment.native())?;
+                }
+            }
+            (
+                Self::TextEditor(editor),
+                ViewKind::TextEditor {
+                    value,
+                    font,
+                    editable,
+                },
+            ) => {
+                // Only outside changes are written back, so typing keeps the insertion point.
+                if editor.string_value()? != *value {
+                    editor.set_string_value(value)?;
+                }
+                if !matches!(old, Some(ViewKind::TextEditor { font: old, .. }) if old == font) {
+                    editor.set_font(font.as_ref().map(Native::native).as_ref())?;
+                }
+                if !matches!(old, Some(ViewKind::TextEditor { editable: old, .. }) if old == editable)
+                {
+                    editor.set_editable(*editable)?;
                 }
             }
             (Self::Switch(switch), ViewKind::Switch { on }) => {

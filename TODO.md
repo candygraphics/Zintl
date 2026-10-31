@@ -75,3 +75,10 @@ WinUI 3 yet, so the split shows no divider there and cannot be resized.
 selection or section headers. Use a WinUI `ListView` with grouped items,
 `SelectionMode::Single`, and row content hosted as item templates, and report
 `Event::ListSelectionChanged`.
+
+## TextEditor on Windows
+
+`ViewKind::TextEditor` maps to a multiline `TextBox`, but its font and
+read-only state are not applied yet, and it does not fill the column with
+scrolling like `NSTextView`. Set `AcceptsReturn`, `TextWrapping::Wrap`,
+`IsReadOnly`, `FontSize`/`FontWeight`, and vertical scrolling.

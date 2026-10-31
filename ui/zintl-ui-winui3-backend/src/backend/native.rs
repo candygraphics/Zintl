@@ -97,7 +97,9 @@ impl NativeNode {
                 ButtonType::Checkbox => ControlKind::CheckBox,
                 ButtonType::Radio => ControlKind::RadioButton,
             },
-            ViewKind::TextField { editable: true, .. } => ControlKind::TextBox,
+            ViewKind::TextField { editable: true, .. } | ViewKind::TextEditor { .. } => {
+                ControlKind::TextBox
+            }
             ViewKind::TextField { .. } => ControlKind::TextBlock,
             ViewKind::Switch { .. } => ControlKind::ToggleSwitch,
             ViewKind::Slider { .. } => ControlKind::Slider,
@@ -271,6 +273,19 @@ impl NativeNode {
                         placeholder.as_deref().unwrap_or(""),
                     )?;
                 }
+            }
+            ViewKind::TextEditor {
+                value, editable, ..
+            } => {
+                // Only outside changes are written back, so typing keeps the caret.
+                if control.text(TextProperty::Text)? != *value {
+                    control.set_text(TextProperty::Text, value)?;
+                }
+                if old.is_none() {
+                    control.set_bool(BoolProperty::Multiline, true)?;
+                }
+                // TODO: Apply the font and read-only state; see TODO.md.
+                let _ = editable;
             }
             ViewKind::Switch { on } => {
                 if control.bool(BoolProperty::Checked)? != *on || old.is_none() {
