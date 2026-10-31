@@ -236,6 +236,42 @@ impl Library {
         }
     }
 
+    /// Adds a folder named `name` and returns its ID.
+    pub fn create_folder(&mut self, name: &str) -> String {
+        let id = (1..)
+            .map(|number| format!("folder-{number}"))
+            .find(|id| self.folders.iter().all(|folder| folder.id != *id))
+            .expect("an unused folder ID exists");
+        self.folders.push(Folder {
+            id: id.clone(),
+            name: name.to_owned(),
+        });
+        id
+    }
+
+    pub fn rename_folder(&mut self, id: &str, name: &str) {
+        if let Some(folder) = self.folders.iter_mut().find(|folder| folder.id == id) {
+            folder.name = name.to_owned();
+        }
+    }
+
+    /// Removes a folder and moves its notes to Recently Deleted.
+    pub fn delete_folder(&mut self, id: &str) {
+        self.folders.retain(|folder| folder.id != id);
+        for note in self.notes.iter_mut().filter(|note| note.folder == id) {
+            note.deleted = true;
+            note.pinned = false;
+        }
+    }
+
+    /// Moves a note to `folder`, restoring it if it was deleted.
+    pub fn move_note(&mut self, id: NoteId, folder: &str) {
+        if let Some(note) = self.notes.iter_mut().find(|note| note.id == id) {
+            note.folder = folder.to_owned();
+            note.deleted = false;
+        }
+    }
+
     pub fn set_pinned(&mut self, id: NoteId, pinned: bool) {
         if let Some(note) = self.notes.iter_mut().find(|note| note.id == id) {
             note.pinned = pinned;
@@ -307,6 +343,21 @@ mod tests {
         assert_eq!(ids.len(), 1);
         library.delete(ids[0]);
         assert!(library.search("roux").is_empty());
+    }
+
+    // Deleting a folder sends its notes to Recently Deleted; moving a note restores it.
+    #[test]
+    fn folders_can_be_created_renamed_and_deleted() {
+        let mut library = Library::default();
+        let folder = library.create_folder("Ideas");
+        assert_ne!(library.create_folder("Ideas"), folder);
+        library.rename_folder(&folder, "Plans");
+        assert_eq!(library.folders[0].name, "Plans");
+        let note = library.create(&folder);
+        library.delete_folder(&folder);
+        assert_eq!(library.notes_in(SmartFolder::DELETED).len(), 1);
+        library.move_note(note, "notes");
+        assert_eq!(library.notes_in("notes").len(), 1);
     }
 
     // Deleting moves a note to Recently Deleted; deleting it there removes it.

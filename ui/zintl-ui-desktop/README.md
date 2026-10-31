@@ -284,6 +284,18 @@ Window::new(bounds, "Notes")
 `TextEditor::focus_on(store)` moves keyboard focus to the editor whenever the
 `u64` in `store` increases, for example after creating a note.
 
+## Sidebar badges and menus
+
+`SidebarItem::badge` shows trailing text such as a count, and
+`SidebarItem::context_menu` shows a menu on secondary click. Rows in a `List`
+take `context_menu` like any view; the table shows the clicked row's menu.
+
+```rust,ignore
+SidebarItem::new(folder.id.clone(), folder.name)
+    .badge(count.to_string())
+    .context_menu([MenuItem::new("Rename Folder…").on_select(rename)])
+```
+
 ## Sidebar search
 
 `Sidebar::searchable(query)` adds a search field above the items. Filter the

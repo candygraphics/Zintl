@@ -3,7 +3,7 @@
 mod model;
 mod storage;
 
-use model::{Library, Note, NoteId, SmartFolder};
+use model::{Folder, Library, Note, NoteId, SmartFolder};
 use storage::{Saver, Storage};
 use zintl_ui_desktop::*;
 
@@ -22,6 +22,10 @@ struct State {
     query: Store<String>,
     /// Increases to move keyboard focus to the editor.
     focus: Store<u64>,
+    /// The folder being renamed and the name being typed.
+    renaming: Store<Option<String>>,
+    rename_text: Store<String>,
+    rename_open: Store<bool>,
 }
 
 impl State {
@@ -91,6 +95,52 @@ impl State {
         }
     }
 
+    fn move_note(&self, cx: &mut Context<'_>, id: NoteId, folder: String) {
+        self.change(cx, |library| library.move_note(id, &folder));
+    }
+
+    /// Creates a folder, selects it, and asks for its name.
+    fn new_folder(&self, cx: &mut Context<'_>) {
+        let id = self.change(cx, |library| library.create_folder("New Folder"));
+        cx.update(self.folder, |folder| *folder = Some(id.clone()));
+        self.select_folder(cx);
+        self.start_rename(cx, id);
+    }
+
+    fn start_rename(&self, cx: &mut Context<'_>, id: String) {
+        let name = cx
+            .get(self.library)
+            .folders
+            .iter()
+            .find(|folder| folder.id == id)
+            .map(|folder| folder.name.clone())
+            .unwrap_or_default();
+        cx.update(self.rename_text, |text| *text = name);
+        cx.update(self.renaming, |renaming| *renaming = Some(id));
+        cx.update(self.rename_open, |open| *open = true);
+    }
+
+    fn finish_rename(&self, cx: &mut Context<'_>) {
+        let name = cx.get(self.rename_text).trim().to_owned();
+        if let Some(id) = cx.get(self.renaming).clone()
+            && !name.is_empty()
+        {
+            self.change(cx, |library| library.rename_folder(&id, &name));
+        }
+        cx.update(self.rename_open, |open| *open = false);
+    }
+
+    /// Deletes a folder; its notes go to Recently Deleted.
+    fn delete_folder(&self, cx: &mut Context<'_>, id: String) {
+        self.change(cx, |library| library.delete_folder(&id));
+        if cx.get(self.folder).as_deref() == Some(id.as_str()) {
+            cx.update(self.folder, |folder| {
+                *folder = Some(SmartFolder::ALL.to_owned())
+            });
+            self.select_folder(cx);
+        }
+    }
+
     fn toggle_pin(&self, cx: &mut Context<'_>, id: NoteId) {
         self.change(cx, |library| {
             let pinned = library.note(id).is_some_and(|note| note.pinned);
@@ -133,12 +183,17 @@ impl View for NotesApp {
             saver: cx.store(saver),
             query: cx.store(String::new()),
             focus: cx.store(0),
+            renaming: cx.store(None),
+            rename_text: cx.store(String::new()),
+            rename_open: cx.store(false),
         };
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let state = self.state;
         let folders = cx.get(state.library).folders.clone();
+        let library = cx.get(state.library);
+        let count = |folder: &str| library.notes_in(folder).len().to_string();
 
         list![
             MainMenu::standard()
@@ -149,6 +204,9 @@ impl View for NotesApp {
                         MenuItem::new("New Note")
                             .shortcut(Shortcut::command("n"))
                             .on_select(move |cx| state.new_note(cx)),
+                        MenuItem::new("New Folder")
+                            .shortcut(Shortcut::command("n").shift())
+                            .on_select(move |cx| state.new_folder(cx)),
                         MenuItem::new("Delete Note")
                             .enabled(cx.get(state.selected).is_some())
                             .on_select(move |cx| state.delete_selected(cx)),
@@ -187,17 +245,30 @@ impl View for NotesApp {
                 .sidebar(
                     Sidebar::new([
                         SidebarSection::new([SidebarItem::new(SmartFolder::ALL, "All Notes")
-                            .system_image("tray.full")])
+                            .system_image("tray.full")
+                            .badge(count(SmartFolder::ALL))])
                         .title("iCloud"),
                         SidebarSection::new(folders.into_iter().map(|folder| {
-                            SidebarItem::new(folder.id, folder.name).system_image("folder")
+                            let (rename, delete) = (folder.id.clone(), folder.id.clone());
+                            SidebarItem::new(folder.id.clone(), folder.name)
+                                .system_image("folder")
+                                .badge(count(&folder.id))
+                                .context_menu([
+                                    MenuItem::new("Rename Folder…").on_select(move |cx| {
+                                        state.start_rename(cx, rename.clone())
+                                    }),
+                                    MenuItem::new("Delete Folder").on_select(move |cx| {
+                                        state.delete_folder(cx, delete.clone())
+                                    }),
+                                ])
                         }))
                         .title("Folders"),
                         SidebarSection::new([SidebarItem::new(
                             SmartFolder::DELETED,
                             "Recently Deleted",
                         )
-                        .system_image("trash")]),
+                        .system_image("trash")
+                        .badge(count(SmartFolder::DELETED))]),
                     ])
                     .bind(state.folder)
                     .on_select(move |cx, _| state.select_folder(cx)),
@@ -206,6 +277,27 @@ impl View for NotesApp {
                     SplitView::horizontal(NoteList { state }, Editor { state })
                         .position(260.0)
                         .range(200.0..=420.0),
+                ),
+            Window::panel(Rect::new(400.0, 300.0, 320.0, 120.0), "Rename Folder")
+                .bind_open(state.rename_open)
+                .content(
+                    VStack::new(list![
+                        TextField::new()
+                            .bind(state.rename_text)
+                            .placeholder("Folder name"),
+                        HStack::new(list![
+                            Spacer::new(),
+                            Button::new("Cancel").role(ButtonRole::Cancel).on_click(
+                                move |cx| cx.update(state.rename_open, |open| *open = false)
+                            ),
+                            Button::new("Rename")
+                                .role(ButtonRole::Default)
+                                .on_click(move |cx| state.finish_rename(cx)),
+                        ])
+                        .fill_width(),
+                    ])
+                    .padding(16.0)
+                    .fill_width(),
                 ),
         ]
     }
@@ -218,8 +310,17 @@ struct NoteList {
 }
 
 impl NoteList {
-    fn row(state: State, note: &Note) -> ListRow {
+    fn row(state: State, note: &Note, folders: &[Folder]) -> ListRow {
         let id = note.id;
+        let destinations = folders
+            .iter()
+            .filter(|folder| note.deleted || folder.id != note.folder)
+            .map(|folder| {
+                let target = folder.id.clone();
+                MenuItem::new(folder.name.clone())
+                    .on_select(move |cx| state.move_note(cx, id, target.clone()))
+            })
+            .collect::<Vec<_>>();
         let pin = if note.pinned {
             "Unpin Note"
         } else {
@@ -242,6 +343,7 @@ impl NoteList {
             .fill_width()
             .context_menu([
                 MenuItem::new(pin).on_select(move |cx| state.toggle_pin(cx, id)),
+                MenuItem::submenu(Menu::new("Move to", destinations)),
                 MenuItem::separator(),
                 MenuItem::new("Delete").on_select(move |cx| state.delete(cx, id)),
             ]),
@@ -255,6 +357,7 @@ impl View for NoteList {
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let state = self.state;
         let folder = state.folder_id(cx);
+        let folders = cx.get(state.library).folders.clone();
         let query = cx.get(state.query).clone();
         let notes = if query.is_empty() {
             cx.get(state.library).notes_in(&folder)
@@ -267,16 +370,26 @@ impl View for NoteList {
         let mut sections = Vec::new();
         if !pinned.is_empty() {
             sections.push(
-                ListSection::new(pinned.into_iter().map(|note| Self::row(state, note)))
-                    .title("Pinned"),
+                ListSection::new(
+                    pinned
+                        .into_iter()
+                        .map(|note| Self::row(state, note, &folders)),
+                )
+                .title("Pinned"),
             );
             sections.push(
-                ListSection::new(others.into_iter().map(|note| Self::row(state, note)))
-                    .title("Notes"),
+                ListSection::new(
+                    others
+                        .into_iter()
+                        .map(|note| Self::row(state, note, &folders)),
+                )
+                .title("Notes"),
             );
         } else {
             sections.push(ListSection::new(
-                others.into_iter().map(|note| Self::row(state, note)),
+                others
+                    .into_iter()
+                    .map(|note| Self::row(state, note, &folders)),
             ));
         }
         VStack::new(list![

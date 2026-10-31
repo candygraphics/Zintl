@@ -5,6 +5,7 @@ use zintl_ui::list;
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
 
+use crate::menu::MenuActions;
 use crate::{
     Alert, ColorPanel, Context, Element, EventKind, FileDialog, Rect, RenderNode, Sidebar,
     TitleBar, Toolbar, WindowStyle,
@@ -146,8 +147,12 @@ impl View for Window {
             .iter()
             .map(|attachment| attachment.element(cx))
             .collect::<Vec<_>>();
+        let mut actions = MenuActions::default();
         let mut element = Element::node(RenderNode::Window {
-            sidebar: self.sidebar.as_ref().map(|sidebar| sidebar.state(cx)),
+            sidebar: self
+                .sidebar
+                .as_ref()
+                .map(|sidebar| sidebar.state(cx, &mut actions)),
             bounds: self.bounds,
             title: self.title.clone(),
             title_bar: self.title_bar,
@@ -159,7 +164,7 @@ impl View for Window {
         .with_children([self.children.clone().into_element()])
         .with_children(attachments);
         if let Some(sidebar) = &self.sidebar {
-            element = sidebar.route(element);
+            element = actions.route(sidebar.route(element));
         }
         if let Some(toolbar) = &self.toolbar {
             element = toolbar.route(element);

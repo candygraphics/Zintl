@@ -465,6 +465,8 @@ impl Native for core::Sidebar {
                             id: item.id.clone(),
                             title: item.title.clone(),
                             system_image: item.system_image.clone(),
+                            badge: item.badge.clone(),
+                            menu: item.menu.iter().map(Native::native).collect(),
                         })
                         .collect(),
                 })

@@ -319,7 +319,7 @@ impl Default for ScrollAxes {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Sidebar {
     pub sections: Vec<SidebarSection>,
     pub selected_id: Option<String>,
@@ -333,17 +333,21 @@ pub struct SidebarSearch {
     pub placeholder: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SidebarSection {
     pub title: Option<String>,
     pub items: Vec<SidebarItem>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SidebarItem {
     pub id: String,
     pub title: String,
     pub system_image: Option<String>,
+    /// Trailing text such as a count.
+    pub badge: Option<String>,
+    /// The item's context menu; selections report `Event::MenuItemSelected` on the window.
+    pub menu: Vec<CommandItem>,
 }
 
 /// How the title bar relates to the window content.

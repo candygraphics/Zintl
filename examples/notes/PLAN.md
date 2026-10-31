@@ -39,7 +39,8 @@ Out of scope: iCloud sync, sharing/collaboration, locking, drawing, scanning.
    Needs D1–D3. Done: the toolbar has Delete, New Note, and a search field
    that searches every note; a new note puts the cursor in the editor.
 6. **Sidebar polish** — counts, folder editing, nested folders, drag and drop.
-   Needs E1–E4.
+   Needs E1–E4. Done: note counts, New Folder (⇧⌘N), Rename and Delete Folder
+   from the folder menu, and "Move to" on note rows instead of drag and drop.
 7. **Persistence and lifecycle** — JSON files under Application Support,
    debounced saving, save on quit, window frame restoration. Needs F1–F3.
    Done except window frames: `notes.json` in Application Support
@@ -130,8 +131,8 @@ Found while writing phase 1 (see `TODO` comments in `src/main.rs`).
 
 ### E. Sidebar
 
-- **E1** Trailing badge text on `SidebarItem` (note counts).
-- **E2** Per-item context menus and inline renaming.
+- **E1 (done)** Trailing badge text on `SidebarItem` (note counts).
+- **E2 (done; renaming uses a panel, not inline editing)** Per-item context menus and inline renaming.
 - **E3** Nested items with disclosure.
 - **E4** Drag and drop: drag sources on list rows, drop targets on sidebar
   items, with typed payloads.

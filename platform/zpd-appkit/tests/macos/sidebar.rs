@@ -32,11 +32,15 @@ impl SidebarChecks {
                         id: "home".into(),
                         title: "Home".into(),
                         system_image: Some("house".into()),
+                        badge: None,
+                        menu: Vec::new(),
                     },
                     SidebarItem {
                         id: "settings".into(),
                         title: "Settings".into(),
                         system_image: None,
+                        badge: None,
+                        menu: Vec::new(),
                     },
                 ],
             }],
@@ -236,6 +240,8 @@ fn main() {
             id: format!("item-{index}"),
             title: format!("Item {index}"),
             system_image: None,
+            badge: None,
+            menu: Vec::new(),
         }));
     window.set_sidebar(&long, |_| {}).unwrap();
     SidebarChecks::with_window(|window| {

@@ -588,6 +588,8 @@ fn main() {
                     id: (*id).into(),
                     title: (*id).into(),
                     system_image: None,
+                    badge: None,
+                    menu: Vec::new(),
                 })
                 .collect(),
         }],

@@ -103,3 +103,9 @@ when Windows ends the session; handle `WM_QUERYENDSESSION`/`WM_ENDSESSION`
 backend. Show toolbar items in a `CommandBar` in the title bar area, the search
 item as an `AutoSuggestBox`, and save the window placement in app settings.
 `TextEditor::focus_on` should call `Focus(FocusState::Programmatic)`.
+
+## Sidebar badges and menus on Windows
+
+`SidebarItem::badge` and `SidebarItem::context_menu` are ignored by the WinUI 3
+navigation view. Use `NavigationViewItem.InfoBadge` and a `ContextFlyout` per
+item that reports `Event::MenuItemSelected` on the window route.

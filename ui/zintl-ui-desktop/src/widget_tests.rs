@@ -1124,3 +1124,35 @@ fn toolbar_describes_items_and_routes_clicks_and_search() {
     assert_eq!(clicks.count(), 1);
     assert_eq!(app.get(query), "roux");
 }
+
+#[test]
+fn sidebar_items_show_badges_and_route_their_menus() {
+    // Verifies item badges render and item menu selections run actions through the window.
+    let renames = Calls::default();
+    let rename = renames.clone();
+    let (mut app, ()) = Harness::mount(
+        |_| (),
+        move |()| {
+            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Folders").sidebar(Sidebar::new([
+                SidebarSection::new([SidebarItem::new("ideas", "Ideas")
+                    .badge("3")
+                    .context_menu([MenuItem::new("Rename").on_select(rename.action())])]),
+            ]))
+        },
+    );
+
+    let RenderNode::Window {
+        sidebar: Some(sidebar),
+        ..
+    } = &app.render_tree().value
+    else {
+        panic!("expected a window with a sidebar");
+    };
+    let item = &sidebar.sections[0].items[0];
+    assert_eq!(item.badge.as_deref(), Some("3"));
+    assert_eq!(item.menu.len(), 1);
+    let id = item.menu[0].id.clone().expect("custom items have IDs");
+
+    assert!(app.dispatch_at(&[0], Event::MenuItemSelected { id }));
+    assert_eq!(renames.count(), 1);
+}

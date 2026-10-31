@@ -7,7 +7,7 @@ use super::callback;
 use super::layout::LayoutAttribute;
 use super::sidebar_table::{SidebarTable, constrain};
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Sidebar {
     pub sections: Vec<SidebarSection>,
     pub selected_id: Option<String>,
@@ -19,16 +19,20 @@ pub struct SidebarSearch {
     pub value: String,
     pub placeholder: Option<String>,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SidebarSection {
     pub title: Option<String>,
     pub items: Vec<SidebarItem>,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SidebarItem {
     pub id: String,
     pub title: String,
     pub system_image: Option<String>,
+    /// Trailing text such as a count.
+    pub badge: Option<String>,
+    /// The item's context menu; selections are reported from the window.
+    pub menu: Vec<super::CommandItem>,
 }
 
 pub(crate) struct SidebarNative {
@@ -178,7 +182,8 @@ where
     let sidebar_controller_actor = tree
         .insert_child(&root, sidebar_controller.clone())
         .map_err(UiError::from)?;
-    let table = super::sidebar_table::install(&sidebar_controller_actor, sidebar, callback_fn)?;
+    let table =
+        super::sidebar_table::install(window, &sidebar_controller_actor, sidebar, callback_fn)?;
     let search = sidebar
         .search
         .as_ref()
