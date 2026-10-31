@@ -119,6 +119,11 @@ impl View for NotesApp {
                         MenuItem::standard(StandardAction::BodyStyle),
                         MenuItem::standard(StandardAction::MonospacedStyle),
                         MenuItem::separator(),
+                        MenuItem::standard(StandardAction::BulletedList),
+                        MenuItem::standard(StandardAction::DashedList),
+                        MenuItem::standard(StandardAction::NumberedList),
+                        MenuItem::standard(StandardAction::Checklist),
+                        MenuItem::separator(),
                         MenuItem::standard(StandardAction::Bold),
                         MenuItem::standard(StandardAction::Italic),
                         MenuItem::standard(StandardAction::Underline),
@@ -225,7 +230,6 @@ impl View for NoteList {
 }
 
 /// The detail column: the selected note's text.
-// TODO: Lists and checklists; see PLAN.md (C3).
 #[derive(Clone)]
 struct Editor {
     state: State,

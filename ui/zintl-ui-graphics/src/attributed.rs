@@ -1,6 +1,6 @@
 //! Rich text as plain text with styled runs and per-paragraph styles.
 
-/// The role of a paragraph, which sets its base font.
+/// The role of a paragraph, which sets its base font or list marker.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum ParagraphStyle {
     Title,
@@ -9,20 +9,30 @@ pub enum ParagraphStyle {
     #[default]
     Body,
     Monospaced,
+    /// A list item marked with a bullet.
+    Bulleted,
+    /// A list item marked with a dash.
+    Dashed,
+    /// A list item numbered within its run of consecutive numbered items.
+    Numbered,
+    /// A list item with a check circle.
+    Checklist {
+        done: bool,
+    },
 }
 
 impl ParagraphStyle {
-    pub const ALL: [Self; 5] = [
-        Self::Title,
-        Self::Heading,
-        Self::Subheading,
-        Self::Body,
-        Self::Monospaced,
-    ];
-
     /// Returns whether the base font is already bold, so a bold span adds nothing.
     pub const fn is_bold(self) -> bool {
         matches!(self, Self::Title | Self::Heading | Self::Subheading)
+    }
+
+    /// Returns whether the paragraph is a list item with a marker.
+    pub const fn is_list(self) -> bool {
+        matches!(
+            self,
+            Self::Bulleted | Self::Dashed | Self::Numbered | Self::Checklist { .. }
+        )
     }
 }
 
@@ -175,6 +185,14 @@ mod tests {
             bold: true,
             ..SpanStyle::default()
         }
+    }
+
+    // Only the four list styles are list items.
+    #[test]
+    fn list_styles_are_list_items() {
+        assert!(ParagraphStyle::Checklist { done: true }.is_list());
+        assert!(ParagraphStyle::Numbered.is_list());
+        assert!(!ParagraphStyle::Title.is_list());
     }
 
     // Plain text has one body paragraph per line and a single default run.

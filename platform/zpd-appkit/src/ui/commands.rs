@@ -96,6 +96,10 @@ pub enum CommandRole {
     SubheadingStyle,
     BodyStyle,
     MonospacedStyle,
+    BulletedList,
+    DashedList,
+    NumberedList,
+    Checklist,
     ToggleSidebar,
     ToggleFullScreen,
     Minimize,
@@ -139,7 +143,11 @@ impl CommandRole {
             | Self::HeadingStyle
             | Self::SubheadingStyle
             | Self::BodyStyle
-            | Self::MonospacedStyle => zpd_objc::sel!("zintlApplyParagraphStyle:"),
+            | Self::MonospacedStyle
+            | Self::BulletedList
+            | Self::DashedList
+            | Self::NumberedList
+            | Self::Checklist => zpd_objc::sel!("zintlApplyParagraphStyle:"),
             Self::ToggleSidebar => zpd_objc::sel!("toggleSidebar:"),
             Self::ToggleFullScreen => zpd_objc::sel!("toggleFullScreen:"),
             Self::Minimize => zpd_objc::sel!("performMiniaturize:"),
@@ -166,6 +174,10 @@ impl CommandRole {
             Self::SubheadingStyle => super::RichParagraph::Subheading.tag(),
             Self::BodyStyle => super::RichParagraph::Body.tag(),
             Self::MonospacedStyle => super::RichParagraph::Monospaced.tag(),
+            Self::BulletedList => super::RichParagraph::Bulleted.tag(),
+            Self::DashedList => super::RichParagraph::Dashed.tag(),
+            Self::NumberedList => super::RichParagraph::Numbered.tag(),
+            Self::Checklist => super::RichParagraph::Checklist { done: false }.tag(),
             _ => 0,
         }
     }

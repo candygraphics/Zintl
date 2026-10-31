@@ -4,7 +4,7 @@ use crate::graphics::Font;
 use crate::native;
 use zpd_objc::{Id, Strong};
 
-/// The role of a paragraph, which sets its base font.
+/// The role of a paragraph, which sets its base font or list marker.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum RichParagraph {
     Title,
@@ -13,39 +13,64 @@ pub enum RichParagraph {
     #[default]
     Body,
     Monospaced,
+    Bulleted,
+    Dashed,
+    /// Numbered within its run of consecutive numbered paragraphs.
+    Numbered,
+    Checklist {
+        done: bool,
+    },
 }
 
 impl RichParagraph {
-    const ALL: [Self; 5] = [
-        Self::Title,
-        Self::Heading,
-        Self::Subheading,
-        Self::Body,
-        Self::Monospaced,
-    ];
+    /// Space before list text, where the marker is drawn.
+    pub(crate) const LIST_INDENT: f64 = 24.0;
 
     /// Returns the value stored in the paragraph attribute and menu item tags.
+    ///
+    /// Checklists share one tag; their state is stored separately.
     pub fn tag(self) -> native::Integer {
-        Self::ALL
-            .iter()
-            .position(|style| *style == self)
-            .unwrap_or(3) as native::Integer
+        match self {
+            Self::Title => 0,
+            Self::Heading => 1,
+            Self::Subheading => 2,
+            Self::Body => 3,
+            Self::Monospaced => 4,
+            Self::Bulleted => 5,
+            Self::Dashed => 6,
+            Self::Numbered => 7,
+            Self::Checklist { .. } => 8,
+        }
     }
 
+    /// Returns the style for `tag`; a checklist starts unchecked.
     pub fn from_tag(tag: native::Integer) -> Option<Self> {
-        usize::try_from(tag)
-            .ok()
-            .and_then(|tag| Self::ALL.get(tag).copied())
+        Some(match tag {
+            0 => Self::Title,
+            1 => Self::Heading,
+            2 => Self::Subheading,
+            3 => Self::Body,
+            4 => Self::Monospaced,
+            5 => Self::Bulleted,
+            6 => Self::Dashed,
+            7 => Self::Numbered,
+            8 => Self::Checklist { done: false },
+            _ => return None,
+        })
+    }
+
+    pub fn is_list(self) -> bool {
+        self.tag() >= 5
     }
 
     /// Returns the base point size and CSS weight.
-    fn base(self) -> (f64, u16) {
+    pub(crate) fn base(self) -> (f64, u16) {
         match self {
             Self::Title => (22.0, 700),
             Self::Heading => (17.0, 700),
             Self::Subheading => (14.0, 600),
-            Self::Body => (14.0, 400),
             Self::Monospaced => (13.0, 400),
+            _ => (14.0, 400),
         }
     }
 
@@ -79,6 +104,8 @@ pub(crate) struct RichText;
 impl RichText {
     /// Marks the paragraph style, since a font alone cannot tell a bold body from a heading.
     const PARAGRAPH_KEY: &str = "ZintlParagraphStyle";
+    /// Present with value 1 on checked checklist paragraphs.
+    const CHECKED_KEY: &str = "ZintlChecked";
     const FONT_ITALIC_TRAIT: u32 = 1 << 0;
     const FONT_BOLD_TRAIT: u32 = 1 << 1;
     const FONT_MONOSPACE_TRAIT: u32 = 1 << 10;
@@ -123,6 +150,16 @@ impl RichText {
             );
             let number = |value: native::Integer| zpd_objc::msg_send!(zpd_objc::class!("NSNumber"), zpd_objc::sel!("numberWithInteger:"), ((value): native::Integer) => Id);
             set(Self::PARAGRAPH_KEY, number(style.paragraph.tag()));
+            if style.paragraph == (RichParagraph::Checklist { done: true }) {
+                set(Self::CHECKED_KEY, number(1));
+            }
+            if style.paragraph.is_list() {
+                // List text starts after the marker gutter on every line.
+                let paragraph = native::alloc_init(zpd_objc::class!("NSMutableParagraphStyle"));
+                zpd_objc::msg_send!(paragraph.as_ptr(), zpd_objc::sel!("setFirstLineHeadIndent:"), ((RichParagraph::LIST_INDENT): f64) => ());
+                zpd_objc::msg_send!(paragraph.as_ptr(), zpd_objc::sel!("setHeadIndent:"), ((RichParagraph::LIST_INDENT): f64) => ());
+                set("NSParagraphStyle", paragraph.as_ptr());
+            }
             if style.underline {
                 set("NSUnderline", number(1));
             }
@@ -208,10 +245,16 @@ impl RichText {
                     .unwrap_or(0)
             };
             let paragraph = get(Self::PARAGRAPH_KEY);
-            let paragraph = if paragraph.is_null() {
-                RichParagraph::Body
-            } else {
-                RichParagraph::from_tag(integer(paragraph)).unwrap_or_default()
+            // Text without the attribute, such as pasted text, is body text.
+            let paragraph = match (!paragraph.is_null())
+                .then(|| RichParagraph::from_tag(integer(paragraph)))
+                .flatten()
+            {
+                Some(RichParagraph::Checklist { .. }) => RichParagraph::Checklist {
+                    done: integer(get(Self::CHECKED_KEY)) != 0,
+                },
+                Some(paragraph) => paragraph,
+                None => RichParagraph::Body,
             };
             let font = get("NSFont");
             let traits = if font.is_null() {

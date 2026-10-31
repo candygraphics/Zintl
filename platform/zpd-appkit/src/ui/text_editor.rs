@@ -24,9 +24,19 @@ unsafe extern "C" fn apply_paragraph_style(object: Id, _: zpd_objc::Sel, sender:
             } else {
                 zpd_objc::msg_send!(sender, zpd_objc::sel!("tag"), () => native::Integer)
             };
-            if let Some(paragraph) = RichParagraph::from_tag(tag) {
-                TextEditor::restyle_selection(object, paragraph);
-            }
+            let Some(target) = RichParagraph::from_tag(tag) else {
+                return;
+            };
+            // A list style on a paragraph that already has it turns the list off.
+            let current = TextEditor::paragraph_at_selection(object);
+            let paragraph = if target.is_list() && current.tag() == target.tag() {
+                RichParagraph::Body
+            } else {
+                target
+            };
+            let selection =
+                zpd_objc::msg_send!(object, zpd_objc::sel!("selectedRange"), () => native::Range);
+            TextEditor::restyle(object, selection, |_| paragraph, true);
         }
     });
 }
@@ -70,6 +80,9 @@ impl TextEditor {
                 methods {
                     "zintlApplyParagraphStyle:": "v@:@" => apply_paragraph_style,
                     "validateMenuItem:": "B@:@" => validate_menu_item,
+                    "drawViewBackgroundInRect:": "v@:{CGRect={CGPoint=dd}{CGSize=dd}}" => super::text_lists::draw_background,
+                    "mouseDown:": "v@:@" => super::text_lists::mouse_down,
+                    "insertNewline:": "v@:@" => super::text_lists::insert_newline,
                 }
             }) as usize
         }) as zpd_objc::Class
@@ -101,6 +114,8 @@ impl TextEditor {
             let container =
                 zpd_objc::msg_send!(text_view, zpd_objc::sel!("textContainer"), () => Id);
             zpd_objc::msg_send!(container, zpd_objc::sel!("setWidthTracksTextView:"), ((true): bool) => ());
+            // List markers are positioned with TextKit 1 line fragments.
+            zpd_objc::msg_send!(text_view, zpd_objc::sel!("layoutManager"), () => Id);
             zpd_objc::msg_send!(text_view, zpd_objc::sel!("setRichText:"), ((false): bool) => ());
             zpd_objc::msg_send!(text_view, zpd_objc::sel!("setAllowsUndo:"), ((true): bool) => ());
             zpd_objc::msg_send!(text_view, zpd_objc::sel!("setUsesFindBar:"), ((true): bool) => ());
@@ -122,6 +137,8 @@ impl TextEditor {
                     let text =
                         zpd_objc::msg_send!(notification, zpd_objc::sel!("object"), () => Id);
                     if zpd_objc::msg_send!(text, zpd_objc::sel!("isRichText"), () => bool) {
+                        // List numbers below the edit may change, so markers redraw everywhere.
+                        zpd_objc::msg_send!(text, zpd_objc::sel!("setNeedsDisplay:"), ((true): bool) => ());
                         let storage =
                             zpd_objc::msg_send!(text, zpd_objc::sel!("textStorage"), () => Id);
                         WindowEventKind::RichTextChanged {
@@ -147,7 +164,7 @@ impl TextEditor {
     ///
     /// # Safety
     /// `text` must be a live text view created by [`TextEditor::new`].
-    unsafe fn paragraph_at_selection(text: Id) -> RichParagraph {
+    pub(crate) unsafe fn paragraph_at_selection(text: Id) -> RichParagraph {
         // SAFETY: Guaranteed by the caller; indexes are checked against the length.
         unsafe {
             let storage = zpd_objc::msg_send!(text, zpd_objc::sel!("textStorage"), () => Id);
@@ -164,30 +181,43 @@ impl TextEditor {
         }
     }
 
-    /// Sets the paragraph style of every paragraph the selection touches.
+    /// Maps the paragraph style of every paragraph that `range` touches.
+    ///
+    /// The change goes through `shouldChangeTextInRange:replacementString:`, so
+    /// it is undoable and reported like typing. With `typing`, text typed next
+    /// uses the new style, which also styles an empty last line.
     ///
     /// # Safety
     /// `text` must be a live rich text view created by [`TextEditor::new`].
-    unsafe fn restyle_selection(text: Id, paragraph: RichParagraph) {
+    pub(crate) unsafe fn restyle(
+        text: Id,
+        range: native::Range,
+        map: impl Fn(RichParagraph) -> RichParagraph,
+        typing: bool,
+    ) {
         // SAFETY: Guaranteed by the caller; ranges come from the text view's own string.
         unsafe {
             let storage = zpd_objc::msg_send!(text, zpd_objc::sel!("textStorage"), () => Id);
             let string = zpd_objc::msg_send!(text, zpd_objc::sel!("string"), () => Id);
             let selection =
                 zpd_objc::msg_send!(text, zpd_objc::sel!("selectedRange"), () => native::Range);
-            let paragraphs = zpd_objc::msg_send!(string, zpd_objc::sel!("paragraphRangeForRange:"), ((selection): native::Range) => native::Range);
+            let paragraphs = zpd_objc::msg_send!(string, zpd_objc::sel!("paragraphRangeForRange:"), ((range): native::Range) => native::Range);
+            let mut last = map(Self::paragraph_at_selection(text));
             if paragraphs.length > 0 {
                 let existing = zpd_objc::msg_send!(storage, zpd_objc::sel!("attributedSubstringFromRange:"), ((paragraphs): native::Range) => Id);
                 let runs = RichText::runs(existing)
                     .into_iter()
                     .map(|run| RichRun {
                         style: RichStyle {
-                            paragraph,
+                            paragraph: map(run.style.paragraph),
                             ..run.style
                         },
                         ..run
                     })
                     .collect::<Vec<_>>();
+                if let Some(run) = runs.last() {
+                    last = run.style.paragraph;
+                }
                 let restyled = RichText::attributed_string(&runs);
                 if zpd_objc::msg_send!(text, zpd_objc::sel!("shouldChangeTextInRange:replacementString:"), ((paragraphs): native::Range, (zpd_objc::NIL): Id) => bool)
                 {
@@ -196,12 +226,13 @@ impl TextEditor {
                     zpd_objc::msg_send!(text, zpd_objc::sel!("setSelectedRange:"), ((selection): native::Range) => ());
                 }
             }
-            // Typing continues in the new style, including on an empty line.
-            let typing = RichText::attributes(&RichStyle {
-                paragraph,
-                ..RichStyle::default()
-            });
-            zpd_objc::msg_send!(text, zpd_objc::sel!("setTypingAttributes:"), ((typing.as_ptr()): Id) => ());
+            if typing {
+                let attributes = RichText::attributes(&RichStyle {
+                    paragraph: last,
+                    ..RichStyle::default()
+                });
+                zpd_objc::msg_send!(text, zpd_objc::sel!("setTypingAttributes:"), ((attributes.as_ptr()): Id) => ());
+            }
         }
     }
 

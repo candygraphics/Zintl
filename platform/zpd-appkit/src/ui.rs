@@ -18,6 +18,7 @@ mod sidebar_toolbar;
 mod tab_view;
 mod text_editor;
 mod text_field;
+mod text_lists;
 mod view;
 mod window;
 

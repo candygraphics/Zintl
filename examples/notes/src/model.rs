@@ -72,18 +72,43 @@ impl Library {
             ],
             ..Self::default()
         };
-        for (folder, body, pinned) in [
+        let unchecked = ParagraphStyle::Checklist { done: false };
+        let samples: [(&str, &str, &[ParagraphStyle], bool); 3] = [
             (
                 "notes",
                 "Welcome to Notes\nThis app is built with zintl-ui-desktop.",
+                &[ParagraphStyle::Title],
                 true,
             ),
-            ("notes", "Groceries\nMilk, eggs, bread", false),
-            ("recipes", "Curry\nOnion, carrot, potato, roux", false),
-        ] {
+            (
+                "notes",
+                "Groceries\nMilk\nEggs\nBread",
+                &[
+                    ParagraphStyle::Title,
+                    unchecked,
+                    ParagraphStyle::Checklist { done: true },
+                    unchecked,
+                ],
+                false,
+            ),
+            (
+                "recipes",
+                "Curry\nOnion, carrot, potato, roux\nFry the onion\nAdd the roux",
+                &[
+                    ParagraphStyle::Title,
+                    ParagraphStyle::Bulleted,
+                    ParagraphStyle::Numbered,
+                    ParagraphStyle::Numbered,
+                ],
+                false,
+            ),
+        ];
+        for (folder, body, paragraphs, pinned) in samples {
             let id = library.create(folder);
             let mut body = AttributedText::from(body);
-            body.set_paragraph(0, ParagraphStyle::Title);
+            for (index, paragraph) in paragraphs.iter().enumerate() {
+                body.set_paragraph(index, *paragraph);
+            }
             library.set_body(id, &body);
             library.set_pinned(id, pinned);
         }

@@ -117,7 +117,10 @@ clears the editor's undo history, since it describes the replaced text.
 
 `bind_rich` edits an `AttributedText`: plain text with styled runs (bold,
 italic, underline, strikethrough, monospace, link) and one `ParagraphStyle`
-per line (Title, Heading, Subheading, Body, Monospaced). Formatting comes from
+per line (Title, Heading, Subheading, Body, Monospaced, or a bulleted, dashed,
+numbered, or checklist item). List markers are drawn beside the text and are
+not part of it. Clicking a checklist circle toggles it; Return continues a
+list, ends it on an empty item, and returns to body text after a heading. Formatting comes from
 standard actions that the focused editor performs, so it is undoable and the
 menu shows the current paragraph style with a check mark.
 

@@ -392,6 +392,79 @@ fn main() {
         zpd_objc::msg_send!(item, zpd_objc::sel!("release"), () => ());
     }
 
+    // Verifies Return continues a checklist unchecked, then ends it on an empty item.
+    let list = TextEditor::new(&application).unwrap();
+    content.add_subview(&list).unwrap();
+    list.set_rich(true).unwrap();
+    list.set_rich_text(&[RichRun {
+        text: "Milk".into(),
+        style: RichStyle {
+            paragraph: RichParagraph::Checklist { done: true },
+            ..RichStyle::default()
+        },
+    }])
+    .unwrap();
+    take();
+    // SAFETY: The editor's document view is its live text view; the caret is at the end.
+    unsafe {
+        let text = zpd_objc::msg_send!(Checks::native(&list), zpd_objc::sel!("documentView"), () => Id);
+        zpd_objc::msg_send!(text, zpd_objc::sel!("insertNewline:"), ((zpd_objc::NIL): Id) => ());
+        zpd_objc::msg_send!(text, zpd_objc::sel!("insertText:"), ((ns_string("Eggs")): Id) => ());
+    }
+    let paragraphs = |runs: Vec<RichRun>| {
+        runs.into_iter()
+            .map(|run| (run.text, run.style.paragraph))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        paragraphs(list.rich_text().unwrap()),
+        [
+            ("Milk\n".to_owned(), RichParagraph::Checklist { done: true }),
+            ("Eggs".to_owned(), RichParagraph::Checklist { done: false }),
+        ]
+    );
+    take();
+    // SAFETY: The live text view handles Return and paragraph actions at the caret.
+    unsafe {
+        let text = zpd_objc::msg_send!(Checks::native(&list), zpd_objc::sel!("documentView"), () => Id);
+        // Return on the empty item ends the list instead of adding a line.
+        zpd_objc::msg_send!(text, zpd_objc::sel!("insertNewline:"), ((zpd_objc::NIL): Id) => ());
+        zpd_objc::msg_send!(text, zpd_objc::sel!("insertNewline:"), ((zpd_objc::NIL): Id) => ());
+        zpd_objc::msg_send!(text, zpd_objc::sel!("insertText:"), ((ns_string("Note")): Id) => ());
+        // Return after a title continues in body text.
+        let item = zpd_objc::msg_send!(zpd_objc::msg_send!(zpd_objc::class!("NSMenuItem"), zpd_objc::sel!("alloc"), () => Id), zpd_objc::sel!("initWithTitle:action:keyEquivalent:"), ((ns_string("Title")): Id, (zpd_objc::sel!("zintlApplyParagraphStyle:")): zpd_objc::Sel, (ns_string("")): Id) => Id);
+        zpd_objc::msg_send!(item, zpd_objc::sel!("setTag:"), ((RichParagraph::Title.tag()): i64) => ());
+        zpd_objc::msg_send!(text, zpd_objc::sel!("zintlApplyParagraphStyle:"), ((item): Id) => ());
+        zpd_objc::msg_send!(text, zpd_objc::sel!("insertNewline:"), ((zpd_objc::NIL): Id) => ());
+        zpd_objc::msg_send!(text, zpd_objc::sel!("insertText:"), ((ns_string("Body")): Id) => ());
+        zpd_objc::msg_send!(item, zpd_objc::sel!("release"), () => ());
+    }
+    assert_eq!(
+        paragraphs(list.rich_text().unwrap()),
+        [
+            ("Milk\n".to_owned(), RichParagraph::Checklist { done: true }),
+            ("Eggs\n".to_owned(), RichParagraph::Checklist { done: false }),
+            ("Note\n".to_owned(), RichParagraph::Title),
+            ("Body".to_owned(), RichParagraph::Body),
+        ]
+    );
+    // A list action on a paragraph that already has it turns the list off.
+    // SAFETY: The live text view performs the action on the caret paragraph.
+    unsafe {
+        let text = zpd_objc::msg_send!(Checks::native(&list), zpd_objc::sel!("documentView"), () => Id);
+        let item = zpd_objc::msg_send!(zpd_objc::msg_send!(zpd_objc::class!("NSMenuItem"), zpd_objc::sel!("alloc"), () => Id), zpd_objc::sel!("initWithTitle:action:keyEquivalent:"), ((ns_string("Checklist")): Id, (zpd_objc::sel!("zintlApplyParagraphStyle:")): zpd_objc::Sel, (ns_string("")): Id) => Id);
+        zpd_objc::msg_send!(item, zpd_objc::sel!("setTag:"), ((RichParagraph::Checklist { done: false }.tag()): i64) => ());
+        for _ in 0..2 {
+            zpd_objc::msg_send!(text, zpd_objc::sel!("zintlApplyParagraphStyle:"), ((item): Id) => ());
+        }
+        zpd_objc::msg_send!(item, zpd_objc::sel!("release"), () => ());
+    }
+    assert_eq!(
+        list.rich_text().unwrap().last().map(|run| run.style.paragraph),
+        Some(RichParagraph::Body)
+    );
+    take();
+
     // Verifies the editor reports user edits, replaces text silently, and drops stale undo history.
     let editor = TextEditor::new(&application).unwrap();
     content.add_subview(&editor).unwrap();
@@ -599,6 +672,11 @@ fn main() {
         (CommandRole::FindNext, zpd_objc::sel!("performTextFinderAction:"), 2),
         (CommandRole::Bold, zpd_objc::sel!("addFontTrait:"), 2),
         (CommandRole::Underline, zpd_objc::sel!("underline:"), 0),
+        (
+            CommandRole::Checklist,
+            zpd_objc::sel!("zintlApplyParagraphStyle:"),
+            8,
+        ),
     ];
     let mut items = vec![copy];
     items.extend(roles.iter().map(|(role, _, _)| {

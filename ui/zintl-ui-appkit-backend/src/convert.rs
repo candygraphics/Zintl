@@ -91,6 +91,10 @@ same_variants!(core::CommandRole => ui::CommandRole {
     SubheadingStyle,
     BodyStyle,
     MonospacedStyle,
+    BulletedList,
+    DashedList,
+    NumberedList,
+    Checklist,
     ToggleSidebar,
     ToggleFullScreen,
     Minimize,
@@ -309,13 +313,23 @@ impl Native for core::TextColor {
     }
 }
 
-same_variants!(shared::ParagraphStyle => ui::RichParagraph {
-    Title,
-    Heading,
-    Subheading,
-    Body,
-    Monospaced,
-});
+impl Native for shared::ParagraphStyle {
+    type Output = ui::RichParagraph;
+
+    fn native(&self) -> ui::RichParagraph {
+        match *self {
+            Self::Title => ui::RichParagraph::Title,
+            Self::Heading => ui::RichParagraph::Heading,
+            Self::Subheading => ui::RichParagraph::Subheading,
+            Self::Body => ui::RichParagraph::Body,
+            Self::Monospaced => ui::RichParagraph::Monospaced,
+            Self::Bulleted => ui::RichParagraph::Bulleted,
+            Self::Dashed => ui::RichParagraph::Dashed,
+            Self::Numbered => ui::RichParagraph::Numbered,
+            Self::Checklist { done } => ui::RichParagraph::Checklist { done },
+        }
+    }
+}
 
 impl Shared for ui::RichParagraph {
     type Output = shared::ParagraphStyle;
@@ -327,6 +341,10 @@ impl Shared for ui::RichParagraph {
             Self::Subheading => shared::ParagraphStyle::Subheading,
             Self::Body => shared::ParagraphStyle::Body,
             Self::Monospaced => shared::ParagraphStyle::Monospaced,
+            Self::Bulleted => shared::ParagraphStyle::Bulleted,
+            Self::Dashed => shared::ParagraphStyle::Dashed,
+            Self::Numbered => shared::ParagraphStyle::Numbered,
+            Self::Checklist { done } => shared::ParagraphStyle::Checklist { done },
         }
     }
 }
@@ -576,6 +594,22 @@ mod tests {
         assert_eq!(
             runs.last().unwrap().style.paragraph,
             ui::RichParagraph::Monospaced
+        );
+        assert_eq!(runs.shared(), text);
+    }
+
+    // Checklist state and list styles survive the trip to native runs and back.
+    #[test]
+    fn list_paragraphs_round_trip() {
+        let mut text = shared::AttributedText::from("Milk\nEggs\nStep");
+        text.set_paragraph(0, shared::ParagraphStyle::Checklist { done: true });
+        text.set_paragraph(1, shared::ParagraphStyle::Checklist { done: false });
+        text.set_paragraph(2, shared::ParagraphStyle::Numbered);
+
+        let runs = text.native();
+        assert_eq!(
+            runs[0].style.paragraph,
+            ui::RichParagraph::Checklist { done: true }
         );
         assert_eq!(runs.shared(), text);
     }

@@ -33,9 +33,8 @@ Out of scope: iCloud sync, sharing/collaboration, locking, drawing, scanning.
 3. **List** — native selectable list with sections, keyboard navigation, and
    row context menus. Needs B1–B3. B1 is done.
 4. **Editing** — live autosave, rich text editor, Format menu, checklists.
-   Needs C1–C5. C1, C2, and C5 are done, and C3 and C4 are done except
-   lists and checklists: notes are `AttributedText`, and the Format menu sets
-   Title/Heading/Subheading/Body/Monospaced and Bold/Italic/Underline.
+   Needs C1–C5. All done: notes are `AttributedText`, and the Format menu
+   sets paragraph styles, lists, checklists, and Bold/Italic/Underline.
 5. **Toolbar and search** — toolbar items, toolbar search field, focus control.
    Needs D1–D3.
 6. **Sidebar polish** — counts, folder editing, nested folders, drag and drop.
@@ -97,15 +96,14 @@ Found while writing phase 1 (see `TODO` comments in `src/main.rs`).
 - **C2 Growing multiline editor (done).** `TextEditor` wraps a scrolling
   `NSTextView` with undo and a find bar. Formerly: A multiline `TextField` shows one line and
   does not fill the column; it should be a scrolling `NSTextView`.
-- **C3 Rich text model (done except lists).** `AttributedText` with span styles
-  and paragraph styles; `TextEditor::bind_rich`. Remaining: bulleted, dashed,
-  and numbered lists and checklists, which need list markers in `NSTextView`.
-  Formerly: An `AttributedText` (runs with font, traits,
+- **C3 Rich text model (done).** `AttributedText` with span styles and
+  paragraph styles, including lists and checklists; `TextEditor::bind_rich`.
+  Not yet: nested lists, tables, attachments. Formerly: An `AttributedText` (runs with font, traits,
   paragraph style, lists, checklist items, links) bound to the editor, with a
   serialization the app can persist.
-- **C4 Formatting commands (done except lists).** Standard actions for the
-  paragraph styles and font traits, with undo and check marks. Remaining: a
-  checklist action (⇧⌘L) and returning to Body after a Title line. Formerly: Apply styles to the selection from menus and
+- **C4 Formatting commands (done).** Standard actions for paragraph styles,
+  lists (⇧⌘7/8/9), checklists (⇧⌘L), and font traits, with undo and check
+  marks. Not yet: "Mark as Checked" and moving checked items down. Formerly: Apply styles to the selection from menus and
   toolbar; standard actions for Bold, Italic, Underline, Strikethrough, and font
   panel through the responder chain; typing attributes; selection state for
   enabling and checking menu items.
