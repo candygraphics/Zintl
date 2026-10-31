@@ -5,7 +5,7 @@ use messageloop_dispatcherqueue::Sender;
 use zintl_ui::event::EventRouteId;
 use zintl_ui_backend_core::layout::{HostLayout, LayoutNative, LayoutSnapshot};
 use zintl_ui_backend_core::tree::ErrorSlot;
-use zintl_ui_backend_core::{BezelStyle, ButtonType, Color, Event, ViewKind};
+use zintl_ui_backend_core::{BezelStyle, ButtonType, Color, Event, ViewKind, graphics};
 use zintl_ui_layout::{LayoutStyle, Rect as LayoutRect, Size};
 use zpd_winui3::{
     AsElement, BoolProperty, Control, ControlEvent, ControlKind, NumberProperty, TextProperty,
@@ -180,6 +180,7 @@ impl NativeNode {
             restore: Cell::new(None),
         };
         native.apply(None, kind)?;
+        let editor = matches!(kind, ViewKind::TextEditor { .. });
         let sender = sender.clone();
         native.control.set_event_handler(move |event| {
             if let ControlEvent::SizeChanged { width, height } = event {
@@ -188,7 +189,7 @@ impl NativeNode {
                 }
                 return;
             }
-            if let (Some(route), Some(event)) = (route.get(), Self::event(event)) {
+            if let (Some(route), Some(event)) = (route.get(), Self::event(event, editor)) {
                 let _ = sender.send(Message::Event { route, event });
             }
         })?;
@@ -196,9 +197,14 @@ impl NativeNode {
     }
 
     /// Converts a routed control event; size changes are handled locally.
-    pub(super) fn event(event: ControlEvent) -> Option<Event> {
+    ///
+    /// A text editor's `TextBox` edits plain text, reported as body paragraphs.
+    pub(super) fn event(event: ControlEvent, editor: bool) -> Option<Event> {
         Some(match event {
             ControlEvent::Clicked => Event::Activated,
+            ControlEvent::TextChanged(value) if editor => Event::RichTextChanged {
+                text: graphics::AttributedText::from(value.as_str()),
+            },
             ControlEvent::TextChanged(value) => Event::TextChanged { value },
             ControlEvent::StateChanged(on) => Event::StateChanged { on },
             ControlEvent::ValueChanged(value) => Event::ValueChanged { value },
@@ -274,7 +280,7 @@ impl NativeNode {
                     )?;
                 }
             }
-            ViewKind::TextEditor { text, editable, .. } => {
+            ViewKind::TextEditor { text, .. } => {
                 // Only outside changes are written back, so typing keeps the caret.
                 // TODO: Edit rich text with a RichEditBox; see TODO.md.
                 if control.text(TextProperty::Text)? != text.text() {
@@ -283,8 +289,6 @@ impl NativeNode {
                 if old.is_none() {
                     control.set_bool(BoolProperty::Multiline, true)?;
                 }
-                // TODO: Apply the font and read-only state; see TODO.md.
-                let _ = editable;
             }
             ViewKind::Switch { on } => {
                 if control.bool(BoolProperty::Checked)? != *on || old.is_none() {

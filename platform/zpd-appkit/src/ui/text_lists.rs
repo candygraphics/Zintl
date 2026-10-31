@@ -188,11 +188,8 @@ pub(super) unsafe extern "C" fn draw_background(
         zpd_objc::msg_send_super!(object, zpd_objc::class!("NSTextView"), selector, ((rect): native::Rect) => ());
     }
     zpd_objc::abort_on_unwind(|| {
-        // SAFETY: The receiver is a live rich or plain text view using TextKit 1.
+        // SAFETY: The receiver is a live text view using TextKit 1.
         unsafe {
-            if !zpd_objc::msg_send!(object, zpd_objc::sel!("isRichText"), () => bool) {
-                return;
-            }
             for line in ListMarkers::lines(object, Some(rect)) {
                 ListMarkers::draw(object, &line);
             }
@@ -205,11 +202,6 @@ pub(super) unsafe extern "C" fn mouse_down(object: Id, selector: zpd_objc::Sel, 
     let handled = zpd_objc::abort_on_unwind(|| {
         // SAFETY: AppKit sends the live mouse event to the live text view.
         unsafe {
-            if !zpd_objc::msg_send!(object, zpd_objc::sel!("isRichText"), () => bool)
-                || !zpd_objc::msg_send!(object, zpd_objc::sel!("isEditable"), () => bool)
-            {
-                return false;
-            }
             let location =
                 zpd_objc::msg_send!(event, zpd_objc::sel!("locationInWindow"), () => native::Point);
             let point = zpd_objc::msg_send!(object, zpd_objc::sel!("convertPoint:fromView:"), ((location): native::Point, (zpd_objc::NIL): Id) => native::Point);
@@ -250,16 +242,7 @@ pub(super) unsafe extern "C" fn mouse_down(object: Id, selector: zpd_objc::Sel, 
 /// Continues lists on Return, ends them on an empty item, and returns to body
 /// text after a heading.
 pub(super) unsafe extern "C" fn insert_newline(object: Id, selector: zpd_objc::Sel, sender: Id) {
-    // SAFETY: AppKit sends this action to the live text view.
-    let rich = unsafe { zpd_objc::msg_send!(object, zpd_objc::sel!("isRichText"), () => bool) };
-    if !rich {
-        // SAFETY: NSTextView inserts the newline in plain text views.
-        unsafe {
-            zpd_objc::msg_send_super!(object, zpd_objc::class!("NSTextView"), selector, ((sender): Id) => ());
-        }
-        return;
-    }
-    // SAFETY: The receiver is a live rich text view; ranges come from its string.
+    // SAFETY: AppKit sends this action to the live text view; ranges come from its string.
     let (current, empty) = zpd_objc::abort_on_unwind(|| unsafe {
         let current = TextEditor::paragraph_at_selection(object);
         let string = zpd_objc::msg_send!(object, zpd_objc::sel!("string"), () => Id);

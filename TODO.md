@@ -78,15 +78,15 @@ selection or section headers. Use a WinUI `ListView` with grouped items,
 
 ## TextEditor on Windows
 
-`ViewKind::TextEditor` maps to a multiline `TextBox`, but its font and
-read-only state are not applied yet, and it does not fill the column with
-scrolling like `NSTextView`. Set `AcceptsReturn`, `TextWrapping::Wrap`,
-`IsReadOnly`, `FontSize`/`FontWeight`, and vertical scrolling.
+`ViewKind::TextEditor` maps to a multiline `TextBox`, but it does not fill the
+column with scrolling like `NSTextView`. Set `AcceptsReturn`,
+`TextWrapping::Wrap`, and vertical scrolling.
 
 ## Rich text on Windows
 
-`TextEditor::bind_rich` edits plain text on WinUI 3: the backend shows
-`AttributedText::text` in a `TextBox` and reports plain edits. Use a
+`TextEditor` edits plain text on WinUI 3: the backend shows
+`AttributedText::text` in a `TextBox` and reports edits as body paragraphs,
+which drops styles. Use a
 `RichEditBox`, map paragraph styles to character formats, and report
 `Event::RichTextChanged`. The paragraph style and font trait menu items are
 omitted from WinUI menus.

@@ -331,15 +331,33 @@ fn control_minimums_fit_winui_templates() {
 fn size_changes_stay_local_and_sidebar_events_are_routed() {
     // Verifies layout notifications never reach the Composer as user events.
     assert_eq!(
-        NativeNode::event(ControlEvent::SizeChanged {
-            width: 1.0,
-            height: 2.0
-        }),
+        NativeNode::event(
+            ControlEvent::SizeChanged {
+                width: 1.0,
+                height: 2.0
+            },
+            false
+        ),
         None
     );
     assert_eq!(
-        NativeNode::event(ControlEvent::NavigationSelected("home".into())),
+        NativeNode::event(ControlEvent::NavigationSelected("home".into()), false),
         Some(Event::SidebarSelectionChanged { id: "home".into() })
+    );
+}
+
+#[test]
+fn editor_text_changes_are_reported_as_rich_text() {
+    // Verifies a TextEditor's plain TextBox edits reach the rich binding as body text.
+    assert_eq!(
+        NativeNode::event(ControlEvent::TextChanged("Hi\nthere".into()), true),
+        Some(Event::RichTextChanged {
+            text: "Hi\nthere".into()
+        })
+    );
+    assert_eq!(
+        NativeNode::event(ControlEvent::TextChanged("Hi".into()), false),
+        Some(Event::TextChanged { value: "Hi".into() })
     );
 }
 

@@ -1,7 +1,6 @@
 use std::sync::OnceLock;
 
 use crate::actor::WindowEventKind;
-use crate::graphics::Font;
 use crate::native;
 use crate::runloop::Application;
 use zpd_objc::{Id, Strong};
@@ -41,7 +40,7 @@ unsafe extern "C" fn apply_paragraph_style(object: Id, _: zpd_objc::Sel, sender:
     });
 }
 
-/// Enables paragraph style items in rich editors and checks the current style.
+/// Enables paragraph style items and checks the current style.
 unsafe extern "C" fn validate_menu_item(object: Id, selector: zpd_objc::Sel, item: Id) -> bool {
     zpd_objc::abort_on_unwind(|| {
         // SAFETY: AppKit validates live menu items against the live text view.
@@ -58,15 +57,14 @@ unsafe extern "C" fn validate_menu_item(object: Id, selector: zpd_objc::Sel, ite
                 0
             };
             zpd_objc::msg_send!(item, zpd_objc::sel!("setState:"), ((state): native::Integer) => ());
-            zpd_objc::msg_send!(object, zpd_objc::sel!("isRichText"), () => bool)
-                && zpd_objc::msg_send!(object, zpd_objc::sel!("isEditable"), () => bool)
+            true
         }
     })
 }
 
 /// A scrolling, multiline `NSTextView` with undo and a find bar.
 ///
-/// In rich mode it reads and writes [`RichRun`]s and responds to
+/// It reads and writes [`RichRun`]s and responds to
 /// `zintlApplyParagraphStyle:`, whose sender's tag is a [`RichParagraph`].
 pub struct TextEditor {
     view: ViewActor,
@@ -116,7 +114,9 @@ impl TextEditor {
             zpd_objc::msg_send!(container, zpd_objc::sel!("setWidthTracksTextView:"), ((true): bool) => ());
             // List markers are positioned with TextKit 1 line fragments.
             zpd_objc::msg_send!(text_view, zpd_objc::sel!("layoutManager"), () => Id);
-            zpd_objc::msg_send!(text_view, zpd_objc::sel!("setRichText:"), ((false): bool) => ());
+            zpd_objc::msg_send!(text_view, zpd_objc::sel!("setRichText:"), ((true): bool) => ());
+            let typing = RichText::attributes(&RichStyle::default());
+            zpd_objc::msg_send!(text_view, zpd_objc::sel!("setTypingAttributes:"), ((typing.as_ptr()): Id) => ());
             zpd_objc::msg_send!(text_view, zpd_objc::sel!("setAllowsUndo:"), ((true): bool) => ());
             zpd_objc::msg_send!(text_view, zpd_objc::sel!("setUsesFindBar:"), ((true): bool) => ());
             zpd_objc::msg_send!(text_view, zpd_objc::sel!("setIncrementalSearchingEnabled:"), ((true): bool) => ());
@@ -136,28 +136,18 @@ impl TextEditor {
                 let kind = unsafe {
                     let text =
                         zpd_objc::msg_send!(notification, zpd_objc::sel!("object"), () => Id);
-                    if zpd_objc::msg_send!(text, zpd_objc::sel!("isRichText"), () => bool) {
-                        // List numbers below the edit may change, so markers redraw everywhere.
-                        zpd_objc::msg_send!(text, zpd_objc::sel!("setNeedsDisplay:"), ((true): bool) => ());
-                        let storage =
-                            zpd_objc::msg_send!(text, zpd_objc::sel!("textStorage"), () => Id);
-                        WindowEventKind::RichTextChanged {
-                            runs: RichText::runs(storage),
-                        }
-                    } else {
-                        WindowEventKind::TextChanged {
-                            value: native::rust_string(
-                                zpd_objc::msg_send!(text, zpd_objc::sel!("string"), () => Id),
-                            ),
-                        }
+                    // List numbers below the edit may change, so markers redraw everywhere.
+                    zpd_objc::msg_send!(text, zpd_objc::sel!("setNeedsDisplay:"), ((true): bool) => ());
+                    let storage =
+                        zpd_objc::msg_send!(text, zpd_objc::sel!("textStorage"), () => Id);
+                    WindowEventKind::RichTextChanged {
+                        runs: RichText::runs(storage),
                     }
                 };
                 emit(kind);
             },
         )?;
-        let editor = Self { view };
-        editor.set_font(None)?;
-        Ok(editor)
+        Ok(Self { view })
     }
 
     /// Returns the paragraph style at the start of the selection.
@@ -262,43 +252,6 @@ impl TextEditor {
         }
     }
 
-    pub fn string_value(&self) -> Result<String, UiError> {
-        self.with_text(|text| {
-            // SAFETY: The live NSTextView returns its backing string.
-            unsafe {
-                native::rust_string(zpd_objc::msg_send!(text, zpd_objc::sel!("string"), () => Id))
-            }
-        })
-    }
-
-    /// Replaces the text without reporting a change; the insertion point moves to the end.
-    ///
-    /// Undo history is cleared, since it describes the replaced text.
-    pub fn set_string_value(&self, value: &str) -> Result<(), UiError> {
-        let value = native::nsstring(value);
-        self.with_text(|text| {
-            // SAFETY: The live NSTextView accepts an NSString.
-            unsafe {
-                zpd_objc::msg_send!(text, zpd_objc::sel!("setString:"), ((value.as_ptr()): Id) => ());
-                Self::forget_undo(text);
-            }
-        })
-    }
-
-    /// Switches between plain text and styled runs.
-    pub fn set_rich(&self, rich: bool) -> Result<(), UiError> {
-        self.with_text(|text| {
-            // SAFETY: The live NSTextView accepts the flag and typing attributes.
-            unsafe {
-                zpd_objc::msg_send!(text, zpd_objc::sel!("setRichText:"), ((rich): bool) => ());
-                if rich {
-                    let typing = RichText::attributes(&RichStyle::default());
-                    zpd_objc::msg_send!(text, zpd_objc::sel!("setTypingAttributes:"), ((typing.as_ptr()): Id) => ());
-                }
-            }
-        })
-    }
-
     pub fn rich_text(&self) -> Result<Vec<RichRun>, UiError> {
         self.with_text(|text| {
             // SAFETY: The live NSTextView owns its text storage.
@@ -310,8 +263,8 @@ impl TextEditor {
 
     /// Replaces the content with `runs` without reporting a change.
     ///
-    /// Like [`TextEditor::set_string_value`], the insertion point moves to the
-    /// end and undo history is cleared.
+    /// The insertion point moves to the end, and undo history is cleared,
+    /// since it describes the replaced text.
     pub fn set_rich_text(&self, runs: &[RichRun]) -> Result<(), UiError> {
         let attributed = RichText::attributed_string(runs);
         let typing = RichText::attributes(
@@ -332,22 +285,6 @@ impl TextEditor {
         })
     }
 
-    /// Sets the plain-text font; `None` uses the 14-point system font.
-    pub fn set_font(&self, font: Option<&Font>) -> Result<(), UiError> {
-        self.with_text(|text| {
-            // SAFETY: The live NSTextView accepts an NSFont that `font` keeps alive.
-            unsafe {
-                let font = match font {
-                    Some(font) => font.as_ptr(),
-                    None => {
-                        zpd_objc::msg_send!(zpd_objc::class!("NSFont"), zpd_objc::sel!("systemFontOfSize:"), ((14.0): f64) => Id)
-                    }
-                };
-                zpd_objc::msg_send!(text, zpd_objc::sel!("setFont:"), ((font): Id) => ());
-            }
-        })
-    }
-
     /// Makes the text view its window's first responder.
     pub fn focus(&self) -> Result<(), UiError> {
         self.with_text(|text| {
@@ -357,15 +294,6 @@ impl TextEditor {
                 if !window.is_null() {
                     zpd_objc::msg_send!(window, zpd_objc::sel!("makeFirstResponder:"), ((text): Id) => bool);
                 }
-            }
-        })
-    }
-
-    pub fn set_editable(&self, editable: bool) -> Result<(), UiError> {
-        self.with_text(|text| {
-            // SAFETY: The live NSTextView accepts the flag.
-            unsafe {
-                zpd_objc::msg_send!(text, zpd_objc::sel!("setEditable:"), ((editable): bool) => ());
             }
         })
     }

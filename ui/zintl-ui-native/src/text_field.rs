@@ -186,10 +186,10 @@ impl NativeView for TextField {
 }
 
 /// Routes text edits to a bound Store and a change action.
-pub(crate) struct TextChange;
+struct TextChange;
 
 impl TextChange {
-    pub(crate) fn route(
+    fn route(
         element: Element<RenderNode>,
         binding: Option<Store<String>>,
         action: Option<Rc<ChangeAction>>,
@@ -210,86 +210,45 @@ impl TextChange {
     }
 }
 
-/// The Store a [`TextEditor`] edits.
-#[derive(Clone, Copy)]
-enum EditorBinding {
-    None,
-    Plain(Store<String>),
-    Rich(Store<AttributedText>),
-}
+type EditAction = dyn for<'a> Fn(&mut Context<'a>);
 
-/// A scrolling multiline editor that fills its parent, like a document body.
+/// A scrolling rich text editor that fills its parent, like a document body.
 ///
-/// Bound with [`TextEditor::bind_rich`], it edits styled runs and paragraph
-/// styles; `StandardAction::Bold` and the paragraph style actions apply to it.
+/// It edits styled runs and paragraph styles; `StandardAction::Bold` and the
+/// paragraph style actions apply to it.
 #[derive(Clone)]
 pub struct TextEditor {
-    binding: EditorBinding,
-    action: Option<Rc<ChangeAction>>,
-    font: Option<Font>,
-    editable: bool,
+    binding: Option<Store<AttributedText>>,
+    action: Option<Rc<EditAction>>,
     focus: Option<Store<u64>>,
-    layout: LayoutStyle,
-    id: Option<String>,
     attachments: Attachments,
 }
 
 impl TextEditor {
     pub fn new() -> Self {
         Self {
-            binding: EditorBinding::None,
+            binding: None,
             action: None,
-            font: None,
-            editable: true,
             focus: None,
-            layout: LayoutStyle::fill(Size::new(80.0, 40.0)),
-            id: None,
             attachments: Attachments::default(),
         }
     }
 
-    /// Edits plain text.
-    pub fn bind(mut self, store: Store<String>) -> Self {
-        self.binding = EditorBinding::Plain(store);
+    /// Reads and writes the edited text.
+    pub fn bind(mut self, store: Store<AttributedText>) -> Self {
+        self.binding = Some(store);
         self
     }
 
-    /// Edits rich text with styled runs and paragraph styles.
-    pub fn bind_rich(mut self, store: Store<AttributedText>) -> Self {
-        self.binding = EditorBinding::Rich(store);
-        self
-    }
-
-    /// Runs after each edit with the plain text, once the bound Store is updated.
-    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static) -> Self {
+    /// Runs after each edit, once the bound Store is updated.
+    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>) + 'static) -> Self {
         self.action = Some(Rc::new(action));
-        self
-    }
-
-    /// Sets the plain-text font; rich text takes fonts from its paragraph styles.
-    pub fn font(mut self, font: Font) -> Self {
-        self.font = Some(font);
-        self
-    }
-
-    pub fn editable(mut self, editable: bool) -> Self {
-        self.editable = editable;
         self
     }
 
     /// Takes keyboard focus whenever `requests` increases, for example after creating a note.
     pub fn focus_on(mut self, requests: Store<u64>) -> Self {
         self.focus = Some(requests);
-        self
-    }
-
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
-        self
-    }
-
-    pub fn minimum_size(mut self, size: Size) -> Self {
-        self.layout.minimum_size = size;
         self
     }
 }
@@ -304,41 +263,32 @@ impl NativeView for TextEditor {
     attachments!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let (text, rich) = match self.binding {
-            EditorBinding::None => (AttributedText::new(), false),
-            EditorBinding::Plain(store) => (AttributedText::from(cx.get(store).as_str()), false),
-            EditorBinding::Rich(store) => (cx.get(store).clone(), true),
-        };
         let element = Element::node(RenderNode::View {
             kind: ViewKind::TextEditor {
-                text,
-                rich,
-                font: self.font.clone(),
-                editable: self.editable,
+                text: self
+                    .binding
+                    .map_or_else(AttributedText::new, |store| cx.get(store).clone()),
                 focus: self.focus.map_or(0, |store| *cx.get(store)),
             },
-            layout: self.layout,
-            id: self.id.clone(),
+            layout: LayoutStyle::fill(Size::new(80.0, 40.0)),
+            id: None,
             enabled: true,
             title_bar_interactive: false,
         });
-        match self.binding {
-            EditorBinding::None => TextChange::route(element, None, self.action.clone()),
-            EditorBinding::Plain(store) => {
-                TextChange::route(element, Some(store), self.action.clone())
-            }
-            EditorBinding::Rich(store) => {
-                let action = self.action.clone();
-                element.on_event(EventKind::RichTextChanged, move |cx, event| {
-                    if let Event::RichTextChanged { text } = event {
-                        cx.update(store, |current| current.clone_from(&text));
-                        if let Some(action) = &action {
-                            action(cx, text.text());
-                        }
-                    }
-                })
-            }
+        let (store, action) = (self.binding, self.action.clone());
+        if store.is_none() && action.is_none() {
+            return element;
         }
+        element.on_event(EventKind::RichTextChanged, move |cx, event| {
+            if let Event::RichTextChanged { text } = event {
+                if let Some(store) = store {
+                    cx.update(store, |current| current.clone_from(&text));
+                }
+                if let Some(action) = &action {
+                    action(cx);
+                }
+            }
+        })
     }
 }
 

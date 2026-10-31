@@ -257,55 +257,20 @@ impl NativeNode {
                     field.set_alignment(style.alignment.native())?;
                 }
             }
-            (
-                Self::TextEditor(editor),
-                ViewKind::TextEditor {
-                    text,
-                    rich,
-                    font,
-                    editable,
-                    focus,
-                },
-            ) => {
-                // Each new focus request moves keyboard focus to the editor.
-                let old_focus = match old {
-                    Some(ViewKind::TextEditor { focus, .. }) => Some(*focus),
-                    _ => None,
+            (Self::TextEditor(editor), ViewKind::TextEditor { text, focus }) => {
+                let (old_text, old_focus) = match old {
+                    Some(ViewKind::TextEditor { text, focus }) => (Some(text), Some(*focus)),
+                    _ => (None, None),
                 };
+                // Each new focus request moves keyboard focus to the editor.
                 if *focus > 0 && old_focus != Some(*focus) {
                     editor.focus()?;
                 }
-                let old = match old {
-                    Some(ViewKind::TextEditor {
-                        text,
-                        rich,
-                        font,
-                        editable,
-                        ..
-                    }) => Some((text, rich, font, editable)),
-                    _ => None,
-                };
-                if old.is_none_or(|(_, old, ..)| old != rich) {
-                    editor.set_rich(*rich)?;
-                }
                 // Text the editor already shows is not written back, so typing keeps
-                // the insertion point. Unchanged rich text is skipped too: AppKit
-                // cannot keep a paragraph style on an empty last line.
-                if *rich {
-                    let unchanged = old.is_some_and(|(old, old_rich, ..)| old == text && *old_rich);
-                    if !unchanged && editor.rich_text()?.shared() != *text {
-                        editor.set_rich_text(&text.native())?;
-                    }
-                } else {
-                    if editor.string_value()? != text.text() {
-                        editor.set_string_value(text.text())?;
-                    }
-                    if old.is_none_or(|(_, old_rich, old_font, _)| old_font != font || *old_rich) {
-                        editor.set_font(font.as_ref().map(Native::native).as_ref())?;
-                    }
-                }
-                if old.is_none_or(|(.., old)| old != editable) {
-                    editor.set_editable(*editable)?;
+                // the insertion point. Unchanged text is skipped too: AppKit cannot
+                // keep a paragraph style on an empty last line.
+                if old_text != Some(text) && editor.rich_text()?.shared() != *text {
+                    editor.set_rich_text(&text.native())?;
                 }
             }
             (Self::Switch(switch), ViewKind::Switch { on }) => {

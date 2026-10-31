@@ -102,20 +102,20 @@ fill their parent's width and the remaining space. Stacks accept `padding` and
 
 ## Text editing
 
-`TextEditor` is a scrolling multiline editor (`NSTextView` on macOS) that fills
+`TextEditor` is a scrolling rich text editor (`NSTextView` on macOS) that fills
 its parent, with undo and a find bar. `TextField` and `TextEditor` take
 `on_change`, which runs after each edit once the bound Store is updated.
 
 ```rust,ignore
 TextEditor::new()
     .bind(self.draft)
-    .on_change(|cx, text| { /* save */ })
+    .on_change(|cx| { /* save */ })
 ```
 
 Replacing the bound text from code moves the insertion point to the end and
 clears the editor's undo history, since it describes the replaced text.
 
-`bind_rich` edits an `AttributedText`: plain text with styled runs (bold,
+The editor edits an `AttributedText`: plain text with styled runs (bold,
 italic, underline, strikethrough, monospace, link) and one `ParagraphStyle`
 per line (Title, Heading, Subheading, Body, Monospaced, or a bulleted, dashed,
 numbered, or checklist item). List markers are drawn beside the text and are
@@ -131,8 +131,6 @@ MainMenu::standard().menu(Menu::new("Format", [
     MenuItem::separator(),
     MenuItem::standard(StandardAction::Bold),         // ⌘B
 ]));
-
-TextEditor::new().bind_rich(self.body).on_change(|cx, plain| { /* … */ })
 ```
 
 ## Lists

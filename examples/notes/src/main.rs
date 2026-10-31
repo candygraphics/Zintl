@@ -436,9 +436,9 @@ impl View for Editor {
         }
         VStack::new(list![
             TextEditor::new()
-                .bind_rich(state.draft)
+                .bind(state.draft)
                 .focus_on(state.focus)
-                .on_change(move |cx, _| state.save(cx)),
+                .on_change(move |cx| state.save(cx)),
         ])
         .fill_width()
         .grow()

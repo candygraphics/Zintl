@@ -316,7 +316,6 @@ fn main() {
     // Verifies rich runs round-trip, and the paragraph action restyles undoably and validates its items.
     let rich = TextEditor::new(&application).unwrap();
     content.add_subview(&rich).unwrap();
-    rich.set_rich(true).unwrap();
     let runs = vec![
         RichRun {
             text: "Title\n".into(),
@@ -383,19 +382,10 @@ fn main() {
     }
     assert_eq!(rich.rich_text().unwrap(), runs);
     take();
-    // Plain editors disable paragraph styles.
-    rich.set_rich(false).unwrap();
-    // SAFETY: The live text view validates a live item.
-    unsafe {
-        let item = zpd_objc::msg_send!(zpd_objc::msg_send!(zpd_objc::class!("NSMenuItem"), zpd_objc::sel!("alloc"), () => Id), zpd_objc::sel!("initWithTitle:action:keyEquivalent:"), ((ns_string("Body")): Id, (zpd_objc::sel!("zintlApplyParagraphStyle:")): zpd_objc::Sel, (ns_string("")): Id) => Id);
-        assert!(!zpd_objc::msg_send!(text, zpd_objc::sel!("validateMenuItem:"), ((item): Id) => bool));
-        zpd_objc::msg_send!(item, zpd_objc::sel!("release"), () => ());
-    }
 
     // Verifies Return continues a checklist unchecked, then ends it on an empty item.
     let list = TextEditor::new(&application).unwrap();
     content.add_subview(&list).unwrap();
-    list.set_rich(true).unwrap();
     list.set_rich_text(&[RichRun {
         text: "Milk".into(),
         style: RichStyle {
@@ -484,12 +474,16 @@ fn main() {
     };
     assert_eq!(take(), vec![WindowEventKind::ButtonClicked]);
 
-    // Verifies the editor reports user edits, replaces text silently, and drops stale undo history.
+    // Verifies the editor reports typing as rich runs, replaces text silently, and drops stale undo history.
     let editor = TextEditor::new(&application).unwrap();
     content.add_subview(&editor).unwrap();
     assert!(editor.as_view().is_subview_of(content).unwrap());
-    editor.set_string_value("Title\nBody").unwrap();
-    assert_eq!(editor.string_value().unwrap(), "Title\nBody");
+    let body = |text: &str| RichRun {
+        text: text.into(),
+        style: RichStyle::default(),
+    };
+    editor.set_rich_text(&[body("Title\nBody")]).unwrap();
+    assert_eq!(editor.rich_text().unwrap(), [body("Title\nBody")]);
     assert!(take().is_empty());
     // SAFETY: The editor's document view is its live NSTextView in a window with an undo manager.
     let undo = unsafe {
@@ -500,13 +494,13 @@ fn main() {
     };
     assert_eq!(
         take(),
-        vec![WindowEventKind::TextChanged {
-            value: "Title\nBody!".into()
+        vec![WindowEventKind::RichTextChanged {
+            runs: vec![body("Title\nBody!")]
         }]
     );
     // SAFETY: The window's undo manager is live.
     assert!(unsafe { zpd_objc::msg_send!(undo, zpd_objc::sel!("canUndo"), () => bool) });
-    editor.set_string_value("Other").unwrap();
+    editor.set_rich_text(&[body("Other")]).unwrap();
     // SAFETY: The window's undo manager is live.
     assert!(!unsafe { zpd_objc::msg_send!(undo, zpd_objc::sel!("canUndo"), () => bool) });
 

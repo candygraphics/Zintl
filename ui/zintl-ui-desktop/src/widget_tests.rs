@@ -999,51 +999,30 @@ fn list_describes_sections_and_writes_user_selection() {
 }
 
 #[test]
-fn text_views_update_their_store_before_on_change() {
-    // Verifies editors and fields write the bound Store, then pass the new text to `on_change`.
+fn text_field_updates_its_store_before_on_change() {
+    // Verifies a field writes the bound Store, then passes the new text to `on_change`.
     let seen = Rc::new(RefCell::new(Vec::new()));
     let recorded = seen.clone();
-    let (mut app, (body, title)) = Harness::mount(
-        |cx| (cx.store("Body".to_owned()), cx.store(String::new())),
-        move |(body, title)| {
-            let (editor, field) = (recorded.clone(), recorded.clone());
-            VStack::new(list![
-                TextEditor::new()
-                    .bind(body)
-                    .on_change(move |cx, text| editor
-                        .borrow_mut()
-                        .push((cx.get(body).clone(), text.to_owned()))),
-                TextField::new().bind(title).on_change(move |cx, text| field
+    let (mut app, _) = Harness::mount(
+        |cx| cx.store(String::new()),
+        move |title| {
+            let recorded = recorded.clone();
+            TextField::new().bind(title).on_change(move |cx, text| {
+                recorded
                     .borrow_mut()
-                    .push((cx.get(title).clone(), text.to_owned()))),
-            ])
+                    .push((cx.get(title).clone(), text.to_owned()))
+            })
         },
     );
 
-    assert!(matches!(
-        &app.render_tree().children[0].value,
-        RenderNode::View { kind: ViewKind::TextEditor { text, rich: false, editable: true, .. }, .. } if text.text() == "Body"
-    ));
-    app.dispatch_at(
-        &[0, 0],
-        Event::TextChanged {
-            value: "Body!".into(),
-        },
-    );
-    app.dispatch_at(&[0, 1], Event::TextChanged { value: "T".into() });
+    app.dispatch_at(&[0], Event::TextChanged { value: "T".into() });
 
-    assert_eq!(
-        *seen.borrow(),
-        [
-            ("Body!".to_owned(), "Body!".to_owned()),
-            ("T".to_owned(), "T".to_owned())
-        ]
-    );
+    assert_eq!(*seen.borrow(), [("T".to_owned(), "T".to_owned())]);
 }
 
 #[test]
-fn rich_editor_writes_attributed_text_and_reports_plain_text() {
-    // Verifies a rich binding renders styled text and stores native rich edits before `on_change`.
+fn text_editor_updates_its_store_before_on_change() {
+    // Verifies the editor renders styled text and stores native edits before `on_change` runs.
     let seen = Rc::new(RefCell::new(Vec::new()));
     let recorded = seen.clone();
     let (mut app, body) = Harness::mount(
@@ -1055,14 +1034,14 @@ fn rich_editor_writes_attributed_text_and_reports_plain_text() {
         move |body| {
             let recorded = recorded.clone();
             TextEditor::new()
-                .bind_rich(body)
-                .on_change(move |_, text| recorded.borrow_mut().push(text.to_owned()))
+                .bind(body)
+                .on_change(move |cx| recorded.borrow_mut().push(cx.get(body).text().to_owned()))
         },
     );
 
     assert!(matches!(
         &app.render_tree().value,
-        RenderNode::View { kind: ViewKind::TextEditor { text, rich: true, .. }, .. }
+        RenderNode::View { kind: ViewKind::TextEditor { text, .. }, .. }
             if text.paragraphs() == [ParagraphStyle::Title]
     ));
     let mut edited = AttributedText::from("Title\n");

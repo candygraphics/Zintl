@@ -107,7 +107,7 @@ Found while writing phase 1 (see `TODO` comments in `src/main.rs`).
   `NSTextView` with undo and a find bar. Formerly: A multiline `TextField` shows one line and
   does not fill the column; it should be a scrolling `NSTextView`.
 - **C3 Rich text model (done).** `AttributedText` with span styles and
-  paragraph styles, including lists and checklists; `TextEditor::bind_rich`.
+  paragraph styles, including lists and checklists; `TextEditor::bind`.
   Not yet: nested lists, tables, attachments. Formerly: An `AttributedText` (runs with font, traits,
   paragraph style, lists, checklist items, links) bound to the editor, with a
   serialization the app can persist.

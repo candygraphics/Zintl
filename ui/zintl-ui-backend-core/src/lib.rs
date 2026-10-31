@@ -62,14 +62,9 @@ pub enum ViewKind {
         multiline: bool,
         style: TextStyle,
     },
-    /// A scrolling multiline editor that fills its parent.
+    /// A scrolling rich text editor that fills its parent.
     TextEditor {
         text: graphics::AttributedText,
-        /// Edits styled runs and paragraph styles instead of plain text.
-        rich: bool,
-        /// The plain-text font; `None` uses the platform's standard editor font.
-        font: Option<graphics::Font>,
-        editable: bool,
         /// Each increase makes the editor take keyboard focus.
         focus: u64,
     },
