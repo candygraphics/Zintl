@@ -38,8 +38,8 @@ pub use zintl_ui_native::{
     KeyPhase, ListFactory, MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, Modifiers, NamedKey,
     NativeView, PointerButton, PointerEvent, PointerPhase, Popover, PopoverEdge, Rect, Redraw,
     RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, ScrollStatus, Shortcut, Sidebar,
-    SidebarItem, SidebarSection, StandardAction, StandardMenu, StandardText, ViewKind, graphics,
-    list,
+    SidebarItem, SidebarSection, StandardAction, StandardMenu, StandardText, TitleBar, ViewKind,
+    graphics, list,
 };
 
 native_view!(Text, Button, TextField, HStack, VStack);
@@ -104,8 +104,9 @@ impl Window {
         self
     }
 
-    pub fn extend_client_area(mut self) -> Self {
-        self.inner = self.inner.full_size_content_view();
+    /// Extends the content under the title bar or hides it, leaving the window buttons.
+    pub fn title_bar(mut self, title_bar: TitleBar) -> Self {
+        self.inner = self.inner.title_bar(title_bar);
         self
     }
 
@@ -737,7 +738,7 @@ mod tests {
                 sidebar: None,
                 bounds,
                 title: "Zintl".into(),
-                full_size_content_view: false,
+                title_bar: TitleBar::Standard,
                 id: None,
                 style: zintl_ui_native::WindowStyle::Normal,
             }
@@ -745,15 +746,15 @@ mod tests {
     }
 
     #[test]
-    fn window_extend_client_area_uses_full_size_content_view() {
-        // Verifies extending the client area enables full-size content.
+    fn window_title_bar_reaches_the_render_node() {
+        // Verifies the declared title bar style is carried to the backend.
         let bounds = Rect::new(10.0, 20.0, 640.0, 480.0);
-        let app = App::new(Window::new(bounds, "Zintl").extend_client_area());
+        let app = App::new(Window::new(bounds, "Zintl").title_bar(TitleBar::Overlay));
 
         assert!(matches!(
             app.render(),
             RenderNode::Window {
-                full_size_content_view: true,
+                title_bar: TitleBar::Overlay,
                 ..
             }
         ));
@@ -776,6 +777,7 @@ mod tests {
                 layout: LayoutStyle::stack(Axis::Horizontal, 12.0),
                 id: None,
                 enabled: true,
+                title_bar_interactive: false,
             }
         );
         assert!(matches!(

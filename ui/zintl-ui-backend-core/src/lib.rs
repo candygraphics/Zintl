@@ -24,7 +24,7 @@ pub use model::{
     AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, CommandItem,
     CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig, FileDialogMode,
     MenuRole, NumberFormat, PopoverEdge, ScrollAxes, Sidebar, SidebarItem, SidebarSearch,
-    SidebarSection, WindowAppMenu, WindowStyle,
+    SidebarSection, TitleBar, WindowAppMenu, WindowStyle,
 };
 pub use zintl_ui_graphics as graphics;
 pub use zintl_ui_graphics::{Color, Rect};
@@ -121,7 +121,7 @@ pub enum RenderNode {
         sidebar: Option<Sidebar>,
         bounds: Rect,
         title: String,
-        full_size_content_view: bool,
+        title_bar: TitleBar,
         id: Option<String>,
         style: WindowStyle,
     },
@@ -130,6 +130,9 @@ pub enum RenderNode {
         layout: LayoutStyle,
         id: Option<String>,
         enabled: bool,
+        /// Receives mouse input inside the title bar area of a window whose
+        /// content extends under it; other views leave that area to the window.
+        title_bar_interactive: bool,
     },
     /// A contextual menu for the parent view.
     ContextMenu { items: Vec<CommandItem> },

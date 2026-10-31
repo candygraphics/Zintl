@@ -38,7 +38,8 @@ pub use zintl_ui_backend_core::{
     AlertStyle, BezelStyle, ButtonType, Canvas2DHandler, CanvasEvent, CanvasEventContext,
     CanvasNode, CanvasSetup, Color, Event, EventKind, Frame, Invalidator, Key, KeyEvent, KeyPhase,
     Modifiers, NamedKey, NodeId, PointerButton, PointerEvent, PointerPhase, PopoverEdge, Rect,
-    Redraw, RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, ViewKind, WindowStyle, graphics,
+    Redraw, RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, TitleBar, ViewKind, WindowStyle,
+    graphics,
 };
 pub use zintl_ui_layout::{LayoutStyle, Size};
 
@@ -181,11 +182,11 @@ mod tests {
     }
 
     #[test]
-    fn window_full_size_content_view_is_opt_in() {
-        // Verifies Window::new uses normal content unless the builder enables full-size content.
+    fn window_title_bar_is_standard_by_default() {
+        // Verifies Window::new keeps the standard title bar unless the builder changes it.
         let normal = composer(Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Normal"));
         let full_size = composer(
-            Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Full Size").full_size_content_view(),
+            Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Hidden").title_bar(TitleBar::Hidden),
         );
         let normal = normal.backend().value(root_id(&normal)).unwrap();
         let full_size = full_size.backend().value(root_id(&full_size)).unwrap();
@@ -193,14 +194,14 @@ mod tests {
         assert!(matches!(
             normal,
             RenderNode::Window {
-                full_size_content_view: false,
+                title_bar: TitleBar::Standard,
                 ..
             }
         ));
         assert!(matches!(
             full_size,
             RenderNode::Window {
-                full_size_content_view: true,
+                title_bar: TitleBar::Hidden,
                 ..
             }
         ));
@@ -342,6 +343,30 @@ mod tests {
 
         assert!(composer.dispatch_event(route, Event::Canvas(down)));
         assert_eq!(composer.context(|cx| *cx.get(clicks)), 1);
+    }
+
+    #[test]
+    fn title_bar_interactive_is_opt_in_per_view() {
+        // Verifies only views marked with the modifier keep input under the title bar.
+        let plain = composer(Button::new("Plain"));
+        let marked = composer(Button::new("Marked").title_bar_interactive());
+        let plain = plain.backend().value(root_id(&plain)).unwrap();
+        let marked = marked.backend().value(root_id(&marked)).unwrap();
+
+        assert!(matches!(
+            plain,
+            RenderNode::View {
+                title_bar_interactive: false,
+                ..
+            }
+        ));
+        assert!(matches!(
+            marked,
+            RenderNode::View {
+                title_bar_interactive: true,
+                ..
+            }
+        ));
     }
 
     #[test]

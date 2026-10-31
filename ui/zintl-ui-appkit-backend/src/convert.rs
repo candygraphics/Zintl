@@ -35,6 +35,7 @@ macro_rules! same_variants {
 }
 
 same_variants!(core::WindowStyle => ui::WindowStyle { Normal, Panel });
+same_variants!(core::TitleBar => ui::TitleBar { Standard, Overlay, Hidden });
 same_variants!(core::PopoverEdge => ui::PopoverEdge { Leading, Trailing, Top, Bottom });
 same_variants!(core::AlertStyle => ui::AlertStyle { Warning, Informational, Critical });
 same_variants!(core::AlertButtonRole => ui::AlertButtonRole { Normal, Cancel, Destructive });

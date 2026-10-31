@@ -37,6 +37,13 @@ Plan:
 The WinUI changes for `Canvas2D` were made on macOS and have not been compiled
 for Windows yet.
 
+## Title bar interactive views on Windows
+
+`title_bar_interactive` is ignored by the WinUI 3 backend. With
+`ExtendsContentIntoTitleBar`, register the marked views' bounds with
+`InputNonClientPointerSource::SetRegionRects(NonClientRegionKind::Passthrough, ...)`
+and update them after layout.
+
 ## Canvas2D: follow-ups
 
 - IME and marked text (`NSTextInputClient`) for canvases that accept text.

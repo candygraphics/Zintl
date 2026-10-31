@@ -96,6 +96,17 @@ pub enum WindowStyle {
     Panel,
 }
 
+/// How the title bar relates to the window content.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TitleBar {
+    #[default]
+    Standard,
+    /// Content extends under the visible title bar.
+    Overlay,
+    /// Content fills the window; only the window buttons stay above it.
+    Hidden,
+}
+
 pub struct Window<'application> {
     actor: ActorRef,
     content: ActorRef,
@@ -283,11 +294,21 @@ impl<'application> Window<'application> {
             })
             .map_err(Into::into)
     }
-    pub fn set_full_size_content_view(&self, enabled: bool) -> Result<(), UiError> {
+    pub fn set_title_bar(&self, title_bar: TitleBar) -> Result<(), UiError> {
+        let enabled = title_bar != TitleBar::Standard;
+        let hidden = title_bar == TitleBar::Hidden;
         self.actor
             .with(|window| {
-                // SAFETY: The live actor is an NSWindow and both selectors use NSUInteger masks.
+                // SAFETY: The live actor is an NSWindow; masks are NSUInteger and the enums NSInteger.
                 unsafe {
+                    zpd_objc::msg_send!(window, zpd_objc::sel!("setTitleVisibility:"), ((native::Integer::from(hidden)): native::Integer) => ());
+                    zpd_objc::msg_send!(window, zpd_objc::sel!("setTitlebarAppearsTransparent:"), ((hidden): bool) => ());
+                    let separator = if hidden {
+                        native::NS_TITLEBAR_SEPARATOR_STYLE_NONE
+                    } else {
+                        native::NS_TITLEBAR_SEPARATOR_STYLE_AUTOMATIC
+                    };
+                    zpd_objc::msg_send!(window, zpd_objc::sel!("setTitlebarSeparatorStyle:"), ((separator): native::Integer) => ());
                     let mut style_mask =
                         zpd_objc::msg_send!(window, zpd_objc::sel!("styleMask"), () => u64);
                     let is_enabled = style_mask

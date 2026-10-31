@@ -16,6 +16,122 @@ type LayoutCallback = RefCell<Box<dyn FnMut(Rect)>>;
 
 static LAYOUT_CALLBACK: RcIvar<LayoutCallback> = RcIvar::new(c"_zpdLayoutCallback");
 
+#[link(name = "objc")]
+unsafe extern "C" {
+    fn objc_setAssociatedObject(
+        object: zpd_objc::Id,
+        key: *const std::ffi::c_void,
+        value: zpd_objc::Id,
+        policy: usize,
+    );
+    fn objc_getAssociatedObject(object: zpd_objc::Id, key: *const std::ffi::c_void)
+    -> zpd_objc::Id;
+}
+
+const ASSOCIATION_RETAIN_NONATOMIC: usize = 1;
+
+/// Decides which views receive mouse input in the title bar area of a window
+/// whose content extends under its title bar.
+pub(crate) struct TitleBarHit;
+
+impl TitleBarHit {
+    /// Returns the associated-object key, which is the address of a private static.
+    fn key() -> *const std::ffi::c_void {
+        static KEY: u8 = 0;
+        (&raw const KEY).cast()
+    }
+
+    /// Marks `view` and its subviews as interactive inside the title bar area.
+    ///
+    /// # Safety
+    /// `view` must be a live NSView.
+    unsafe fn set_interactive(view: zpd_objc::Id, interactive: bool) {
+        // SAFETY: Guaranteed by the caller; the runtime retains the NSNumber flag.
+        unsafe {
+            let value = if interactive {
+                zpd_objc::msg_send!(zpd_objc::class!("NSNumber"), zpd_objc::sel!("numberWithBool:"), ((true): bool) => zpd_objc::Id)
+            } else {
+                zpd_objc::NIL
+            };
+            objc_setAssociatedObject(view, Self::key(), value, ASSOCIATION_RETAIN_NONATOMIC);
+        }
+    }
+
+    /// Returns whether `view` or one of its ancestors is marked interactive.
+    ///
+    /// # Safety
+    /// `view` must be nil or a live NSView.
+    unsafe fn is_interactive(mut view: zpd_objc::Id) -> bool {
+        while !view.is_null() {
+            // SAFETY: Guaranteed by the caller for `view`; superviews of live views are live.
+            unsafe {
+                if !objc_getAssociatedObject(view, Self::key()).is_null() {
+                    return true;
+                }
+                view = zpd_objc::msg_send!(view, zpd_objc::sel!("superview"), () => zpd_objc::Id);
+            }
+        }
+        false
+    }
+
+    /// Returns whether `point` in `view`'s window lies in the title bar area of a
+    /// window whose content extends under its title bar.
+    ///
+    /// # Safety
+    /// `view` must be a live NSView.
+    pub(crate) unsafe fn in_title_bar(view: zpd_objc::Id, point: native::Point) -> bool {
+        // SAFETY: Guaranteed by the caller; the window is checked for nil.
+        unsafe {
+            let window = zpd_objc::msg_send!(view, zpd_objc::sel!("window"), () => zpd_objc::Id);
+            if window.is_null() {
+                return false;
+            }
+            let mask = zpd_objc::msg_send!(window, zpd_objc::sel!("styleMask"), () => u64);
+            if mask & native::NS_WINDOW_STYLE_MASK_FULL_SIZE_CONTENT_VIEW == 0 {
+                return false;
+            }
+            let content = zpd_objc::msg_send!(window, zpd_objc::sel!("contentLayoutRect"), () => native::Rect);
+            // Window coordinates grow upward, so the title bar lies above the content rect.
+            point.y >= content.origin.y + content.size.height
+        }
+    }
+
+    /// Returns whether input at `point` in window coordinates should reach `view`.
+    ///
+    /// # Safety
+    /// `view` must be a live NSView.
+    pub(crate) unsafe fn accepts(view: zpd_objc::Id, point: native::Point) -> bool {
+        // SAFETY: Guaranteed by the caller.
+        unsafe { !Self::in_title_bar(view, point) || Self::is_interactive(view) }
+    }
+}
+
+/// Leaves the title bar area to the window unless the hit view is interactive there.
+unsafe extern "C" fn layout_hit_test(
+    object: zpd_objc::Id,
+    selector: zpd_objc::Sel,
+    point: native::Point,
+) -> zpd_objc::Id {
+    // SAFETY: NSView implements hitTest:, and `point` is in the superview's coordinates.
+    unsafe {
+        let hit = zpd_objc::msg_send_super!(object, zpd_objc::class!("NSView"), selector, ((point): native::Point) => zpd_objc::Id);
+        if hit.is_null() {
+            return hit;
+        }
+        let superview =
+            zpd_objc::msg_send!(object, zpd_objc::sel!("superview"), () => zpd_objc::Id);
+        if superview.is_null() {
+            return hit;
+        }
+        let in_window = zpd_objc::msg_send!(superview, zpd_objc::sel!("convertPoint:toView:"), ((point): native::Point, (zpd_objc::NIL): zpd_objc::Id) => native::Point);
+        if TitleBarHit::accepts(hit, in_window) {
+            hit
+        } else {
+            zpd_objc::NIL
+        }
+    }
+}
+
 unsafe extern "C" fn layout(object: zpd_objc::Id, _: zpd_objc::Sel) {
     unsafe {
         zpd_objc::msg_send_super!(object, zpd_objc::class!("NSView"), zpd_objc::sel!("layout"), () => ())
@@ -55,6 +171,7 @@ fn layout_view_class() -> zpd_objc::Class {
             fields { _zpdLayoutCallback: ptr }
             methods {
                 "layout": "v@:" => layout,
+                "hitTest:": "@@:{CGPoint=dd}" => layout_hit_test,
                 "dealloc": "v@:" => layout_view_dealloc,
             }
         }) as usize
@@ -218,6 +335,12 @@ impl<'view> ViewRef<'view> {
         self.with(|view| unsafe {
             zpd_objc::msg_send!(view, zpd_objc::sel!("setAccessibilityIdentifier:"), ((identifier.as_ref().map_or(zpd_objc::NIL, Strong::as_ptr)): zpd_objc::Id) => ());
         })
+    }
+    /// Keeps mouse input for this view and its subviews inside a title bar
+    /// that the window content extends under.
+    pub fn set_title_bar_interactive(self, interactive: bool) -> Result<(), UiError> {
+        // SAFETY: The actor's native object is a live NSView.
+        self.with(|view| unsafe { TitleBarHit::set_interactive(view, interactive) })
     }
     /// Enables or disables a control; views without `setEnabled:` ignore it.
     pub fn set_enabled(self, enabled: bool) -> Result<(), UiError> {

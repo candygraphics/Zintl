@@ -240,8 +240,27 @@ views. Input reaches the handler first. Unconsumed input goes to the next
 responder, and `on_event` then receives it with a `Context` for Store updates.
 Focusable canvases take keyboard focus when clicked.
 
+To fill a window, hide its title bar. On macOS only the window buttons stay
+above the content; on Windows the content extends into the title bar.
+
+```rust,ignore
+Window::new(bounds, "Orbits")
+    .title_bar(TitleBar::Hidden) // or TitleBar::Overlay to keep the title
+    .content(Canvas2D::new(Orbits::new()).fill_width().grow())
+```
+
+Clicks in the title bar area move the window and do not reach the views under
+it. Mark a view with `title_bar_interactive()` (from `Attach`) to keep mouse
+input for it and its subviews there; a hovering canvas sees `Exited` while the
+pointer is in that area.
+
+```rust,ignore
+Button::new("Share").title_bar_interactive()
+```
+
 On Windows the canvas is not drawn yet; see `TODO.md`. See
-`examples/canvas.rs` for a sketch pad.
+`examples/canvas.rs` for a sketch pad and `examples/fullscreen_canvas.rs` for a
+window-filling animation.
 
 ## Crate responsibilities
 

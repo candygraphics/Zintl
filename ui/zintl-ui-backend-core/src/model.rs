@@ -255,6 +255,20 @@ pub struct SidebarItem {
     pub system_image: Option<String>,
 }
 
+/// How the title bar relates to the window content.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TitleBar {
+    #[default]
+    Standard,
+    /// Content extends under the visible title bar.
+    Overlay,
+    /// Content fills the window; only the window buttons stay above it.
+    ///
+    /// On macOS the title and title bar background are hidden. On Windows the
+    /// content extends into the title bar, like `Overlay`.
+    Hidden,
+}
+
 /// Selects the native window class and chrome.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum WindowStyle {

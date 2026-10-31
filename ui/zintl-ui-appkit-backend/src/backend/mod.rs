@@ -28,7 +28,8 @@ use native::NativeNode;
 use crate::convert::{Native, Shared};
 
 use super::{
-    Color, CommandSet, Context, MainTask, NodeId, Rect, RenderNode, Sidebar, ViewKind, WindowStyle,
+    Color, CommandSet, Context, MainTask, NodeId, Rect, RenderNode, Sidebar, TitleBar, ViewKind,
+    WindowStyle,
 };
 use zintl_ui_backend_core::layout::{HostLayout, LayoutSnapshot};
 use zintl_ui_backend_core::tree::{ErrorSlot, MainTasks, NodeTree};
@@ -89,7 +90,7 @@ struct WindowState {
     layout: Rc<RefCell<HostLayout<NativeNode>>>,
     style: WindowStyle,
     applied_bounds: Option<Rect>,
-    applied_full_size_content_view: Option<bool>,
+    applied_title_bar: Option<TitleBar>,
     /// `None` until the sidebar declaration has been applied once.
     applied_sidebar: Option<Option<Sidebar>>,
     /// Set when the user closed the window; it is not recreated afterwards.
@@ -282,7 +283,7 @@ impl AppKitBackend {
         let RenderNode::Window {
             bounds,
             title,
-            full_size_content_view,
+            title_bar,
             id,
             sidebar,
             style,
@@ -323,7 +324,7 @@ impl AppKitBackend {
                 layout,
                 style,
                 applied_bounds: None,
-                applied_full_size_content_view: None,
+                applied_title_bar: None,
                 applied_sidebar: None,
                 closed: false,
             });
@@ -337,18 +338,17 @@ impl AppKitBackend {
             .expect("a synchronized window has native state");
         let native_id = state.native;
         let event_route = self.event_route(window_id).map(route_token);
-        let apply_full_size_content_view =
-            state.applied_full_size_content_view != Some(full_size_content_view);
+        let apply_title_bar = state.applied_title_bar != Some(title_bar);
         let apply_bounds =
-            apply_full_size_content_view || window_bounds_need_update(state.applied_bounds, bounds);
+            apply_title_bar || window_bounds_need_update(state.applied_bounds, bounds);
         let apply_sidebar = state.applied_sidebar.as_ref() != Some(&sidebar);
         cx.with_window(native_id, |window| -> Result<(), AppError> {
             window
                 .actor_ref()
                 .set_event_route(event_route)
                 .map_err(UiError::from)?;
-            if apply_full_size_content_view {
-                window.set_full_size_content_view(full_size_content_view)?;
+            if apply_title_bar {
+                window.set_title_bar(title_bar.native())?;
             }
             if apply_bounds {
                 window.set_bounds(bounds.native())?;
@@ -370,7 +370,7 @@ impl AppKitBackend {
             .as_mut()
             .expect("a synchronized window has native state");
         state.applied_bounds = Some(bounds);
-        state.applied_full_size_content_view = Some(full_size_content_view);
+        state.applied_title_bar = Some(title_bar);
         state.applied_sidebar = Some(sidebar);
 
         self.materialize_children(application, window_id)?;
@@ -417,7 +417,11 @@ impl AppKitBackend {
         for child in self.children(parent).to_vec() {
             if self.state(child).native.is_none()
                 && let RenderNode::View {
-                    kind, id, enabled, ..
+                    kind,
+                    id,
+                    enabled,
+                    title_bar_interactive,
+                    ..
                 } = self.kind(child)
             {
                 let native =
@@ -425,6 +429,9 @@ impl AppKitBackend {
                 native.as_view().set_identifier(id.as_deref())?;
                 if !enabled {
                     native.set_enabled(false)?;
+                }
+                if title_bar_interactive {
+                    native.as_view().set_title_bar_interactive(true)?;
                 }
                 native
                     .as_view()
@@ -705,12 +712,14 @@ impl AppKitBackend {
                 kind: old_kind,
                 id: old_id,
                 enabled: old_enabled,
+                title_bar_interactive: old_interactive,
                 ..
             },
             RenderNode::View {
                 kind: new_kind,
                 id: new_id,
                 enabled: new_enabled,
+                title_bar_interactive: new_interactive,
                 ..
             },
         ) = (old, new)
@@ -722,6 +731,11 @@ impl AppKitBackend {
         }
         if old_enabled != new_enabled {
             native.set_enabled(*new_enabled)?;
+        }
+        if old_interactive != new_interactive {
+            native
+                .as_view()
+                .set_title_bar_interactive(*new_interactive)?;
         }
         native.apply(Some(old_kind), new_kind)?;
         Ok(())

@@ -164,6 +164,7 @@ impl NativeView for Switch {
             layout: self.layout,
             id: self.id.clone(),
             enabled: self.enabled,
+            title_bar_interactive: false,
         });
         Binding {
             store: self.store,
@@ -247,6 +248,7 @@ impl NativeView for Slider {
             layout: self.layout,
             id: self.id.clone(),
             enabled: self.enabled,
+            title_bar_interactive: false,
         });
         Binding {
             store: self.store,
@@ -333,6 +335,7 @@ impl NativeView for PopUpButton {
             layout: self.layout,
             id: self.id.clone(),
             enabled: self.enabled,
+            title_bar_interactive: false,
         });
         Binding {
             store: self.store,
@@ -403,6 +406,7 @@ impl NativeView for SegmentedControl {
             layout: self.layout,
             id: self.id.clone(),
             enabled: self.enabled,
+            title_bar_interactive: false,
         });
         Binding {
             store: self.store,
@@ -480,6 +484,7 @@ impl NativeView for ComboBox {
             layout: self.layout,
             id: self.id.clone(),
             enabled: self.enabled,
+            title_bar_interactive: false,
         });
         Binding {
             store: self.store,
@@ -583,6 +588,7 @@ impl NativeView for NumberField {
             layout: self.layout,
             id: self.id.clone(),
             enabled: self.enabled,
+            title_bar_interactive: false,
         });
         let (minimum, maximum) = (self.minimum, self.maximum);
         Binding {
@@ -660,6 +666,7 @@ impl NativeView for SearchField {
             layout: self.layout,
             id: self.id.clone(),
             enabled: true,
+            title_bar_interactive: false,
         });
         Binding {
             store: self.store,
@@ -730,6 +737,7 @@ impl NativeView for ColorWell {
             layout: self.layout,
             id: self.id.clone(),
             enabled: self.enabled,
+            title_bar_interactive: false,
         });
         Binding {
             store: self.store,

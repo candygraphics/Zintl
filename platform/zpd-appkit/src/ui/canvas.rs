@@ -14,7 +14,7 @@ use crate::runloop::Application;
 
 use super::UiError;
 use super::callback;
-use super::view::{AsView, ViewActor, ViewRef};
+use super::view::{AsView, TitleBarHit, ViewActor, ViewRef};
 
 #[link(name = "QuartzCore", kind = "framework")]
 unsafe extern "C" {
@@ -214,9 +214,51 @@ struct CanvasState {
     /// The display link's target time for the next draw.
     target_time: Cell<Option<f64>>,
     last_time: Cell<Option<f64>>,
+    /// Whether the pointer hovers over the part of the canvas under the title bar.
+    under_title_bar: Cell<bool>,
 }
 
 impl CanvasState {
+    /// Treats hovering under a title bar as outside the canvas, unless the canvas is
+    /// interactive there, so the handler sees `Exited` and later `Entered` again.
+    ///
+    /// # Safety
+    /// `view` must be the live canvas view that received `input`.
+    unsafe fn hover(&self, view: Id, input: CanvasInput) -> Vec<CanvasInput> {
+        let CanvasInput::Mouse(mouse) = &input else {
+            return vec![input];
+        };
+        let hover = match mouse.phase {
+            MousePhase::Moved => mouse.button.is_none(),
+            MousePhase::Entered | MousePhase::Exited => true,
+            MousePhase::Down | MousePhase::Up => false,
+        };
+        if !hover {
+            return vec![input];
+        }
+        let point = native::Point::from(mouse.location);
+        // SAFETY: Guaranteed by the caller; the point is converted from view coordinates.
+        let blocked = mouse.phase != MousePhase::Exited
+            && unsafe {
+                let point = zpd_objc::msg_send!(view, zpd_objc::sel!("convertPoint:toView:"), ((point): native::Point, (zpd_objc::NIL): Id) => native::Point);
+                !TitleBarHit::accepts(view, point)
+            };
+        let was_blocked = self.under_title_bar.replace(blocked);
+        let with_phase = |phase| {
+            CanvasInput::Mouse(MouseInput {
+                phase,
+                ..mouse.clone()
+            })
+        };
+        match (mouse.phase, was_blocked, blocked) {
+            (MousePhase::Exited, true, _) => Vec::new(),
+            (MousePhase::Moved, false, true) => vec![with_phase(MousePhase::Exited)],
+            (MousePhase::Moved, true, false) => vec![with_phase(MousePhase::Entered), input],
+            (_, _, true) => Vec::new(),
+            _ => vec![input],
+        }
+    }
+
     /// Sends input to the delegate, then to the event route if one is attached.
     fn deliver(&self, input: CanvasInput) -> bool {
         let delegate = self.delegate.borrow().clone();
@@ -448,9 +490,15 @@ macro_rules! event_methods {
                             // SAFETY: The receiver is a live canvas view.
                             unsafe { CanvasView::focus_on_click(object, &state) };
                         }
-                        // SAFETY: AppKit sent `event` with this selector.
-                        unsafe { input(object, $selector, event) }
-                            .is_some_and(|input| state.deliver(input))
+                        // SAFETY: AppKit sent `event` with this selector to the live canvas view.
+                        let Some(input) = (unsafe { input(object, $selector, event) }) else {
+                            return false;
+                        };
+                        // SAFETY: The receiver is the live canvas view.
+                        let inputs = unsafe { state.hover(object, input) };
+                        // Hover hidden by the title bar is consumed.
+                        inputs.is_empty()
+                            | inputs.into_iter().fold(false, |handled, input| state.deliver(input) | handled)
                     })
                 });
                 if !handled {
@@ -555,6 +603,7 @@ impl CanvasView {
             display_link: RefCell::new(None),
             target_time: Cell::new(None),
             last_time: Cell::new(None),
+            under_title_bar: Cell::new(false),
         });
         view.as_view().with(|object| {
             // SAFETY: The view is a live canvas view with the state ivar; AppKit retains the tracking area.

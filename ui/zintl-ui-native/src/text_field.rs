@@ -117,6 +117,7 @@ impl NativeView for TextField {
             layout: self.layout,
             id: self.id.clone(),
             enabled: true,
+            title_bar_interactive: false,
         });
         if let Some(store) = self.binding {
             element.on_event(EventKind::TextChanged, move |cx, event| {

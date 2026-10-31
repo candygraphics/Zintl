@@ -24,3 +24,8 @@ harness = false
 name = "controls"
 path = "tests/controls.rs"
 harness = false
+
+[[test]]
+name = "title_bar"
+path = "tests/title_bar.rs"
+harness = false

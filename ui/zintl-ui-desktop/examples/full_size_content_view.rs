@@ -44,7 +44,7 @@ impl View for FullSizeContentViewExample {
             .content(content);
 
             if *enabled {
-                window.extend_client_area()
+                window.title_bar(TitleBar::Overlay)
             } else {
                 window
             }

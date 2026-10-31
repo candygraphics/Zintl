@@ -106,6 +106,7 @@ impl<H: Canvas2DHandler> NativeView for Canvas2D<H> {
             layout: self.layout,
             id: self.id.clone(),
             enabled: true,
+            title_bar_interactive: false,
         });
         let Some(action) = self.action.clone() else {
             return element;
