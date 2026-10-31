@@ -100,6 +100,26 @@ warns), and SF Symbols through `system_image`.
 fill their parent's width and the remaining space. Stacks accept `padding` and
 `grow`.
 
+## Lists
+
+`List` is a native `NSTableView` with inset rows, rounded selection, arrow-key
+navigation, and section headers. Each row is any view; it lays out at the
+cell's width and its content decides the row height.
+
+```rust,ignore
+List::new([
+    ListSection::new(pinned.iter().map(|note| ListRow::new(note.id(), NoteRow::new(note))))
+        .title("Pinned"),
+    ListSection::new(others.iter().map(|note| ListRow::new(note.id(), NoteRow::new(note)))),
+])
+.bind(self.selection)                    // Store<Option<String>> of row IDs
+.on_select(|cx, id| { /* … */ })
+```
+
+Row IDs must be unique across the list; rows are keyed by ID. `on_select`
+runs after the bound Store is updated, for user changes only. On Windows the
+rows are shown in a scroll view without selection for now.
+
 ## Split views
 
 `SplitView` places two panes on either side of a divider. Dragging the

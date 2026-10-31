@@ -1,15 +1,21 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
-    AsView, Button, CanvasView, ColorWell, ComboBox, NumberField, PopUpButton, ScrollView,
-    SearchField, SegmentedControl, Slider, Switch, TabView, TextField, UiError, View, ViewRef,
+    AsView, Button, CanvasView, ColorWell, ComboBox, ListView, NumberField, PopUpButton,
+    ScrollView, SearchField, SegmentedControl, Slider, Switch, TabView, TextField, UiError, View,
+    ViewRef,
 };
 
 use zintl_ui_layout::Size;
 use zpd_appkit::geometry::Rect;
 
+use zintl_ui_backend_core::layout::HostLayout;
+use zintl_ui_backend_core::tree::ErrorSlot;
+
+use super::AppError;
 use super::canvas::CanvasBridge;
 use crate::convert::Native;
 use crate::{ButtonType, MainTaskSender, ViewKind};
@@ -31,6 +37,14 @@ pub(super) enum NativeNode {
     ScrollView(ScrollView, Cell<Option<(f64, f64)>>),
     TabView(TabView),
     Canvas(CanvasView),
+    List(ListView, ListRows),
+}
+
+/// The layouts of a list's rows; each lays out one row at its cell bounds.
+pub(super) struct ListRows {
+    pub(super) layouts: RefCell<Vec<Rc<RefCell<HostLayout<NativeNode>>>>>,
+    /// Rows lay out when AppKit displays them, outside the backend's update.
+    pub(super) errors: ErrorSlot<AppError>,
 }
 
 impl NativeNode {
@@ -50,16 +64,19 @@ impl NativeNode {
             Self::ScrollView(view, _) => view.as_view(),
             Self::TabView(view) => view.as_view(),
             Self::Canvas(view) => view.as_view(),
+            Self::List(view, _) => view.as_view(),
         }
     }
 
     /// Creates a native view and applies every property of `kind`.
     ///
-    /// `main_tasks` lets canvas invalidators reach the main thread.
+    /// `main_tasks` lets canvas invalidators reach the main thread; `errors`
+    /// receives failures of layout that AppKit starts later, such as list rows.
     pub(super) fn create(
         application: &Application,
         kind: &ViewKind,
         main_tasks: Arc<MainTaskSender>,
+        errors: &ErrorSlot<AppError>,
     ) -> Result<Self, UiError> {
         let native = match kind {
             ViewKind::Container => {
@@ -85,6 +102,13 @@ impl NativeNode {
                 Self::ScrollView(ScrollView::new(application)?, Cell::new(None))
             }
             ViewKind::TabView { .. } => Self::TabView(TabView::new(application)?),
+            ViewKind::List { .. } => Self::List(
+                ListView::new(application)?,
+                ListRows {
+                    layouts: RefCell::new(Vec::new()),
+                    errors: errors.clone(),
+                },
+            ),
             ViewKind::Canvas2D { canvas, .. } => {
                 let view = CanvasView::new(application)?;
                 CanvasBridge::install(&view, canvas, main_tasks);
@@ -354,6 +378,20 @@ impl NativeNode {
                 }
                 if old_focusable != Some(focusable) {
                     view.set_focusable(*focusable);
+                }
+            }
+            (
+                Self::List(list, _),
+                ViewKind::List {
+                    selected, style, ..
+                },
+            ) => {
+                if !matches!(old, Some(ViewKind::List { style: old, .. }) if old == style) {
+                    list.set_style(style.native())?;
+                }
+                // Rows are applied while attaching children; selection follows them.
+                if list.selected_id()? != *selected {
+                    list.select(selected.as_deref())?;
                 }
             }
             _ => return Err(UiError::InvalidHierarchy),

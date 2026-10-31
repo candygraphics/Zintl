@@ -23,8 +23,9 @@ pub use headless::HeadlessBackend;
 pub use model::{
     AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, CommandItem,
     CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig, FileDialogMode,
-    MenuRole, NumberFormat, PopoverEdge, ScrollAxes, Sidebar, SidebarItem, SidebarSearch,
-    SidebarSection, TextAlignment, TextColor, TextStyle, TitleBar, WindowAppMenu, WindowStyle,
+    ListSection, ListStyle, MenuRole, NumberFormat, PopoverEdge, ScrollAxes, Sidebar, SidebarItem,
+    SidebarSearch, SidebarSection, TextAlignment, TextColor, TextStyle, TitleBar, WindowAppMenu,
+    WindowStyle,
 };
 pub use zintl_ui_graphics as graphics;
 pub use zintl_ui_graphics::{Color, Rect};
@@ -105,6 +106,12 @@ pub enum ViewKind {
     TabView {
         titles: Vec<String>,
         selected: usize,
+    },
+    /// A selectable list; each child is the row for the ID at the same position.
+    List {
+        sections: Vec<ListSection>,
+        selected: Option<String>,
+        style: ListStyle,
     },
     /// A view drawn by its canvas handler.
     Canvas2D {

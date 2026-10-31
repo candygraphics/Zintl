@@ -8,7 +8,7 @@ use zpd_appkit::graphics::Font;
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
     AlertButton, AlertButtonRole, AlertConfig, AlertSheet, AsView, Button, ButtonType, Color,
-    ColorWell, CommandItem, CommandMenu, CommandRole, CommandSet, ContextMenu, MenuRole,
+    ColorWell, ListEntry, ListView, CommandItem, CommandMenu, CommandRole, CommandSet, ContextMenu, MenuRole,
     NumberField, NumberFormat, PopUpButton, Popover, ScrollView, SegmentedControl, Sidebar,
     SidebarItem, SidebarSearch, SidebarSection, Slider, Switch, TabView, TextAlignment, TextColor,
     TextField, View, WindowStyle,
@@ -252,6 +252,49 @@ fn main() {
         zpd_objc::msg_send!(font, zpd_objc::sel!("pointSize"), () => f64)
     };
     assert_eq!(size, 13.0);
+
+    // Verifies lists host row views under group headers, select silently, and report user selection.
+    let list = ListView::new(&application).unwrap();
+    content.add_subview(&list).unwrap();
+    list.as_view()
+        .set_frame(Rect::new(0.0, 0.0, 240.0, 200.0))
+        .unwrap();
+    let first = View::new(&application, Rect::new(0.0, 0.0, 10.0, 10.0)).unwrap();
+    let second = View::new(&application, Rect::new(0.0, 0.0, 10.0, 10.0)).unwrap();
+    let entries = [
+        ListEntry::Header("Pinned".into()),
+        ListEntry::Row("a".into()),
+        ListEntry::Header("Notes".into()),
+        ListEntry::Row("b".into()),
+    ];
+    list.set_entries(&entries, &[first.as_view(), second.as_view()])
+        .unwrap();
+    // Replacing entries with headers again must leave the old cells intact.
+    list.set_entries(&entries, &[first.as_view(), second.as_view()])
+        .unwrap();
+    list.set_row_heights(&[50.0, 30.0]).unwrap();
+    list.select(Some("b")).unwrap();
+    assert_eq!(list.selected_id().unwrap().as_deref(), Some("b"));
+    assert!(take().is_empty());
+    // SAFETY: The list's document view is its live NSTableView; table row 1 is row "a".
+    unsafe {
+        let scroll = Checks::native(&list);
+        let table = zpd_objc::msg_send!(scroll, zpd_objc::sel!("documentView"), () => Id);
+        assert_eq!(
+            zpd_objc::msg_send!(table, zpd_objc::sel!("numberOfRows"), () => i64),
+            4
+        );
+        let rect = zpd_objc::msg_send!(table, zpd_objc::sel!("rectOfRow:"), ((1): i64) => zpd_appkit::geometry::Rect);
+        assert_eq!(rect.height, 50.0);
+        let indexes = zpd_objc::msg_send!(zpd_objc::class!("NSIndexSet"), zpd_objc::sel!("indexSetWithIndex:"), ((1): u64) => Id);
+        zpd_objc::msg_send!(table, zpd_objc::sel!("selectRowIndexes:byExtendingSelection:"), ((indexes): Id, (false): bool) => ());
+    }
+    assert_eq!(
+        take(),
+        vec![WindowEventKind::ListSelectionChanged {
+            id: Some("a".into())
+        }]
+    );
 
     // Verifies scroll views host a flipped document that can grow past the viewport.
     let scroll = ScrollView::new(&application).unwrap();

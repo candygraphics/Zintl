@@ -1,4 +1,4 @@
-use zintl_ui_layout::{Rect as LayoutRect, Size};
+use zintl_ui_layout::{LayoutDimension, Rect as LayoutRect, Size};
 
 use super::AppError;
 use super::native::NativeNode;
@@ -44,6 +44,32 @@ impl LayoutNative for NativeNode {
                 for page in hosted {
                     page.apply_as_root(size)?;
                 }
+            }
+            Self::List(list, rows) => {
+                // Rows stretch across the cell and fit their content's height.
+                let width = list.row_width().map_err(AppError::Ui)? as f32;
+                let layouts = rows.layouts.borrow();
+                let mut heights = Vec::with_capacity(hosted.len());
+                for (layout, row) in layouts.iter().zip(hosted) {
+                    let mut row = row.clone();
+                    row.style.width = LayoutDimension::Percent(1.0);
+                    let mut layout = layout.borrow_mut();
+                    *layout = HostLayout {
+                        children: vec![row],
+                        padding: 0.0,
+                    };
+                    let height = HostLayout::place(
+                        &layout.children,
+                        0.0,
+                        Some(width),
+                        None,
+                        Size::default(),
+                        None,
+                    )?
+                    .height;
+                    heights.push(height.ceil().max(1.0) as f64);
+                }
+                list.set_row_heights(&heights).map_err(AppError::Ui)?;
             }
             _ => {}
         }

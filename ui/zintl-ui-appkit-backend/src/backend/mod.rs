@@ -11,7 +11,8 @@ use zintl_ui_layout::{LayoutError, Size};
 use zpd_appkit::actor::{ActorId, EventRouteToken};
 use zpd_appkit::runloop::{Application, ApplicationError};
 use zpd_appkit::ui::{
-    AlertSheet, ColorPanelSession, ContextMenu, FileDialogSheet, Popover, UiError, ViewRef,
+    AlertSheet, ColorPanelSession, ContextMenu, FileDialogSheet, ListEntry, Popover, UiError,
+    ViewRef,
 };
 
 mod app;
@@ -427,8 +428,12 @@ impl AppKitBackend {
                     ..
                 } = self.kind(child)
             {
-                let native =
-                    NativeNode::create(application, &kind, self.main_tasks.shared_sender())?;
+                let native = NativeNode::create(
+                    application,
+                    &kind,
+                    self.main_tasks.shared_sender(),
+                    &self.pending_error,
+                )?;
                 native.as_view().set_identifier(id.as_deref())?;
                 if !enabled {
                     native.set_enabled(false)?;
@@ -494,6 +499,55 @@ impl AppKitBackend {
                 }
                 Ok(())
             }
+            NativeNode::List(list, rows) => {
+                let RenderNode::View {
+                    kind:
+                        ViewKind::List {
+                            sections, selected, ..
+                        },
+                    ..
+                } = self.kind(id)
+                else {
+                    return Err(AppError::InvalidTree);
+                };
+                let entries = sections
+                    .iter()
+                    .flat_map(|section| {
+                        let header = section.title.clone().map(ListEntry::Header);
+                        header
+                            .into_iter()
+                            .chain(section.ids.iter().cloned().map(ListEntry::Row))
+                    })
+                    .collect::<Vec<_>>();
+                let natives = self
+                    .children(id)
+                    .iter()
+                    .filter_map(|row| Some((*row, self.state(*row).native.clone()?)))
+                    .collect::<Vec<_>>();
+                let views = natives
+                    .iter()
+                    .map(|(_, native)| native.as_view())
+                    .collect::<Vec<_>>();
+                list.set_entries(&entries, &views)?;
+                list.select(selected.as_deref())?;
+                // Each row lays out at its cell bounds; `layout_hosted` fills in its snapshot.
+                let mut layouts = Vec::with_capacity(natives.len());
+                for (index, (row_id, native)) in natives.iter().enumerate() {
+                    let layout = Rc::new(RefCell::new(HostLayout::default()));
+                    let callback_layout = layout.clone();
+                    let errors = rows.errors.clone();
+                    list.set_row_layout_handler(index, move |bounds, _| {
+                        let size = Size::new(bounds.width as f32, bounds.height as f32);
+                        if let Err(error) = callback_layout.borrow().layout(size, 0.0) {
+                            errors.record(error);
+                        }
+                    })?;
+                    layouts.push(layout);
+                    self.attach_contents(*row_id, native)?;
+                }
+                *rows.layouts.borrow_mut() = layouts;
+                Ok(())
+            }
             _ => self.attach_children(native.as_view(), id),
         }
     }
@@ -529,7 +583,9 @@ impl AppKitBackend {
             .map_err(AppError::Ui)?;
         let content = self.content_snapshots(id)?;
         let (children, hosted) = match kind {
-            ViewKind::ScrollView { .. } | ViewKind::TabView { .. } => (Vec::new(), content),
+            ViewKind::ScrollView { .. } | ViewKind::TabView { .. } | ViewKind::List { .. } => {
+                (Vec::new(), content)
+            }
             _ => (content, Vec::new()),
         };
         Ok(LayoutSnapshot {
@@ -771,6 +827,21 @@ impl RenderBackend<RenderNode> for AppKitBackend {
         new.adopt_canvas(&old);
         if let Err(error) = self.update_native(id, &old, &new) {
             self.record_error(error);
+        }
+        // List sections are applied together with their rows.
+        if let (
+            RenderNode::View {
+                kind: ViewKind::List { sections: old, .. },
+                ..
+            },
+            RenderNode::View {
+                kind: ViewKind::List { sections: new, .. },
+                ..
+            },
+        ) = (&old, &new)
+            && old != new
+        {
+            self.structure_dirty = true;
         }
         // Tab titles are applied together with their pages.
         if let (

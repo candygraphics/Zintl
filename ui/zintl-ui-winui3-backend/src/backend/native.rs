@@ -107,7 +107,8 @@ impl NativeNode {
             ViewKind::NumberField { .. } => ControlKind::NumberBox,
             ViewKind::SearchField { .. } => ControlKind::AutoSuggestBox,
             ViewKind::ColorWell { .. } => ControlKind::ColorButton,
-            ViewKind::ScrollView { .. } => ControlKind::ScrollViewer,
+            // TODO: Use a ListView with selection; see TODO.md.
+            ViewKind::ScrollView { .. } | ViewKind::List { .. } => ControlKind::ScrollViewer,
             ViewKind::TabView { .. } => ControlKind::TabView,
             // TODO: Draw with Direct2D on a SwapChainPanel; see TODO.md.
             ViewKind::Canvas2D { .. } => ControlKind::Canvas,
@@ -371,6 +372,12 @@ impl NativeNode {
                 // Later offsets echo the user's scrolling, so only a new view restores one.
                 if old.is_none() {
                     self.restore.set(*offset);
+                }
+            }
+            ViewKind::List { .. } => {
+                if old.is_none() {
+                    control.set_bool(BoolProperty::HorizontalScroll, false)?;
+                    control.set_bool(BoolProperty::VerticalScroll, true)?;
                 }
             }
             ViewKind::TabView { titles, selected } => {

@@ -279,6 +279,7 @@ impl Native for shared::Font {
     }
 }
 
+same_variants!(core::ListStyle => ui::ListStyle { Inset, Plain });
 same_variants!(core::TextAlignment => ui::TextAlignment { Leading, Center, Trailing });
 
 impl Native for core::TextColor {
@@ -447,6 +448,7 @@ impl Shared for zpd_appkit::actor::WindowEventKind {
             Native::TextChanged { value } => Shared::TextChanged { value },
             Native::SidebarSelectionChanged { id } => Shared::SidebarSelectionChanged { id },
             Native::SidebarSearchChanged { value } => Shared::SidebarSearchChanged { value },
+            Native::ListSelectionChanged { id } => Shared::ListSelectionChanged { id },
             Native::StateChanged { on } => Shared::StateChanged { on },
             Native::ValueChanged { value } => Shared::ValueChanged { value },
             Native::SelectionChanged { index } => Shared::SelectionChanged { index },

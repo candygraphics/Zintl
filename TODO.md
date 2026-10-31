@@ -68,3 +68,10 @@ ignored by the WinUI 3 backend. Map it to `TextBlock`/`TextBox` `FontSize`,
 
 `SplitView`'s divider is a `Canvas2D`, which does not draw or receive input on
 WinUI 3 yet, so the split shows no divider there and cannot be resized.
+
+## List on Windows
+
+`ViewKind::List` falls back to a `ScrollViewer` that stacks the rows, with no
+selection or section headers. Use a WinUI `ListView` with grouped items,
+`SelectionMode::Single`, and row content hosted as item templates, and report
+`Event::ListSelectionChanged`.

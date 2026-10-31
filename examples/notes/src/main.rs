@@ -2,7 +2,7 @@
 
 mod model;
 
-use model::{Library, NoteId, SmartFolder};
+use model::{Library, Note, NoteId, SmartFolder};
 use zintl_ui_desktop::*;
 
 /// Stores shared by the views and their actions.
@@ -11,6 +11,8 @@ struct State {
     library: Store<Library>,
     folder: Store<Option<String>>,
     selected: Store<Option<NoteId>>,
+    /// The list's selection, which mirrors `selected` as a row ID.
+    row: Store<Option<String>>,
     /// Text of the selected note while it is edited.
     draft: Store<String>,
 }
@@ -39,6 +41,7 @@ impl State {
             .map(|note| note.body.clone())
             .unwrap_or_default();
         cx.update(self.selected, |selected| *selected = id);
+        cx.update(self.row, |row| *row = id.map(|id| id.to_string()));
         cx.update(self.draft, |draft| *draft = body);
     }
 
@@ -89,6 +92,7 @@ impl View for NotesApp {
             library: cx.store(library),
             folder: cx.store(Some(SmartFolder::ALL.to_owned())),
             selected: cx.store(first.as_ref().map(|note| note.id)),
+            row: cx.store(first.as_ref().map(|note| note.id.to_string())),
             draft: cx.store(first.map(|note| note.body).unwrap_or_default()),
         };
     }
@@ -135,11 +139,31 @@ impl View for NotesApp {
     }
 }
 
-/// The middle column: one row per note in the selected folder.
-// TODO: Replace with a selectable list view with styled two-line rows.
+/// The middle column: the selected folder's notes, pinned ones first.
 #[derive(Clone)]
 struct NoteList {
     state: State,
+}
+
+impl NoteList {
+    fn row(note: &Note) -> ListRow {
+        ListRow::new(
+            note.id.to_string(),
+            VStack::new(list![
+                Text::new(note.title())
+                    .font(Font::system(13.0).bold())
+                    .line_limit(1)
+                    .fill_width(),
+                Text::new(note.preview())
+                    .color(TextColor::Secondary)
+                    .line_limit(1)
+                    .fill_width(),
+            ])
+            .spacing(2.0)
+            .padding(6.0)
+            .fill_width(),
+        )
+    }
 }
 
 impl View for NoteList {
@@ -148,11 +172,24 @@ impl View for NoteList {
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let state = self.state;
         let folder = state.folder_id(cx);
-        let selected = *cx.get(state.selected);
-        let count = cx.get(state.library).notes_in(&folder).len();
-        let mut rows = list![
+        let notes = cx.get(state.library).notes_in(&folder);
+        let count = notes.len();
+        let (pinned, others): (Vec<&Note>, Vec<&Note>) =
+            notes.into_iter().partition(|note| note.pinned);
+        let mut sections = Vec::new();
+        if !pinned.is_empty() {
+            sections.push(ListSection::new(pinned.into_iter().map(Self::row)).title("Pinned"));
+            sections.push(ListSection::new(others.into_iter().map(Self::row)).title("Notes"));
+        } else {
+            sections.push(ListSection::new(others.into_iter().map(Self::row)));
+        }
+        VStack::new(list![
             HStack::new(list![
-                Text::new(format!("{count} notes")).color(TextColor::Secondary),
+                Text::new(match count {
+                    1 => "1 note".to_owned(),
+                    count => format!("{count} notes"),
+                })
+                .color(TextColor::Secondary),
                 Spacer::new(),
                 Button::new("")
                     .system_image("square.and.pencil")
@@ -160,28 +197,17 @@ impl View for NoteList {
                     .on_click(move |cx| state.new_note(cx)),
             ])
             .alignment(CrossAxisAlignment::Center)
-            .fill_width()
-        ];
-        for note in cx.get(state.library).notes_in(&folder) {
-            let id = note.id;
-            let marker = if Some(id) == selected { "▸ " } else { "" };
-            let pin = if note.pinned { "📌 " } else { "" };
-            rows.extend(list![
-                VStack::new(list![
-                    Button::new(format!("{marker}{pin}{}", note.title()))
-                        .style(ButtonStyle::Borderless)
-                        .on_click(move |cx| state.select(cx, Some(id))),
-                    Text::new(note.preview())
-                        .color(TextColor::Secondary)
-                        .line_limit(1)
-                        .fill_width(),
-                ])
-                .spacing(2.0)
-                .alignment(CrossAxisAlignment::Start)
-                .fill_width()
-            ]);
-        }
-        ScrollView::new(VStack::new(rows).spacing(12.0).padding(12.0).fill_width())
+            .padding(12.0)
+            .fill_width(),
+            List::new(sections)
+                .bind(state.row)
+                .on_select(move |cx, id| {
+                    state.select(cx, id.and_then(|id| id.parse().ok()));
+                }),
+        ])
+        .spacing(0.0)
+        .fill_width()
+        .grow()
     }
 }
 

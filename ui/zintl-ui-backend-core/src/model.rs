@@ -2,6 +2,23 @@
 
 use zintl_ui_graphics::{Color, Font};
 
+/// A titled group of rows in a [`crate::ViewKind::List`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ListSection {
+    pub title: Option<String>,
+    /// Row IDs; the list's children are the row views in the same order.
+    pub ids: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ListStyle {
+    /// Inset rows with rounded selection, like Notes and Mail.
+    #[default]
+    Inset,
+    /// Rows that span the full width.
+    Plain,
+}
+
 /// How a text field draws its text.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TextStyle {

@@ -230,6 +230,19 @@ pub(crate) fn set_layout_callback(
     })
 }
 
+/// Installs a layout callback on a view created by [`new_layout_view`].
+///
+/// # Safety
+/// `view` must be a live view created by `new_layout_view`.
+pub(crate) unsafe fn set_layout_callback_on(
+    view: zpd_objc::Id,
+    callback: impl FnMut(Rect, f64) + 'static,
+) {
+    let callback: Box<dyn FnMut(Rect, f64)> = Box::new(callback);
+    // SAFETY: Guaranteed by the caller.
+    unsafe { LAYOUT_CALLBACK.set(view, Rc::new(RefCell::new(callback))) }
+}
+
 pub(crate) struct ViewActor {
     actor: ActorRef,
     _main_thread: PhantomData<Rc<()>>,

@@ -7,6 +7,7 @@ mod controls;
 mod dialogs;
 mod error;
 mod layout;
+mod list_view;
 mod menu;
 mod popover;
 mod scroll_view;
@@ -37,6 +38,7 @@ pub use dialogs::{
 };
 pub use error::UiError;
 pub use layout::{Dimension, LayoutConstraint, XAxisAnchor, YAxisAnchor};
+pub use list_view::{ListEntry, ListStyle, ListView};
 pub use menu::ContextMenu;
 pub use popover::{Popover, PopoverEdge};
 pub use scroll_view::{ScrollAxes, ScrollView};

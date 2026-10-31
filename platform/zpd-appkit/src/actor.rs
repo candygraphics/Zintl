@@ -73,6 +73,10 @@ pub enum WindowEventKind {
     StateChanged {
         on: bool,
     },
+    /// The user selected a list row, or `None` when the selection was cleared.
+    ListSelectionChanged {
+        id: Option<String>,
+    },
     /// A continuous control such as a slider or stepper changed.
     ValueChanged {
         value: f64,

@@ -16,6 +16,7 @@ pub enum EventKind {
     Scrolled,
     Canvas,
     SidebarSelectionChanged,
+    ListSelectionChanged,
     SidebarSearchChanged,
     MenuItemSelected,
     PopoverClosed,
@@ -60,6 +61,10 @@ pub enum Event {
     SidebarSelectionChanged {
         id: String,
     },
+    /// The user selected a list row, or cleared the selection.
+    ListSelectionChanged {
+        id: Option<String>,
+    },
     SidebarSearchChanged {
         value: String,
     },
@@ -96,6 +101,7 @@ impl EventTrait for Event {
             Self::Scrolled { .. } => EventKind::Scrolled,
             Self::Canvas(_) => EventKind::Canvas,
             Self::SidebarSelectionChanged { .. } => EventKind::SidebarSelectionChanged,
+            Self::ListSelectionChanged { .. } => EventKind::ListSelectionChanged,
             Self::SidebarSearchChanged { .. } => EventKind::SidebarSearchChanged,
             Self::MenuItemSelected { .. } => EventKind::MenuItemSelected,
             Self::PopoverClosed => EventKind::PopoverClosed,

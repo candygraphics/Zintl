@@ -912,3 +912,51 @@ fn split_view_starts_at_its_position_inside_the_range() {
     };
     assert_eq!(layout.height, LayoutDimension::Points(80.0));
 }
+
+#[test]
+fn list_describes_sections_and_writes_user_selection() {
+    // Verifies a list renders its sections and selection, one child per row, and reports user picks.
+    let picked = Rc::new(RefCell::new(Vec::new()));
+    let recorded = picked.clone();
+    let (mut app, selection) = Harness::mount(
+        |cx| cx.store(Some("b".to_owned())),
+        move |selection| {
+            let recorded = recorded.clone();
+            List::new([
+                ListSection::new([ListRow::new("a", Text::new("A"))]).title("Pinned"),
+                ListSection::new([
+                    ListRow::new("b", Text::new("B")),
+                    ListRow::new("c", Text::new("C")),
+                ]),
+            ])
+            .bind(selection)
+            .on_select(move |_, id| recorded.borrow_mut().push(id.map(str::to_owned)))
+        },
+    );
+
+    let tree = app.render_tree();
+    let RenderNode::View {
+        kind: ViewKind::List {
+            sections, selected, ..
+        },
+        ..
+    } = &tree.value
+    else {
+        panic!("expected a list, got {:?}", tree.value);
+    };
+    assert_eq!(sections[0].title.as_deref(), Some("Pinned"));
+    assert_eq!(sections[1].ids, ["b", "c"]);
+    assert_eq!(selected.as_deref(), Some("b"));
+    assert_eq!(tree.children.len(), 3);
+
+    assert!(app.dispatch_at(
+        &[0],
+        Event::ListSelectionChanged {
+            id: Some("c".into())
+        }
+    ));
+    assert_eq!(app.get(selection).as_deref(), Some("c"));
+    assert!(app.dispatch_at(&[0], Event::ListSelectionChanged { id: None }));
+    assert_eq!(app.get(selection), None);
+    assert_eq!(*picked.borrow(), [Some("c".to_owned()), None]);
+}

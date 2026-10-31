@@ -37,11 +37,11 @@ pub use zintl_ui_native::{
     Alert, AlertButton, AlertStyle, Attach, Attachments, ButtonRole, Canvas2D, Canvas2DHandler,
     CanvasEvent, CanvasEventContext, CanvasSetup, Color, ColorPanel, Context, EnglishMenuLocalizer,
     Event, EventKind, FileDialog, Frame, Invalidator, JapaneseMenuLocalizer, Key, KeyEvent,
-    KeyPhase, ListFactory, MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, Modifiers, NamedKey,
-    NativeView, PointerButton, PointerEvent, PointerPhase, Popover, PopoverEdge, Rect, Redraw,
-    RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, ScrollStatus, Shortcut, Sidebar,
-    SidebarItem, SidebarSection, StandardAction, StandardMenu, StandardText, TextAlignment,
-    TextColor, TitleBar, ViewKind, graphics, list,
+    KeyPhase, List, ListFactory, ListRow, ListSection, ListStyle, MainMenu, Menu, MenuItem,
+    MenuLocalizer, Modifier, Modifiers, NamedKey, NativeView, PointerButton, PointerEvent,
+    PointerPhase, Popover, PopoverEdge, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAxes,
+    ScrollEvent, ScrollStatus, Shortcut, Sidebar, SidebarItem, SidebarSection, StandardAction,
+    StandardMenu, StandardText, TextAlignment, TextColor, TitleBar, ViewKind, graphics, list,
 };
 
 native_view!(Text, Button, TextField, HStack, VStack, Spacer);

@@ -31,7 +31,7 @@ Out of scope: iCloud sync, sharing/collaboration, locking, drawing, scanning.
 2. **Layout** — three-column split, list rows with styled text, column widths.
    Needs A1–A4. A1, A2, A3, A5, and A6 are done, and A4 is partly done.
 3. **List** — native selectable list with sections, keyboard navigation, and
-   row context menus. Needs B1–B3.
+   row context menus. Needs B1–B3. B1 is done.
 4. **Editing** — live autosave, rich text editor, Format menu, checklists.
    Needs C1–C5.
 5. **Toolbar and search** — toolbar items, toolbar search field, focus control.
@@ -75,7 +75,10 @@ Found while writing phase 1 (see `TODO` comments in `src/main.rs`).
 
 ### B. Lists
 
-- **B1 `List` view.** A native `NSTableView`/`NSOutlineView` with arbitrary row
+- **B1 `List` view (done).** `List`/`ListSection`/`ListRow`: an `NSTableView`
+  hosting arbitrary row views, single selection bound to `Store<Option<String>>`,
+  group-row headers, inset or plain style. Not yet: multiple selection, lazy
+  row creation for large lists. Formerly: A native `NSTableView`/`NSOutlineView` with arbitrary row
   views, a selection binding (`Store<Option<Id>>` and multiple selection),
   sections with headers, keyboard navigation, and source-list or inset styles.
   `Sidebar` covers only string items.

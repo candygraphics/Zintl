@@ -131,7 +131,8 @@ pub(crate) fn constrain(
     }
 }
 
-fn cell(title: &str, symbol: Option<&str>, group: bool) -> Strong {
+/// Builds a text cell, with a symbol unless it is a group row.
+pub(crate) fn cell(title: &str, symbol: Option<&str>, group: bool) -> Strong {
     let cell = native::alloc_init(zpd_objc::class!("NSTableCellView"));
     let text = native::alloc_init(zpd_objc::class!("NSTextField"));
     // SAFETY: The retained cell owns its text/image subviews and active layout constraints.
