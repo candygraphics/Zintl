@@ -1,5 +1,39 @@
 //! Plain UI descriptions that every native backend reads.
 
+use zintl_ui_graphics::{Color, Font};
+
+/// How a text field draws its text.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TextStyle {
+    /// `None` keeps the control's standard font.
+    pub font: Option<Font>,
+    pub color: TextColor,
+    pub alignment: TextAlignment,
+    /// Lines shown before the last one is truncated with an ellipsis.
+    ///
+    /// `None` keeps the control's own wrapping.
+    pub line_limit: Option<usize>,
+}
+
+/// A text color that follows the system appearance unless it is `Custom`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum TextColor {
+    #[default]
+    Primary,
+    Secondary,
+    Tertiary,
+    Accent,
+    Custom(Color),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextAlignment {
+    #[default]
+    Leading,
+    Center,
+    Trailing,
+}
+
 /// How a button responds to clicks.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ButtonType {

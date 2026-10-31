@@ -4,12 +4,14 @@ use std::rc::Rc;
 
 use zpd_appkit::actor::WindowEventKind;
 use zpd_appkit::geometry::Rect;
+use zpd_appkit::graphics::Font;
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
     AlertButton, AlertButtonRole, AlertConfig, AlertSheet, AsView, Button, ButtonType, Color,
     ColorWell, CommandItem, CommandMenu, CommandRole, CommandSet, ContextMenu, MenuRole,
     NumberField, NumberFormat, PopUpButton, Popover, ScrollView, SegmentedControl, Sidebar,
-    SidebarItem, SidebarSearch, SidebarSection, Slider, Switch, TabView, View, WindowStyle,
+    SidebarItem, SidebarSearch, SidebarSection, Slider, Switch, TabView, TextAlignment, TextColor,
+    TextField, View, WindowStyle,
 };
 use zpd_objc::Id;
 
@@ -214,6 +216,42 @@ fn main() {
     well.set_color(Color::new(1.0, 0.5, 0.0, 1.0)).unwrap();
     let color = well.color().unwrap();
     assert!((color.red - 1.0).abs() < 0.01 && (color.green - 0.5).abs() < 0.01);
+
+    // Verifies label styling sets the font, semantic color, alignment, and tail truncation.
+    let label = TextField::label_with_string(&application, "A long title").unwrap();
+    content.add_subview(&label).unwrap();
+    label
+        .set_font(Some(&Font::new(None, 20.0, 700, false)))
+        .unwrap();
+    label.set_text_color(TextColor::SecondaryLabel).unwrap();
+    label.set_alignment(TextAlignment::Center).unwrap();
+    label.set_multiline(false).unwrap();
+    label.set_line_limit(2).unwrap();
+    let label_native = Checks::native(&label);
+    // SAFETY: The label is a live NSTextField; the getters return live objects or scalars.
+    unsafe {
+        let font = zpd_objc::msg_send!(label_native, zpd_objc::sel!("font"), () => Id);
+        assert_eq!(
+            zpd_objc::msg_send!(font, zpd_objc::sel!("pointSize"), () => f64),
+            20.0
+        );
+        let color = zpd_objc::msg_send!(label_native, zpd_objc::sel!("textColor"), () => Id);
+        let secondary = zpd_objc::msg_send!(zpd_objc::class!("NSColor"), zpd_objc::sel!("secondaryLabelColor"), () => Id);
+        assert!(zpd_objc::msg_send!(color, zpd_objc::sel!("isEqual:"), ((secondary): Id) => bool));
+        let center = zpd_objc::msg_send!(label_native, zpd_objc::sel!("alignment"), () => isize);
+        assert!(center == 1 || center == 2);
+        assert_eq!(
+            zpd_objc::msg_send!(label_native, zpd_objc::sel!("maximumNumberOfLines"), () => isize),
+            2
+        );
+    }
+    label.set_font(None).unwrap();
+    // SAFETY: The label is a live NSTextField with a font.
+    let size = unsafe {
+        let font = zpd_objc::msg_send!(label_native, zpd_objc::sel!("font"), () => Id);
+        zpd_objc::msg_send!(font, zpd_objc::sel!("pointSize"), () => f64)
+    };
+    assert_eq!(size, 13.0);
 
     // Verifies scroll views host a flipped document that can grow past the viewport.
     let scroll = ScrollView::new(&application).unwrap();

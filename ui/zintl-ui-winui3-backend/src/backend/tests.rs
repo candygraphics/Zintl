@@ -283,6 +283,7 @@ fn view_kinds_choose_matching_controls() {
         bordered: true,
         draws_background: true,
         multiline: false,
+        style: Default::default(),
     };
     assert_eq!(NativeNode::control_kind(&field(true)), ControlKind::TextBox);
     assert_eq!(

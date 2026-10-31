@@ -38,8 +38,8 @@ pub use zintl_ui_backend_core::{
     AlertStyle, BezelStyle, ButtonType, Canvas2DHandler, CanvasEvent, CanvasEventContext,
     CanvasNode, CanvasSetup, Color, Event, EventKind, Frame, Invalidator, Key, KeyEvent, KeyPhase,
     Modifiers, NamedKey, NodeId, PointerButton, PointerEvent, PointerPhase, PopoverEdge, Rect,
-    Redraw, RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, TitleBar, ViewKind, WindowStyle,
-    graphics,
+    Redraw, RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, TextAlignment, TextColor, TextStyle,
+    TitleBar, ViewKind, WindowStyle, graphics,
 };
 pub use zintl_ui_layout::{LayoutStyle, Size};
 

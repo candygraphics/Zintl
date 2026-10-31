@@ -55,3 +55,10 @@ inset are ignored by the WinUI 3 backend (it passes an inset of 0). With
 - IME and marked text (`NSTextInputClient`) for canvases that accept text.
 - Cursor shape control from the handler.
 - An opt-in render thread (`Canvas2D::threaded`) for heavy drawing.
+
+## Text styling on Windows
+
+`TextStyle` (font, color, alignment, line limit on `ViewKind::TextField`) is
+ignored by the WinUI 3 backend. Map it to `TextBlock`/`TextBox` `FontSize`,
+`FontWeight`, `Foreground` (theme brushes for semantic colors),
+`TextAlignment`, and `MaxLines` with `TextTrimming::CharacterEllipsis`.

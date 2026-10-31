@@ -266,6 +266,35 @@ impl Shared for ui::Color {
     }
 }
 
+impl Native for shared::Font {
+    type Output = graphics::Font;
+
+    fn native(&self) -> graphics::Font {
+        graphics::Font::new(
+            self.family.as_deref(),
+            self.size(),
+            self.weight.0,
+            self.italic,
+        )
+    }
+}
+
+same_variants!(core::TextAlignment => ui::TextAlignment { Leading, Center, Trailing });
+
+impl Native for core::TextColor {
+    type Output = ui::TextColor;
+
+    fn native(&self) -> ui::TextColor {
+        match self {
+            Self::Primary => ui::TextColor::Label,
+            Self::Secondary => ui::TextColor::SecondaryLabel,
+            Self::Tertiary => ui::TextColor::TertiaryLabel,
+            Self::Accent => ui::TextColor::Accent,
+            Self::Custom(color) => ui::TextColor::Custom(color.native()),
+        }
+    }
+}
+
 impl Native for core::NumberFormat {
     type Output = ui::NumberFormat;
 

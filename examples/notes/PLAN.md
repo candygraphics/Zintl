@@ -29,7 +29,8 @@ Out of scope: iCloud sync, sharing/collaboration, locking, drawing, scanning.
    note list as buttons in a `ScrollView`; plain multiline `TextField` editor
    with a draft committed on selection change; File menu items.
 2. **Layout** — three-column split, list rows with styled text, column widths.
-   Needs A1–A4.
+   Needs A1–A4. A2, A3, A5, and A6 are done, and A4 is partly done; A1 and the
+   rest of A4 remain.
 3. **List** — native selectable list with sections, keyboard navigation, and
    row context menus. Needs B1–B3.
 4. **Editing** — live autosave, rich text editor, Format menu, checklists.
@@ -52,16 +53,22 @@ Found while writing phase 1 (see `TODO` comments in `src/main.rs`).
   `content`. Notes needs a third, resizable column (`NSSplitViewController`
   with a content-list item, like SwiftUI `NavigationSplitView`). Today the list
   and editor sit in an `HStack` with no divider and widths decided by content.
-- **A2 Frame sizing.** No fixed/min/max width or height on stacks and controls
+- **A2 Frame sizing (done).** Stacks take `width` and `height`.
+  Formerly: No fixed/min/max width or height on stacks and controls
   (only `minimum_size`, `fill_width`, `grow`). Needed for the list column
   (~250 pt) and the editor filling the remaining height.
-- **A3 Text styling.** `Text` has no font, weight, size, color (primary /
+- **A3 Text styling (done).** `Text::font`, `color` (`TextColor`), `alignment`,
+  `line_limit`, and `fill_width`; AppKit only for now. Formerly: `Text` has no font, weight, size, color (primary /
   secondary / tertiary), alignment, line limit, or truncation.
-- **A4 Primitives.** `Spacer`, `Divider`, standalone `Image` (SF Symbol, e.g.
-  the pin), and alignment for stack children (Borderless buttons are centered,
-  so rows cannot be left-aligned).
-- **A5 Re-export `KeyedElement`.** Keys for list rows need `zintl_ui`
-  directly; `zintl-ui-desktop` should re-export the trait.
+- **A4 Primitives.** Done: `Spacer` and stack `alignment` (`Center` and `End`
+  were added to `CrossAxisAlignment`). Remaining: `Divider`, a standalone
+  `Image` (an SF Symbol such as the pin), and button title alignment and fonts
+  (a borderless button centers its title within its minimum width).
+- **A5 Re-export `KeyedElement` (done).**
+- **A6 Native measuring (done).** AppKit used to lay out leaves at declared
+  estimates (`Button::new` is 80×32), so longer titles wrapped. The AppKit
+  backend now raises minimums to `intrinsicContentSize` for buttons, labels,
+  switches, pop-ups, and segmented controls, as WinUI already did.
 
 ### B. Lists
 

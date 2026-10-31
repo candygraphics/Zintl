@@ -42,7 +42,7 @@ pub use popover::{Popover, PopoverEdge};
 pub use scroll_view::{ScrollAxes, ScrollView};
 pub use sidebar::{Sidebar, SidebarItem, SidebarSearch, SidebarSection};
 pub use tab_view::TabView;
-pub use text_field::TextField;
+pub use text_field::{TextAlignment, TextColor, TextField};
 pub use view::{AsView, View, ViewRef};
 #[cfg(feature = "wgpu")]
 pub use window::{MetalLayer, WgpuSurface};

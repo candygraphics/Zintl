@@ -61,6 +61,8 @@ pub enum ChildSizing {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CrossAxisAlignment {
     Start,
+    Center,
+    End,
     #[default]
     Stretch,
 }
@@ -256,6 +258,8 @@ fn to_taffy_style(style: LayoutStyle) -> TaffyStyle {
         },
         align_items: match style.cross_axis_alignment {
             CrossAxisAlignment::Start => Some(AlignItems::START),
+            CrossAxisAlignment::Center => Some(AlignItems::CENTER),
+            CrossAxisAlignment::End => Some(AlignItems::END),
             CrossAxisAlignment::Stretch => Some(AlignItems::STRETCH),
         },
         justify_content: match style.main_axis_distribution {
@@ -411,6 +415,30 @@ mod tests {
 
         assert_eq!(tree.layout(root).unwrap().height, 90.0);
         assert_eq!(tree.layout(root).unwrap().width, 120.0);
+    }
+
+    #[test]
+    fn cross_axis_alignment_places_children() {
+        // Verifies center and end alignment keep the child's width and offset it on the cross axis.
+        for (alignment, x) in [
+            (CrossAxisAlignment::Start, 0.0),
+            (CrossAxisAlignment::Center, 30.0),
+            (CrossAxisAlignment::End, 60.0),
+        ] {
+            let mut tree = LayoutTree::new();
+            let child = tree
+                .create_node(LayoutStyle::leaf(Size::new(40.0, 20.0)), &[])
+                .unwrap();
+            let mut root_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+            root_style.width = LayoutDimension::Points(100.0);
+            root_style.cross_axis_alignment = alignment;
+            let root = tree.create_node(root_style, &[child]).unwrap();
+
+            tree.compute(root, Size::new(100.0, 100.0)).unwrap();
+
+            assert_eq!(tree.layout(child).unwrap().x, x);
+            assert_eq!(tree.layout(child).unwrap().width, 40.0);
+        }
     }
 
     #[test]

@@ -24,7 +24,7 @@ pub use model::{
     AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, CommandItem,
     CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig, FileDialogMode,
     MenuRole, NumberFormat, PopoverEdge, ScrollAxes, Sidebar, SidebarItem, SidebarSearch,
-    SidebarSection, TitleBar, WindowAppMenu, WindowStyle,
+    SidebarSection, TextAlignment, TextColor, TextStyle, TitleBar, WindowAppMenu, WindowStyle,
 };
 pub use zintl_ui_graphics as graphics;
 pub use zintl_ui_graphics::{Color, Rect};
@@ -59,6 +59,7 @@ pub enum ViewKind {
         bordered: bool,
         draws_background: bool,
         multiline: bool,
+        style: TextStyle,
     },
     Switch {
         on: bool,

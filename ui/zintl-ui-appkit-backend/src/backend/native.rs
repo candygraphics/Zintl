@@ -7,6 +7,7 @@ use zpd_appkit::ui::{
     SearchField, SegmentedControl, Slider, Switch, TabView, TextField, UiError, View, ViewRef,
 };
 
+use zintl_ui_layout::Size;
 use zpd_appkit::geometry::Rect;
 
 use super::canvas::CanvasBridge;
@@ -94,6 +95,39 @@ impl NativeNode {
         Ok(native)
     }
 
+    /// Raises declared minimums to the size the control's content needs.
+    ///
+    /// Views declare estimates; AppKit measures the actual title and font.
+    /// Line-limited labels keep their declared width so they can truncate.
+    pub(super) fn minimum_size(&self, kind: &ViewKind, declared: Size) -> Result<Size, UiError> {
+        let (measure_width, measure_height) = match kind {
+            ViewKind::Button(_)
+            | ViewKind::Switch { .. }
+            | ViewKind::PopUpButton { .. }
+            | ViewKind::SegmentedControl { .. } => (true, true),
+            // Wrapping labels need a width before they have a height.
+            ViewKind::TextField {
+                editable: false,
+                multiline: false,
+                style,
+                ..
+            } => (style.line_limit.is_none(), true),
+            _ => (false, false),
+        };
+        if !measure_width && !measure_height {
+            return Ok(declared);
+        }
+        let (width, height) = self.as_view().intrinsic_content_size()?;
+        let raise = |declared: f32, measure: bool, size: Option<f64>| match (measure, size) {
+            (true, Some(size)) => declared.max(size.ceil() as f32),
+            _ => declared,
+        };
+        Ok(Size::new(
+            raise(declared.width, measure_width, width),
+            raise(declared.height, measure_height, height),
+        ))
+    }
+
     pub(super) fn set_enabled(&self, enabled: bool) -> Result<(), UiError> {
         match self {
             Self::NumberField(field) => field.set_enabled(enabled),
@@ -160,6 +194,7 @@ impl NativeNode {
                     bordered,
                     draws_background,
                     multiline,
+                    style,
                 },
             ) => {
                 if field.string_value()? != *value {
@@ -170,7 +205,30 @@ impl NativeNode {
                 field.set_selectable(*selectable)?;
                 field.set_bordered(*bordered)?;
                 field.set_draws_background(*draws_background)?;
-                field.set_multiline(*multiline)?;
+                let old_style = match old {
+                    Some(ViewKind::TextField {
+                        multiline, style, ..
+                    }) => Some((multiline, style)),
+                    _ => None,
+                };
+                if old_style.is_none_or(|(old_multiline, old)| {
+                    old_multiline != multiline || old.line_limit != style.line_limit
+                }) {
+                    field.set_multiline(*multiline)?;
+                    if let Some(lines) = style.line_limit {
+                        field.set_line_limit(lines)?;
+                    }
+                }
+                let old_style = old_style.map(|(_, style)| style);
+                if old_style.is_none_or(|old| old.font != style.font) {
+                    field.set_font(style.font.as_ref().map(Native::native).as_ref())?;
+                }
+                if old_style.is_none_or(|old| old.color != style.color) {
+                    field.set_text_color(style.color.native())?;
+                }
+                if old_style.is_none_or(|old| old.alignment != style.alignment) {
+                    field.set_alignment(style.alignment.native())?;
+                }
             }
             (Self::Switch(switch), ViewKind::Switch { on }) => {
                 if switch.is_on()? != *on {

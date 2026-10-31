@@ -363,6 +363,18 @@ impl<'view> ViewRef<'view> {
         })?;
         Ok(bounds.into())
     }
+    /// Returns the size the view's content needs; `None` marks an axis without one.
+    pub fn intrinsic_content_size(self) -> Result<(Option<f64>, Option<f64>), UiError> {
+        let size = self.with(|view| {
+            // SAFETY: NSView's intrinsicContentSize returns an NSSize for a live view.
+            unsafe {
+                zpd_objc::msg_send!(view, zpd_objc::sel!("intrinsicContentSize"), () => native::Size)
+            }
+        })?;
+        // NSViewNoIntrinsicMetric is -1.
+        let metric = |value: f64| (value >= 0.0).then_some(value);
+        Ok((metric(size.width), metric(size.height)))
+    }
     pub fn set_identifier(self, identifier: Option<&str>) -> Result<(), UiError> {
         let identifier = identifier.map(native::nsstring);
         self.with(|view| unsafe {

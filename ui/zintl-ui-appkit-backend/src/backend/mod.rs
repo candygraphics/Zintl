@@ -512,7 +512,7 @@ impl AppKitBackend {
     fn build_layout_snapshot(&self, id: NodeId) -> Result<LayoutSnapshot<NativeNode>, AppError> {
         let RenderNode::View {
             kind,
-            layout: style,
+            layout: mut style,
             ..
         } = self.kind(id)
         else {
@@ -524,6 +524,9 @@ impl AppKitBackend {
             .as_ref()
             .expect("materialized view nodes have native views")
             .clone();
+        style.minimum_size = native
+            .minimum_size(&kind, style.minimum_size)
+            .map_err(AppError::Ui)?;
         let content = self.content_snapshots(id)?;
         let (children, hosted) = match kind {
             ViewKind::ScrollView { .. } | ViewKind::TabView { .. } => (Vec::new(), content),

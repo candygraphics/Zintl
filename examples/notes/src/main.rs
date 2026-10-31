@@ -150,18 +150,17 @@ impl View for NoteList {
         let state = self.state;
         let folder = state.folder_id(cx);
         let selected = *cx.get(state.selected);
+        let count = cx.get(state.library).notes_in(&folder).len();
         let mut rows = list![
             HStack::new(list![
-                Text::new(format!(
-                    "{} notes",
-                    cx.get(state.library).notes_in(&folder).len()
-                )),
+                Text::new(format!("{count} notes")).color(TextColor::Secondary),
+                Spacer::new(),
                 Button::new("")
                     .system_image("square.and.pencil")
                     .style(ButtonStyle::Borderless)
                     .on_click(move |cx| state.new_note(cx)),
             ])
-            .space_between()
+            .alignment(CrossAxisAlignment::Center)
             .fill_width()
         ];
         for note in cx.get(state.library).notes_in(&folder) {
@@ -173,13 +172,20 @@ impl View for NoteList {
                     Button::new(format!("{marker}{pin}{}", note.title()))
                         .style(ButtonStyle::Borderless)
                         .on_click(move |cx| state.select(cx, Some(id))),
-                    Text::new(note.preview()),
+                    Text::new(note.preview())
+                        .color(TextColor::Secondary)
+                        .line_limit(1)
+                        .fill_width(),
                 ])
                 .spacing(2.0)
+                .alignment(CrossAxisAlignment::Start)
                 .fill_width()
             ]);
         }
-        ScrollView::new(VStack::new(rows).spacing(12.0).padding(12.0).fill_width())
+        VStack::new(list![ScrollView::new(
+            VStack::new(rows).spacing(12.0).padding(12.0).fill_width()
+        )])
+        .width(260.0)
     }
 }
 
