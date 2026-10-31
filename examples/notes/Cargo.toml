@@ -1,0 +1,11 @@
+[package]
+name = "zintl-notes"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "notes"
+path = "src/main.rs"
+
+[dependencies]
+zintl-ui-desktop = { path = "../../ui/zintl-ui-desktop" }

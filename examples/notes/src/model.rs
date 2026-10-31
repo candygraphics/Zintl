@@ -1,0 +1,221 @@
+//! The note library, independent of the UI.
+
+pub type NoteId = u64;
+
+/// Sidebar IDs of the folders the library manages itself.
+pub struct SmartFolder;
+
+impl SmartFolder {
+    pub const ALL: &str = "all";
+    pub const DELETED: &str = "deleted";
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Folder {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Note {
+    pub id: NoteId,
+    pub folder: String,
+    pub body: String,
+    pub pinned: bool,
+    pub deleted: bool,
+    /// Increases on every edit; orders the list until real timestamps land.
+    pub revision: u64,
+}
+
+impl Note {
+    /// The first non-empty line, as Notes shows it in the list.
+    pub fn title(&self) -> &str {
+        self.lines().next().unwrap_or("New Note")
+    }
+
+    /// The first non-empty line after the title.
+    pub fn preview(&self) -> &str {
+        self.lines().nth(1).unwrap_or("No additional text")
+    }
+
+    fn lines(&self) -> impl Iterator<Item = &str> {
+        self.body
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Library {
+    pub folders: Vec<Folder>,
+    pub notes: Vec<Note>,
+    next_id: NoteId,
+    clock: u64,
+}
+
+impl Library {
+    pub fn sample() -> Self {
+        let mut library = Self {
+            folders: vec![
+                Folder {
+                    id: "notes".into(),
+                    name: "Notes".into(),
+                },
+                Folder {
+                    id: "recipes".into(),
+                    name: "Recipes".into(),
+                },
+            ],
+            ..Self::default()
+        };
+        let welcome = library.create("notes");
+        library.set_body(
+            welcome,
+            "Welcome to Notes\nThis app is built with zintl-ui-desktop.",
+        );
+        library.set_pinned(welcome, true);
+        let groceries = library.create("notes");
+        library.set_body(groceries, "Groceries\nMilk, eggs, bread");
+        let curry = library.create("recipes");
+        library.set_body(curry, "Curry\nOnion, carrot, potato, roux");
+        library
+    }
+
+    pub fn note(&self, id: NoteId) -> Option<&Note> {
+        self.notes.iter().find(|note| note.id == id)
+    }
+
+    /// Notes shown for a sidebar selection: pinned first, then most recently edited.
+    pub fn notes_in(&self, folder: &str) -> Vec<&Note> {
+        let mut notes: Vec<&Note> = self
+            .notes
+            .iter()
+            .filter(|note| match folder {
+                SmartFolder::ALL => !note.deleted,
+                SmartFolder::DELETED => note.deleted,
+                id => !note.deleted && note.folder == id,
+            })
+            .collect();
+        notes.sort_by(|a, b| b.pinned.cmp(&a.pinned).then(b.revision.cmp(&a.revision)));
+        notes
+    }
+
+    /// Creates an empty note; smart folders put it in the first folder.
+    pub fn create(&mut self, folder: &str) -> NoteId {
+        let folder = match folder {
+            SmartFolder::ALL | SmartFolder::DELETED => self
+                .folders
+                .first()
+                .map(|folder| folder.id.clone())
+                .unwrap_or_default(),
+            id => id.to_owned(),
+        };
+        self.next_id += 1;
+        let note = Note {
+            id: self.next_id,
+            folder,
+            body: String::new(),
+            pinned: false,
+            deleted: false,
+            revision: self.tick(),
+        };
+        self.notes.push(note);
+        self.next_id
+    }
+
+    /// Stores an edit; unchanged bodies keep their position in the list.
+    pub fn set_body(&mut self, id: NoteId, body: &str) {
+        let revision = self.clock + 1;
+        if let Some(note) = self.notes.iter_mut().find(|note| note.id == id)
+            && note.body != body
+        {
+            note.body = body.to_owned();
+            note.revision = revision;
+            self.clock = revision;
+        }
+    }
+
+    pub fn set_pinned(&mut self, id: NoteId, pinned: bool) {
+        if let Some(note) = self.notes.iter_mut().find(|note| note.id == id) {
+            note.pinned = pinned;
+        }
+    }
+
+    /// Moves a note to Recently Deleted, or removes it if it is already there.
+    pub fn delete(&mut self, id: NoteId) {
+        let Some(index) = self.notes.iter().position(|note| note.id == id) else {
+            return;
+        };
+        if self.notes[index].deleted {
+            self.notes.remove(index);
+        } else {
+            self.notes[index].deleted = true;
+            self.notes[index].pinned = false;
+        }
+    }
+
+    fn tick(&mut self) -> u64 {
+        self.clock += 1;
+        self.clock
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Titles and previews skip blank lines and fall back for empty notes.
+    #[test]
+    fn title_and_preview_use_non_empty_lines() {
+        let mut library = Library::default();
+        let id = library.create("notes");
+        assert_eq!(library.note(id).unwrap().title(), "New Note");
+        library.set_body(id, "\n  Title  \n\nBody");
+        let note = library.note(id).unwrap();
+        assert_eq!((note.title(), note.preview()), ("Title", "Body"));
+    }
+
+    // Pinned notes come first, then the most recently edited.
+    #[test]
+    fn notes_are_sorted_by_pin_then_recency() {
+        let mut library = Library::default();
+        let a = library.create("notes");
+        let b = library.create("notes");
+        let c = library.create("notes");
+        library.set_body(a, "edited");
+        library.set_pinned(c, true);
+        let order: Vec<_> = library.notes_in("notes").iter().map(|n| n.id).collect();
+        assert_eq!(order, [c, a, b]);
+    }
+
+    // Saving the same body does not move the note to the top.
+    #[test]
+    fn unchanged_body_keeps_order() {
+        let mut library = Library::default();
+        let a = library.create("notes");
+        let b = library.create("notes");
+        library.set_body(a, "");
+        assert_eq!(library.notes_in("notes")[0].id, b);
+    }
+
+    // Deleting moves a note to Recently Deleted; deleting it there removes it.
+    #[test]
+    fn delete_moves_then_removes() {
+        let mut library = Library::default();
+        let id = library.create("notes");
+        library.delete(id);
+        assert!(library.notes_in(SmartFolder::ALL).is_empty());
+        assert_eq!(library.notes_in(SmartFolder::DELETED).len(), 1);
+        library.delete(id);
+        assert!(library.note(id).is_none());
+    }
+
+    // New notes from a smart folder land in the first real folder.
+    #[test]
+    fn create_in_smart_folder_uses_first_folder() {
+        let mut library = Library::sample();
+        let id = library.create(SmartFolder::ALL);
+        assert_eq!(library.note(id).unwrap().folder, "notes");
+    }
+}
