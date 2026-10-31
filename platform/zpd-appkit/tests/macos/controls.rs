@@ -650,6 +650,19 @@ fn main() {
     });
     assert!(floating);
 
+    // Verifies the will-terminate hook runs when AppKit announces that it is exiting.
+    let exited = Rc::new(std::cell::Cell::new(0));
+    let count = exited.clone();
+    application
+        .on_will_terminate(move || count.set(count.get() + 1))
+        .unwrap();
+    // SAFETY: Posting the notification on the main thread runs observers synchronously.
+    unsafe {
+        let center = zpd_objc::msg_send!(zpd_objc::class!("NSNotificationCenter"), zpd_objc::sel!("defaultCenter"), () => Id);
+        zpd_objc::msg_send!(center, zpd_objc::sel!("postNotificationName:object:"), ((ns_string("NSApplicationWillTerminateNotification")): Id, (zpd_objc::NIL): Id) => ());
+    }
+    assert_eq!(exited.get(), 1);
+
     // Verifies standard roles use responder-chain actions and register NSApp menus.
     application
         .set_commands(

@@ -1,5 +1,5 @@
 mod button;
-mod callback;
+pub(crate) mod callback;
 mod canvas;
 mod color;
 pub(crate) mod commands;

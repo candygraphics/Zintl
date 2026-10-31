@@ -535,6 +535,7 @@ type DesktopNodeId = <DesktopBackend as RenderBackend<RenderNode>>::NodeId;
 
 pub struct App {
     composer: Composer<RenderNode, DesktopBackend>,
+    on_exit: Option<Box<dyn FnOnce()>>,
 }
 
 impl App {
@@ -549,7 +550,10 @@ impl App {
         backend.set_default_main_menu(MainMenu::standard().commands());
         let mut composer = Composer::new(backend);
         composer.mount(root);
-        Self { composer }
+        Self {
+            composer,
+            on_exit: None,
+        }
     }
 
     pub fn render(&self) -> RenderNode {
@@ -582,14 +586,26 @@ impl App {
         }
     }
 
+    /// Runs once before the process ends, whether the last window closed or
+    /// the user quit, for example to finish saving.
+    ///
+    /// On macOS, ⌘Q exits the process without returning from [`App::run`],
+    /// so work after `run` is not enough.
+    pub fn on_exit(mut self, action: impl FnOnce() + 'static) -> Self {
+        self.on_exit = Some(Box::new(action));
+        self
+    }
+
     #[cfg(all(target_os = "macos", not(test)))]
     pub fn run(self) -> Result<(), AppError> {
-        zintl_ui_appkit_backend::run_composer(self.composer)
+        let on_exit = self.on_exit.unwrap_or_else(|| Box::new(|| {}));
+        zintl_ui_appkit_backend::run_composer(self.composer, on_exit)
     }
 
     #[cfg(all(target_os = "windows", not(test)))]
     pub fn run(self) -> Result<(), AppError> {
-        zintl_ui_winui3_backend::run_composer(self.composer)
+        let on_exit = self.on_exit.unwrap_or_else(|| Box::new(|| {}));
+        zintl_ui_winui3_backend::run_composer(self.composer, on_exit)
     }
 
     #[cfg(test)]

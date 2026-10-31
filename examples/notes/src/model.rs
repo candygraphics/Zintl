@@ -2,6 +2,8 @@
 
 use zintl_ui_desktop::{AttributedText, ParagraphStyle};
 
+use crate::storage::{FolderFile, LibraryFile, NoteFile};
+
 pub type NoteId = u64;
 
 /// Sidebar IDs of the folders the library manages itself.
@@ -113,6 +115,62 @@ impl Library {
             library.set_pinned(id, pinned);
         }
         library
+    }
+
+    /// Describes the library for saving.
+    pub fn to_file(&self) -> LibraryFile {
+        LibraryFile {
+            version: LibraryFile::VERSION,
+            folders: self
+                .folders
+                .iter()
+                .map(|folder| FolderFile {
+                    id: folder.id.clone(),
+                    name: folder.name.clone(),
+                })
+                .collect(),
+            notes: self
+                .notes
+                .iter()
+                .map(|note| NoteFile {
+                    id: note.id,
+                    folder: note.folder.clone(),
+                    body: (&note.body).into(),
+                    pinned: note.pinned,
+                    deleted: note.deleted,
+                    revision: note.revision,
+                })
+                .collect(),
+        }
+    }
+
+    /// Restores a saved library; new IDs and revisions continue after the saved ones.
+    pub fn from_file(file: LibraryFile) -> Self {
+        let notes: Vec<Note> = file
+            .notes
+            .into_iter()
+            .map(|note| Note {
+                id: note.id,
+                folder: note.folder,
+                body: note.body.into(),
+                pinned: note.pinned,
+                deleted: note.deleted,
+                revision: note.revision,
+            })
+            .collect();
+        Self {
+            folders: file
+                .folders
+                .into_iter()
+                .map(|folder| Folder {
+                    id: folder.id,
+                    name: folder.name,
+                })
+                .collect(),
+            next_id: notes.iter().map(|note| note.id).max().unwrap_or(0),
+            clock: notes.iter().map(|note| note.revision).max().unwrap_or(0),
+            notes,
+        }
     }
 
     pub fn note(&self, id: NoteId) -> Option<&Note> {

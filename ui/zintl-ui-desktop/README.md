@@ -217,6 +217,19 @@ Window::panel(bounds, "Inspector").bind_open(self.inspector)
 
 Only one `ColorPanel` should be presented at a time because AppKit shares it.
 
+## Quitting
+
+The app quits when its last normal window closes or the user chooses Quit.
+`App::on_exit` runs once before the process ends on either path; use it to
+finish saving. On macOS, Quit (⌘Q) exits the process from inside AppKit
+without returning from `App::run`, so code after `run` alone is not enough.
+
+```rust,ignore
+App::new(Root::new(saver.clone()))
+    .on_exit(move || saver.flush())
+    .run()
+```
+
 ## Main menu
 
 Declare a `MainMenu` at the root next to the windows. `MainMenu::standard()`

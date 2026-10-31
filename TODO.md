@@ -90,3 +90,9 @@ scrolling like `NSTextView`. Set `AcceptsReturn`, `TextWrapping::Wrap`,
 `RichEditBox`, map paragraph styles to character formats, and report
 `Event::RichTextChanged`. The paragraph style and font trait menu items are
 omitted from WinUI menus.
+
+## App exit on Windows
+
+`App::on_exit` runs after the WinUI 3 message loop returns. It does not run
+when Windows ends the session; handle `WM_QUERYENDSESSION`/`WM_ENDSESSION`
+(or `Application.Suspending`) and call it there.

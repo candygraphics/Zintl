@@ -1,8 +1,10 @@
 //! A Notes-style app built with zintl-ui-desktop. See `PLAN.md`.
 
 mod model;
+mod storage;
 
 use model::{Library, Note, NoteId, SmartFolder};
+use storage::{Saver, Storage};
 use zintl_ui_desktop::*;
 
 /// Stores shared by the views and their actions.
@@ -15,9 +17,17 @@ struct State {
     row: Store<Option<String>>,
     /// The editor's text, which mirrors the selected note's body.
     draft: Store<AttributedText>,
+    saver: Store<Saver>,
 }
 
 impl State {
+    /// Changes the library and queues it to be saved.
+    fn change<R>(&self, cx: &mut Context<'_>, update: impl FnOnce(&mut Library) -> R) -> R {
+        let result = cx.update(self.library, update);
+        cx.get(self.saver).save(cx.get(self.library));
+        result
+    }
+
     fn folder_id(&self, cx: &Context<'_>) -> String {
         cx.get(self.folder)
             .clone()
@@ -30,7 +40,7 @@ impl State {
             return;
         };
         let draft = cx.get(self.draft).clone();
-        cx.update(self.library, |library| library.set_body(id, &draft));
+        self.change(cx, |library| library.set_body(id, &draft));
     }
 
     fn select(&self, cx: &mut Context<'_>, id: Option<NoteId>) {
@@ -56,7 +66,7 @@ impl State {
 
     fn new_note(&self, cx: &mut Context<'_>) {
         let folder = self.folder_id(cx);
-        let id = cx.update(self.library, |library| library.create(&folder));
+        let id = self.change(cx, |library| library.create(&folder));
         self.select(cx, Some(id));
     }
 
@@ -64,15 +74,25 @@ impl State {
         let Some(id) = *cx.get(self.selected) else {
             return;
         };
-        cx.update(self.library, |library| library.delete(id));
+        self.change(cx, |library| library.delete(id));
         cx.update(self.selected, |selected| *selected = None);
         self.select_folder(cx);
     }
 }
 
-#[derive(Default)]
 struct NotesApp {
     state: State,
+    /// The loaded library and its saver, moved into Stores by `init`.
+    initial: Option<(Library, Saver)>,
+}
+
+impl NotesApp {
+    fn new(library: Library, saver: Saver) -> Self {
+        Self {
+            state: State::default(),
+            initial: Some((library, saver)),
+        }
+    }
 }
 
 impl View for NotesApp {
@@ -80,7 +100,7 @@ impl View for NotesApp {
 
     fn init(&mut self, cx: &mut Context<'_>) {
         // Open with the first note selected, as Notes does.
-        let library = Library::sample();
+        let (library, saver) = self.initial.take().expect("init runs once");
         let first = library
             .notes_in(SmartFolder::ALL)
             .first()
@@ -91,6 +111,7 @@ impl View for NotesApp {
             selected: cx.store(first.as_ref().map(|note| note.id)),
             row: cx.store(first.as_ref().map(|note| note.id.to_string())),
             draft: cx.store(first.map(|note| note.body).unwrap_or_default()),
+            saver: cx.store(saver),
         };
     }
 
@@ -266,7 +287,20 @@ impl View for Editor {
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn main() -> Result<(), AppError> {
-    App::new(NotesApp::default()).run()
+    let directory = Storage::directory();
+    // A library that cannot be read is never replaced by the sample.
+    let library = match Storage::load(&directory) {
+        Ok(library) => library.unwrap_or_else(Library::sample),
+        Err(error) => {
+            eprintln!("notes: could not read {}: {error}", directory.display());
+            std::process::exit(1);
+        }
+    };
+    let saver = Storage::writer(directory);
+    let flush = saver.clone();
+    App::new(NotesApp::new(library, saver))
+        .on_exit(move || flush.flush())
+        .run()
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]

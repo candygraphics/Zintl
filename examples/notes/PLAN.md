@@ -41,6 +41,9 @@ Out of scope: iCloud sync, sharing/collaboration, locking, drawing, scanning.
    Needs E1–E4.
 7. **Persistence and lifecycle** — JSON files under Application Support,
    debounced saving, save on quit, window frame restoration. Needs F1–F3.
+   Done except window frames: `notes.json` in Application Support
+   (`ZINTL_NOTES_DIR` overrides it), written atomically by a background
+   thread that keeps only the newest snapshot, and flushed in `App::on_exit`.
 8. **Windows** — run the same app on WinUI 3.
 
 ## Missing APIs
@@ -135,7 +138,8 @@ Found while writing phase 1 (see `TODO` comments in `src/main.rs`).
   without a `Context`, so nothing outside an event handler can update a Store.
   Needed for debounced autosave and background loading
   (e.g. `cx.after(duration, |cx| …)`, `cx.spawn` with a main-thread callback).
-- **F2 App lifecycle.** `on_terminate` / will-resign-active hooks to flush
+- **F2 App lifecycle (exit hook done).** `App::on_exit` runs before the
+  process ends, including ⌘Q. Remaining: the menu bar app name. Formerly: `on_terminate` / will-resign-active hooks to flush
   saves; the app name shown in the menu bar comes from the binary (`notes`)
   instead of `MainMenu::app_name`; it probably needs a bundle or
   `NSProcessInfo.processName`.
