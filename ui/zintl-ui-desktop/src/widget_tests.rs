@@ -621,6 +621,43 @@ fn menu_localizers_translate_standard_text() {
 }
 
 #[test]
+fn standard_edit_menu_ends_with_a_find_submenu() {
+    // Verifies the Edit menu offers text finder actions with macOS shortcuts and translated titles.
+    let roots = App::new(list![
+        MainMenu::standard().localizer(JapaneseMenuLocalizer),
+        Window::new(Rect::new(0.0, 0.0, 200.0, 200.0), "Demo"),
+    ])
+    .render_roots();
+    let RenderNode::MainMenu(commands) = &roots[0].value else {
+        panic!("the main menu renders as a root node");
+    };
+    let find = commands.menus[1]
+        .items
+        .last()
+        .and_then(|item| item.submenu.as_ref())
+        .expect("the Edit menu ends with the Find submenu");
+    let items = find
+        .items
+        .iter()
+        .map(|item| (item.title.as_str(), item.role, item.key.as_deref()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        items,
+        [
+            ("検索…", Some(CommandRole::Find), Some("f")),
+            ("検索と置換…", Some(CommandRole::FindAndReplace), Some("f")),
+            ("次を検索", Some(CommandRole::FindNext), Some("g")),
+            ("前を検索", Some(CommandRole::FindPrevious), Some("g")),
+            (
+                "選択部分を検索に使用",
+                Some(CommandRole::UseSelectionForFind),
+                Some("e")
+            ),
+        ]
+    );
+}
+
+#[test]
 fn sidebar_search_updates_its_query_store() {
     // Verifies a searchable sidebar renders its query and writes native edits back.
     let (mut app, query) = Harness::mount(

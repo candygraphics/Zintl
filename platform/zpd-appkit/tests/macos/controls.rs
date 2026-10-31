@@ -509,17 +509,47 @@ fn main() {
         .unwrap();
     let mut copy = CommandItem::new("Copy");
     copy.role = Some(CommandRole::Copy);
+    // Find items carry their text finder action as a tag; Bold targets the font manager.
+    let roles = [
+        (CommandRole::Find, zpd_objc::sel!("performTextFinderAction:"), 1),
+        (CommandRole::FindNext, zpd_objc::sel!("performTextFinderAction:"), 2),
+        (CommandRole::Bold, zpd_objc::sel!("addFontTrait:"), 2),
+        (CommandRole::Underline, zpd_objc::sel!("underline:"), 0),
+    ];
+    let mut items = vec![copy];
+    items.extend(roles.iter().map(|(role, _, _)| {
+        let mut item = CommandItem::new(format!("{role:?}"));
+        item.role = Some(*role);
+        item
+    }));
     application
         .set_commands(
             &CommandSet {
                 app_menu: None,
                 menus: vec![CommandMenu {
                     title: "Edit".into(),
-                    items: vec![copy],
+                    items,
                     role: None,
                 }],
             },
             |_| {},
         )
         .unwrap();
+    // SAFETY: NSApp's main menu and its items are live after installation.
+    unsafe {
+        let app = zpd_objc::msg_send!(zpd_objc::class!("NSApplication"), zpd_objc::sel!("sharedApplication"), () => Id);
+        let main = zpd_objc::msg_send!(app, zpd_objc::sel!("mainMenu"), () => Id);
+        let count = zpd_objc::msg_send!(main, zpd_objc::sel!("numberOfItems"), () => i64);
+        let edit = zpd_objc::msg_send!(zpd_objc::msg_send!(main, zpd_objc::sel!("itemAtIndex:"), ((count - 1): i64) => Id), zpd_objc::sel!("submenu"), () => Id);
+        let font_manager = zpd_objc::msg_send!(zpd_objc::class!("NSFontManager"), zpd_objc::sel!("sharedFontManager"), () => Id);
+        for (index, (role, action, tag)) in roles.iter().enumerate() {
+            let item = zpd_objc::msg_send!(edit, zpd_objc::sel!("itemAtIndex:"), ((index as i64 + 1): i64) => Id);
+            let selector = zpd_objc::msg_send!(item, zpd_objc::sel!("action"), () => zpd_objc::Sel);
+            assert_eq!(selector, *action, "{role:?}");
+            assert_eq!(zpd_objc::msg_send!(item, zpd_objc::sel!("tag"), () => i64), *tag, "{role:?}");
+            let target = zpd_objc::msg_send!(item, zpd_objc::sel!("target"), () => Id);
+            let expected = if *role == CommandRole::Bold { font_manager } else { zpd_objc::NIL };
+            assert_eq!(target, expected, "{role:?}");
+        }
+    }
 }

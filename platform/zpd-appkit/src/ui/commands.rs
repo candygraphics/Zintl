@@ -80,6 +80,16 @@ pub enum CommandRole {
     Paste,
     Delete,
     SelectAll,
+    /// Text finder actions, which `NSTextView` handles with its find bar.
+    Find,
+    FindAndReplace,
+    FindNext,
+    FindPrevious,
+    UseSelectionForFind,
+    /// Font traits, which the shared `NSFontManager` applies to the selection.
+    Bold,
+    Italic,
+    Underline,
     ToggleSidebar,
     ToggleFullScreen,
     Minimize,
@@ -112,6 +122,13 @@ impl CommandRole {
             Self::Paste => zpd_objc::sel!("paste:"),
             Self::Delete => zpd_objc::sel!("delete:"),
             Self::SelectAll => zpd_objc::sel!("selectAll:"),
+            Self::Find
+            | Self::FindAndReplace
+            | Self::FindNext
+            | Self::FindPrevious
+            | Self::UseSelectionForFind => zpd_objc::sel!("performTextFinderAction:"),
+            Self::Bold | Self::Italic => zpd_objc::sel!("addFontTrait:"),
+            Self::Underline => zpd_objc::sel!("underline:"),
             Self::ToggleSidebar => zpd_objc::sel!("toggleSidebar:"),
             Self::ToggleFullScreen => zpd_objc::sel!("toggleFullScreen:"),
             Self::Minimize => zpd_objc::sel!("performMiniaturize:"),
@@ -120,6 +137,32 @@ impl CommandRole {
             Self::Help => zpd_objc::sel!("showHelp:"),
             Self::Separator => return None,
         })
+    }
+
+    /// Returns the menu item tag the action reads, such as an `NSTextFinderAction`.
+    fn tag(self) -> native::Integer {
+        match self {
+            Self::Find => 1,
+            Self::FindNext => 2,
+            Self::FindPrevious => 3,
+            Self::UseSelectionForFind => 7,
+            Self::FindAndReplace => 12,
+            // NSFontTraitMask values.
+            Self::Bold => 2,
+            Self::Italic => 1,
+            _ => 0,
+        }
+    }
+
+    /// Returns the fixed target, or nil to use the responder chain.
+    fn target(self) -> Id {
+        match self {
+            // SAFETY: The shared font manager is a process-wide singleton.
+            Self::Bold | Self::Italic => unsafe {
+                zpd_objc::msg_send!(zpd_objc::class!("NSFontManager"), zpd_objc::sel!("sharedFontManager"), () => Id)
+            },
+            _ => zpd_objc::NIL,
+        }
     }
 }
 
@@ -315,6 +358,10 @@ fn add_item(
     unsafe {
         zpd_objc::msg_send!(native_item.as_ptr(), zpd_objc::sel!("setKeyEquivalentModifierMask:"), ((modifiers): u64) => ());
         zpd_objc::msg_send!(native_item.as_ptr(), zpd_objc::sel!("setState:"), ((state): native::Integer) => ());
+        if let Some(role) = item.role {
+            zpd_objc::msg_send!(native_item.as_ptr(), zpd_objc::sel!("setTag:"), ((role.tag()): native::Integer) => ());
+            zpd_objc::msg_send!(native_item.as_ptr(), zpd_objc::sel!("setTarget:"), ((role.target()): Id) => ());
+        }
         zpd_objc::msg_send!(menu_id, zpd_objc::sel!("addItem:"), ((native_item.as_ptr()): Id) => ());
     }
     let native_item = tree

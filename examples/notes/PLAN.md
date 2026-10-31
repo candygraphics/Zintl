@@ -33,7 +33,9 @@ Out of scope: iCloud sync, sharing/collaboration, locking, drawing, scanning.
 3. **List** — native selectable list with sections, keyboard navigation, and
    row context menus. Needs B1–B3. B1 is done.
 4. **Editing** — live autosave, rich text editor, Format menu, checklists.
-   Needs C1–C5. C1 and C2 are done: the note saves on every keystroke.
+   Needs C1–C5. C1, C2, and C5 are done: the note saves on every keystroke
+   and ⌘F opens the find bar. C4 has the standard Bold/Italic/Underline
+   actions; the Format menu waits for C3, since plain notes cannot keep them.
 5. **Toolbar and search** — toolbar items, toolbar search field, focus control.
    Needs D1–D3.
 6. **Sidebar polish** — counts, folder editing, nested folders, drag and drop.
@@ -102,7 +104,8 @@ Found while writing phase 1 (see `TODO` comments in `src/main.rs`).
   toolbar; standard actions for Bold, Italic, Underline, Strikethrough, and font
   panel through the responder chain; typing attributes; selection state for
   enabling and checking menu items.
-- **C5 Find.** `NSTextFinder`-backed Find/Replace bar (`StandardAction::Find`).
+- **C5 Find (done).** The standard Edit menu has a Find submenu wired to
+  `performTextFinderAction:`. Formerly: `NSTextFinder`-backed Find/Replace bar (`StandardAction::Find`).
 
 ### D. Toolbar and focus
 
