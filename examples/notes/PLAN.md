@@ -5,8 +5,12 @@ desktop API toward what a real document app needs. macOS (AppKit) comes first.
 Windows follows once each API exists on both backends.
 
 ```sh
-cd examples && cargo run --bin notes
+cd examples && cargo run --bin notes      # quick run; the menu bar says "notes"
+./notes/bundle/bundle-app.sh              # builds target/Notes.app with its name
 ```
+
+Notes are saved in `~/Library/Application Support/zintl-notes/notes.json`;
+set `ZINTL_NOTES_DIR` to use another folder.
 
 ## Target
 
@@ -143,8 +147,9 @@ Found while writing phase 1 (see `TODO` comments in `src/main.rs`).
   without a `Context`, so nothing outside an event handler can update a Store.
   Needed for debounced autosave and background loading
   (e.g. `cx.after(duration, |cx| …)`, `cx.spawn` with a main-thread callback).
-- **F2 App lifecycle (exit hook done).** `App::on_exit` runs before the
-  process ends, including ⌘Q. Remaining: the menu bar app name. Formerly: `on_terminate` / will-resign-active hooks to flush
+- **F2 App lifecycle (done).** `App::on_exit` runs before the process ends,
+  including ⌘Q. The menu bar name comes from the bundle, so
+  `notes/bundle/bundle-app.sh` packages `Notes.app`. Formerly: `on_terminate` / will-resign-active hooks to flush
   saves; the app name shown in the menu bar comes from the binary (`notes`)
   instead of `MainMenu::app_name`; it probably needs a bundle or
   `NSProcessInfo.processName`.
