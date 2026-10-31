@@ -3,6 +3,7 @@
 //! Views render [`RenderNode`] descriptions; each backend maps them to its
 //! platform's views and reports [`Event`]s back.
 
+mod canvas;
 mod context;
 mod event;
 mod model;
@@ -11,15 +12,22 @@ pub mod headless;
 pub mod layout;
 pub mod tree;
 
+pub use canvas::{
+    Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasHost, CanvasNode, CanvasSetup, Frame,
+    Invalidator, Key, KeyEvent, KeyPhase, Modifiers, NamedKey, PointerButton, PointerEvent,
+    PointerPhase, Redraw, RedrawPolicy, ScrollEvent,
+};
 pub use context::Context;
 pub use event::{Event, EventKind};
 pub use headless::HeadlessBackend;
 pub use model::{
-    AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, Color,
-    CommandItem, CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig,
-    FileDialogMode, MenuRole, NumberFormat, PopoverEdge, Rect, ScrollAxes, Sidebar, SidebarItem,
-    SidebarSearch, SidebarSection, WindowAppMenu, WindowStyle,
+    AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, CommandItem,
+    CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig, FileDialogMode,
+    MenuRole, NumberFormat, PopoverEdge, ScrollAxes, Sidebar, SidebarItem, SidebarSearch,
+    SidebarSection, WindowAppMenu, WindowStyle,
 };
+pub use zintl_ui_graphics as graphics;
+pub use zintl_ui_graphics::{Color, Rect};
 use zintl_ui_layout::{LayoutStyle, Size};
 
 pub type MainTask = Box<dyn FnOnce() + Send + 'static>;
@@ -97,6 +105,13 @@ pub enum ViewKind {
         titles: Vec<String>,
         selected: usize,
     },
+    /// A view drawn by its canvas handler.
+    Canvas2D {
+        canvas: CanvasNode,
+        redraw: RedrawPolicy,
+        /// Whether a click or the handler can give the canvas keyboard focus.
+        focusable: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -157,6 +172,30 @@ impl RenderNode {
                 | Self::ColorPanel { .. }
         )
     }
+
+    /// Keeps the canvas handler of `mounted` and reconciles this node's handler into it.
+    ///
+    /// Backends call this before storing an updated node so the native view
+    /// keeps drawing with the handler that owns its state.
+    pub fn adopt_canvas(&mut self, mounted: &RenderNode) {
+        if let (
+            Self::View {
+                kind: ViewKind::Canvas2D { canvas, .. },
+                ..
+            },
+            Self::View {
+                kind: ViewKind::Canvas2D {
+                    canvas: mounted, ..
+                },
+                ..
+            },
+        ) = (self, mounted)
+            && canvas.handler_type() == mounted.handler_type()
+        {
+            mounted.adopt(canvas);
+            *canvas = mounted.clone();
+        }
+    }
 }
 
 impl zintl_ui::renderer::RenderNode for RenderNode {
@@ -166,6 +205,16 @@ impl zintl_ui::renderer::RenderNode for RenderNode {
     /// Views keep their native object while only properties change.
     fn same_kind(&self, other: &Self) -> bool {
         match (self, other) {
+            (
+                Self::View {
+                    kind: ViewKind::Canvas2D { canvas: first, .. },
+                    ..
+                },
+                Self::View {
+                    kind: ViewKind::Canvas2D { canvas: second, .. },
+                    ..
+                },
+            ) => first.handler_type() == second.handler_type(),
             (Self::View { kind: first, .. }, Self::View { kind: second, .. }) => {
                 std::mem::discriminant(first) == std::mem::discriminant(second)
             }

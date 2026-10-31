@@ -1,7 +1,9 @@
 //! Conversions between the shared descriptions and `zpd-appkit` values.
 
 use zintl_ui_backend_core as core;
-use zpd_appkit::{geometry, ui};
+use zpd_appkit::{geometry, graphics, ui};
+
+use zintl_ui_backend_core::graphics as shared;
 
 /// Converts a shared description into the value `zpd-appkit` expects.
 pub(crate) trait Native {
@@ -39,6 +41,9 @@ same_variants!(core::AlertButtonRole => ui::AlertButtonRole { Normal, Cancel, De
 same_variants!(core::FileDialogMode => ui::FileDialogMode { Open, Save });
 same_variants!(core::CommandModifier => ui::CommandModifier { Cmd, Ctrl, Alt, Shift });
 same_variants!(core::MenuRole => ui::MenuRole { Services, Windows, Help });
+same_variants!(shared::FillRule => graphics::FillRule { NonZero, EvenOdd });
+same_variants!(shared::LineCap => graphics::LineCap { Butt, Round, Square });
+same_variants!(shared::LineJoin => graphics::LineJoin { Miter, Round, Bevel });
 same_variants!(core::ButtonType => ui::ButtonType {
     MomentaryPushIn,
     PushOnPushOff,
@@ -86,6 +91,153 @@ impl Native for core::Rect {
 
     fn native(&self) -> geometry::Rect {
         geometry::Rect::new(self.x, self.y, self.width, self.height)
+    }
+}
+
+impl Native for shared::Point {
+    type Output = geometry::Point;
+
+    fn native(&self) -> geometry::Point {
+        geometry::Point::new(self.x, self.y)
+    }
+}
+
+impl Native for shared::Transform {
+    type Output = graphics::AffineTransform;
+
+    fn native(&self) -> graphics::AffineTransform {
+        graphics::AffineTransform {
+            a: self.a,
+            b: self.b,
+            c: self.c,
+            d: self.d,
+            tx: self.tx,
+            ty: self.ty,
+        }
+    }
+}
+
+impl Native for shared::GradientStop {
+    type Output = graphics::GradientStop;
+
+    fn native(&self) -> graphics::GradientStop {
+        graphics::GradientStop {
+            offset: self.offset,
+            color: self.color.native(),
+        }
+    }
+}
+
+impl Native for core::RedrawPolicy {
+    type Output = ui::CanvasRedraw;
+
+    fn native(&self) -> ui::CanvasRedraw {
+        match *self {
+            Self::OnDemand => ui::CanvasRedraw::OnDemand,
+            Self::Continuous { preferred_fps } => ui::CanvasRedraw::Continuous { preferred_fps },
+        }
+    }
+}
+
+impl Shared for ui::Modifiers {
+    type Output = core::Modifiers;
+
+    fn shared(self) -> core::Modifiers {
+        core::Modifiers {
+            shift: self.shift,
+            control: self.control,
+            alt: self.option,
+            meta: self.command,
+        }
+    }
+}
+
+impl Shared for ui::MouseButton {
+    type Output = core::PointerButton;
+
+    fn shared(self) -> core::PointerButton {
+        match self {
+            Self::Left => core::PointerButton::Primary,
+            Self::Right => core::PointerButton::Secondary,
+            Self::Middle => core::PointerButton::Middle,
+            Self::Other(number) => core::PointerButton::Other(number),
+        }
+    }
+}
+
+impl Shared for ui::NamedKey {
+    type Output = core::NamedKey;
+
+    fn shared(self) -> core::NamedKey {
+        use core::NamedKey as Key;
+
+        match self {
+            Self::Return => Key::Enter,
+            Self::Tab => Key::Tab,
+            Self::Space => Key::Space,
+            Self::Delete => Key::Backspace,
+            Self::ForwardDelete => Key::Delete,
+            Self::Escape => Key::Escape,
+            Self::LeftArrow => Key::ArrowLeft,
+            Self::RightArrow => Key::ArrowRight,
+            Self::UpArrow => Key::ArrowUp,
+            Self::DownArrow => Key::ArrowDown,
+            Self::Home => Key::Home,
+            Self::End => Key::End,
+            Self::PageUp => Key::PageUp,
+            Self::PageDown => Key::PageDown,
+            Self::Function(number) => Key::F(number),
+        }
+    }
+}
+
+impl Shared for ui::CanvasInput {
+    type Output = core::CanvasEvent;
+
+    fn shared(self) -> core::CanvasEvent {
+        let point = |point: geometry::Point| shared::Point::new(point.x, point.y);
+        match self {
+            Self::Mouse(mouse) => core::CanvasEvent::Pointer(core::PointerEvent {
+                phase: match mouse.phase {
+                    ui::MousePhase::Down => core::PointerPhase::Down,
+                    ui::MousePhase::Up => core::PointerPhase::Up,
+                    ui::MousePhase::Moved => core::PointerPhase::Moved,
+                    ui::MousePhase::Entered => core::PointerPhase::Entered,
+                    ui::MousePhase::Exited => core::PointerPhase::Exited,
+                },
+                button: mouse.button.map(Shared::shared),
+                location: point(mouse.location),
+                modifiers: mouse.modifiers.shared(),
+                click_count: mouse.click_count,
+            }),
+            Self::Scroll(scroll) => core::CanvasEvent::Scroll(core::ScrollEvent {
+                location: point(scroll.location),
+                delta_x: scroll.delta_x,
+                delta_y: scroll.delta_y,
+                precise: scroll.precise,
+                modifiers: scroll.modifiers.shared(),
+            }),
+            Self::Key(key) => core::CanvasEvent::Key(core::KeyEvent {
+                phase: if key.down {
+                    core::KeyPhase::Down
+                } else {
+                    core::KeyPhase::Up
+                },
+                key: match key.named {
+                    Some(named) => core::Key::Named(named.shared()),
+                    None if key.unmodified.is_empty() => core::Key::Unidentified,
+                    None => core::Key::Character(key.unmodified),
+                },
+                text: key.text,
+                modifiers: key.modifiers.shared(),
+                repeat: key.repeat,
+                code: u32::from(key.key_code),
+            }),
+            Self::ModifiersChanged(modifiers) => {
+                core::CanvasEvent::ModifiersChanged(modifiers.shared())
+            }
+            Self::Focus(focused) => core::CanvasEvent::Focus(focused),
+        }
     }
 }
 
@@ -271,6 +423,7 @@ impl Shared for zpd_appkit::actor::WindowEventKind {
                 paths: paths.map(|paths| paths.into_iter().map(std::path::PathBuf::from).collect()),
             },
             Native::ColorPanelClosed => Shared::ColorPanelClosed,
+            Native::CanvasInput(input) => Shared::Canvas(input.shared()),
         }
     }
 }

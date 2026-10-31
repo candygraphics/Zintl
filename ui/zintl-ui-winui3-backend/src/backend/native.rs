@@ -108,6 +108,8 @@ impl NativeNode {
             ViewKind::ColorWell { .. } => ControlKind::ColorButton,
             ViewKind::ScrollView { .. } => ControlKind::ScrollViewer,
             ViewKind::TabView { .. } => ControlKind::TabView,
+            // TODO: Draw with Direct2D on a SwapChainPanel; see TODO.md.
+            ViewKind::Canvas2D { .. } => ControlKind::Canvas,
         }
     }
 

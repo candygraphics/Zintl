@@ -147,6 +147,7 @@ name = "zintl-ui-backend-core"
 version = "0.0.0"
 dependencies = [
  "zintl-ui",
+ "zintl-ui-graphics",
  "zintl-ui-layout",
 ]
 
@@ -161,6 +162,10 @@ dependencies = [
  "zintl-ui-native",
  "zintl-ui-winui3-backend",
 ]
+
+[[package]]
+name = "zintl-ui-graphics"
+version = "0.0.0"
 
 [[package]]
 name = "zintl-ui-layout"

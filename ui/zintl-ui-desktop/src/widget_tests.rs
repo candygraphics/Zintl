@@ -714,3 +714,145 @@ fn scroll_view_binding_saves_and_restores_offset() {
         }
     ));
 }
+
+/// Draws a bar `width` points wide and counts hover entries in its own state.
+#[derive(Clone)]
+struct Meter {
+    width: f64,
+    entered: u32,
+}
+
+impl Canvas2DHandler for Meter {
+    fn draw(&mut self, g: &mut Graphics2D<'_>, _frame: &Frame) {
+        g.fill_rect(
+            Rect::new(0.0, 0.0, self.width, f64::from(self.entered)),
+            Color::BLACK,
+        );
+    }
+
+    fn event(&mut self, event: &CanvasEvent, cx: &mut CanvasEventContext) -> bool {
+        if let CanvasEvent::Pointer(PointerEvent {
+            phase: PointerPhase::Entered,
+            ..
+        }) = event
+        {
+            self.entered += 1;
+            cx.invalidate();
+        }
+        true
+    }
+
+    fn reconcile(&mut self, next: Self) -> Redraw {
+        self.width = next.width;
+        Redraw::Yes
+    }
+}
+
+fn canvas_node(node: &RenderNode) -> zintl_ui_native::CanvasNode {
+    match node {
+        RenderNode::View {
+            kind: ViewKind::Canvas2D { canvas, .. },
+            ..
+        } => canvas.clone(),
+        _ => panic!("expected a canvas"),
+    }
+}
+
+fn canvas_frame() -> Frame {
+    Frame {
+        bounds: Rect::new(0.0, 0.0, 100.0, 100.0),
+        scale: 2.0,
+        time: 0.0,
+        delta: 0.0,
+    }
+}
+
+/// Renders a meter whose width comes from a Store it publishes to the test.
+struct MeterView {
+    width: Store<f64>,
+    published: Rc<Cell<Option<Store<f64>>>>,
+}
+
+impl MeterView {
+    fn mount() -> (App, Store<f64>) {
+        let published = Rc::new(Cell::new(None));
+        let app = App::new(Self {
+            width: Store::default(),
+            published: published.clone(),
+        });
+        (app, published.get().expect("mounting runs init"))
+    }
+}
+
+impl View for MeterView {
+    type Output = RenderNode;
+
+    fn init(&mut self, cx: &mut Context<'_>) {
+        self.width = cx.store(10.0);
+        self.published.set(Some(self.width));
+    }
+
+    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
+        cx.watch(self.width, |width| {
+            Canvas2D::new(Meter {
+                width: *width,
+                entered: 0,
+            })
+            .redraw(RedrawPolicy::Continuous {
+                preferred_fps: Some(60.0),
+            })
+            .focusable(true)
+            .fill_width()
+        })
+    }
+}
+
+#[test]
+fn canvas_declares_redraw_focus_and_layout() {
+    // Verifies the builder records its redraw policy, focusability, and layout on the node.
+    let (app, _) = MeterView::mount();
+    assert!(matches!(
+        app.render(),
+        RenderNode::View {
+            kind: ViewKind::Canvas2D {
+                redraw: RedrawPolicy::Continuous {
+                    preferred_fps: Some(60.0)
+                },
+                focusable: true,
+                ..
+            },
+            layout: LayoutStyle {
+                width: LayoutDimension::Percent(1.0),
+                ..
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn canvas_keeps_handler_state_across_store_updates() {
+    // Verifies a Store-driven re-render updates the width while handler-owned hover state survives.
+    let (mut app, width) = MeterView::mount();
+    let mounted = canvas_node(&app.render());
+    mounted.event(&CanvasEvent::Pointer(PointerEvent {
+        phase: PointerPhase::Entered,
+        button: None,
+        location: Point::new(5.0, 5.0),
+        modifiers: Modifiers::default(),
+        click_count: 0,
+    }));
+
+    app.set(width, 40.0);
+
+    let current = canvas_node(&app.render());
+    assert_eq!(current, mounted);
+    assert_eq!(
+        current.record(&canvas_frame()),
+        [graphics::DrawCommand::Fill {
+            path: Path::rect(Rect::new(0.0, 0.0, 40.0, 1.0)),
+            paint: Paint::Solid(Color::BLACK),
+            rule: FillRule::NonZero,
+        }]
+    );
+}

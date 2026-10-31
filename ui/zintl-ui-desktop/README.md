@@ -182,6 +182,67 @@ sections from the same Store; updates keep the field focused.
 
 See `examples/gallery.rs` for every control, presentation, and menu.
 
+## Canvas
+
+`Canvas2D` draws with the platform's 2D API (Core Graphics on macOS) outside
+the view update cycle, like `MTKView` or HTML Canvas. A `Canvas2DHandler` draws
+frames and handles input on the main thread.
+
+```rust,ignore
+#[derive(Clone)]
+struct Chart { points: Vec<f64>, hover: Option<usize> }
+
+impl Canvas2DHandler for Chart {
+    fn draw(&mut self, g: &mut Graphics2D<'_>, frame: &Frame) {
+        g.clear(Color::WHITE);
+        let mut path = Path::new();
+        for (i, y) in self.points.iter().enumerate() {
+            path.line_to(Point::new(i as f64 * 10.0, frame.height() - y));
+        }
+        g.stroke_path(&path, Color::rgb(0.2, 0.4, 1.0), &StrokeStyle::new(2.0));
+    }
+
+    fn event(&mut self, event: &CanvasEvent, cx: &mut CanvasEventContext) -> bool {
+        if let CanvasEvent::Pointer(pointer) = event {
+            self.hover = Some((pointer.location.x / 10.0) as usize);
+            cx.invalidate(); // redraw without rebuilding views
+            return true;
+        }
+        false
+    }
+
+    // Keep handler-owned state such as `hover` when the view re-renders.
+    fn reconcile(&mut self, next: Self) -> Redraw {
+        self.points = next.points;
+        Redraw::Yes
+    }
+}
+
+cx.watch(self.samples, |samples| {
+    Canvas2D::new(Chart { points: samples.clone(), hover: None })
+        .redraw(RedrawPolicy::OnDemand)
+        .focusable(true)
+        .fill_width()
+        .grow()
+})
+```
+
+The canvas draws again after resizing, after a `reconcile` that returns
+`Redraw::Yes`, and after `CanvasEventContext::invalidate`. `Invalidator` (from
+`Canvas2DHandler::setup`) requests a redraw from any thread.
+`RedrawPolicy::Continuous` draws every display refresh with a display link;
+`Frame::time` and `Frame::delta` drive animation. Coordinates are points with a
+top-left origin.
+
+Each render creates a new handler. The mounted canvas keeps its first handler
+and passes later ones to `reconcile`. Handlers of different types are different
+views. Input reaches the handler first. Unconsumed input goes to the next
+responder, and `on_event` then receives it with a `Context` for Store updates.
+Focusable canvases take keyboard focus when clicked.
+
+On Windows the canvas is not drawn yet; see `TODO.md`. See
+`examples/canvas.rs` for a sketch pad.
+
 ## Crate responsibilities
 
 ```
@@ -191,6 +252,8 @@ zintl-ui-desktop ─┬─ zintl-ui-native ── zintl-ui-backend-core
 ```
 
 - `zintl-ui-desktop` owns the cross-platform builders and picks the backend.
+- `zintl-ui-graphics` owns `Graphics2D`, paths, paints, fonts, and images, and
+  the `GraphicsBackend` trait that native canvases implement.
 - `zintl-ui-native` owns the declarative views, Store bindings, and menus; views
   render `RenderNode` descriptions.
 - `zintl-ui-backend-core` defines `RenderNode`, `Event`, and `Context`, and the

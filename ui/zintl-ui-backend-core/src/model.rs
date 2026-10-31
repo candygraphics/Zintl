@@ -1,59 +1,5 @@
 //! Plain UI descriptions that every native backend reads.
 
-/// Rectangle in logical points / DIP.
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[repr(C)]
-pub struct Rect {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-}
-
-impl Rect {
-    pub const fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            height,
-        }
-    }
-}
-
-/// An sRGB color with components in `0.0..=1.0`.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Color {
-    pub red: f64,
-    pub green: f64,
-    pub blue: f64,
-    pub alpha: f64,
-}
-
-impl Color {
-    pub const BLACK: Self = Self::rgb(0.0, 0.0, 0.0);
-    pub const WHITE: Self = Self::rgb(1.0, 1.0, 1.0);
-
-    pub const fn rgb(red: f64, green: f64, blue: f64) -> Self {
-        Self::rgba(red, green, blue, 1.0)
-    }
-
-    pub const fn rgba(red: f64, green: f64, blue: f64, alpha: f64) -> Self {
-        Self {
-            red,
-            green,
-            blue,
-            alpha,
-        }
-    }
-}
-
-impl Default for Color {
-    fn default() -> Self {
-        Self::BLACK
-    }
-}
-
 /// How a button responds to clicks.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ButtonType {

@@ -1,0 +1,5 @@
+[package]
+name = "zintl-ui-graphics"
+edition = "2024"
+
+[dependencies]

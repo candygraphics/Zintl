@@ -67,7 +67,11 @@ impl RenderBackend<RenderNode> for HeadlessBackend {
     }
 
     fn update(&mut self, id: NodeId, value: &RenderNode) {
-        self.tree.node_mut(id).value = Some(value.clone());
+        let mut value = value.clone();
+        if let Some(mounted) = self.tree.value(id) {
+            value.adopt_canvas(mounted);
+        }
+        self.tree.node_mut(id).value = Some(value);
     }
 
     fn set_event_route(&mut self, id: NodeId, event_route: Option<EventRouteId>) {

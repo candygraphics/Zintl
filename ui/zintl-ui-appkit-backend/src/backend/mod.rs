@@ -16,6 +16,7 @@ use zpd_appkit::ui::{
 
 mod app;
 mod attachment;
+mod canvas;
 mod layout;
 mod native;
 
@@ -419,7 +420,8 @@ impl AppKitBackend {
                     kind, id, enabled, ..
                 } = self.kind(child)
             {
-                let native = NativeNode::create(application, &kind)?;
+                let native =
+                    NativeNode::create(application, &kind, self.main_tasks.shared_sender())?;
                 native.as_view().set_identifier(id.as_deref())?;
                 if !enabled {
                     native.set_enabled(false)?;
@@ -745,7 +747,8 @@ impl RenderBackend<RenderNode> for AppKitBackend {
 
     fn update(&mut self, id: Self::NodeId, value: &RenderNode) {
         let old = self.kind(id);
-        let new = value.clone();
+        let mut new = value.clone();
+        new.adopt_canvas(&old);
         if let Err(error) = self.update_native(id, &old, &new) {
             self.record_error(error);
         }
@@ -764,7 +767,7 @@ impl RenderBackend<RenderNode> for AppKitBackend {
         {
             self.structure_dirty = true;
         }
-        self.tree.node_mut(id).value = Some(value.clone());
+        self.tree.node_mut(id).value = Some(new);
         self.layout_dirty = true;
     }
 

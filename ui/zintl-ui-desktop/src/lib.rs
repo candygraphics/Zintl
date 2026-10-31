@@ -27,12 +27,19 @@ pub use zintl_ui::view::View;
 pub use zintl_ui_layout::{
     Axis, ChildSizing, CrossAxisAlignment, LayoutDimension, LayoutStyle, MainAxisDistribution, Size,
 };
+pub use zintl_ui_native::graphics::{
+    FillRule, Font, FontWeight, GradientStop, Graphics2D, Image, LineCap, LineJoin, Paint, Path,
+    Point, StrokeStyle, TextMetrics, Transform,
+};
 pub use zintl_ui_native::{
-    Alert, AlertButton, AlertStyle, Attach, Attachments, ButtonRole, Color, ColorPanel, Context,
-    EnglishMenuLocalizer, Event, EventKind, FileDialog, JapaneseMenuLocalizer, ListFactory,
-    MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, NativeView, Popover, PopoverEdge, Rect,
-    RenderNode, ScrollAxes, ScrollStatus, Shortcut, Sidebar, SidebarItem, SidebarSection,
-    StandardAction, StandardMenu, StandardText, ViewKind, list,
+    Alert, AlertButton, AlertStyle, Attach, Attachments, ButtonRole, Canvas2D, Canvas2DHandler,
+    CanvasEvent, CanvasEventContext, CanvasSetup, Color, ColorPanel, Context, EnglishMenuLocalizer,
+    Event, EventKind, FileDialog, Frame, Invalidator, JapaneseMenuLocalizer, Key, KeyEvent,
+    KeyPhase, ListFactory, MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, Modifiers, NamedKey,
+    NativeView, PointerButton, PointerEvent, PointerPhase, Popover, PopoverEdge, Rect, Redraw,
+    RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, ScrollStatus, Shortcut, Sidebar,
+    SidebarItem, SidebarSection, StandardAction, StandardMenu, StandardText, ViewKind, graphics,
+    list,
 };
 
 native_view!(Text, Button, TextField, HStack, VStack);

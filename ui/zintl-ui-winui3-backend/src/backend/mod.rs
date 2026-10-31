@@ -920,11 +920,12 @@ impl RenderBackend<RenderNode> for WinUI3Backend {
 
     fn update(&mut self, id: Self::NodeId, value: &RenderNode) {
         let old = self.kind(id);
-        let new = value.clone();
+        let mut new = value.clone();
+        new.adopt_canvas(&old);
         if let Err(error) = self.update_native(id, &old, &new) {
             self.pending_error.record(error);
         }
-        self.tree.node_mut(id).value = Some(value.clone());
+        self.tree.node_mut(id).value = Some(new);
         self.layout_dirty = true;
     }
 
