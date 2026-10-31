@@ -71,12 +71,25 @@ impl State {
     }
 
     fn delete_selected(&self, cx: &mut Context<'_>) {
-        let Some(id) = *cx.get(self.selected) else {
-            return;
-        };
+        if let Some(id) = *cx.get(self.selected) {
+            self.delete(cx, id);
+        }
+    }
+
+    /// Moves a note to Recently Deleted, or removes it from there.
+    fn delete(&self, cx: &mut Context<'_>, id: NoteId) {
         self.change(cx, |library| library.delete(id));
-        cx.update(self.selected, |selected| *selected = None);
-        self.select_folder(cx);
+        if *cx.get(self.selected) == Some(id) {
+            cx.update(self.selected, |selected| *selected = None);
+            self.select_folder(cx);
+        }
+    }
+
+    fn toggle_pin(&self, cx: &mut Context<'_>, id: NoteId) {
+        self.change(cx, |library| {
+            let pinned = library.note(id).is_some_and(|note| note.pinned);
+            library.set_pinned(id, !pinned);
+        });
     }
 }
 
@@ -128,7 +141,9 @@ impl View for NotesApp {
                         MenuItem::new("New Note")
                             .shortcut(Shortcut::command("n"))
                             .on_select(move |cx| state.new_note(cx)),
-                        MenuItem::new("Delete Note").on_select(move |cx| state.delete_selected(cx)),
+                        MenuItem::new("Delete Note")
+                            .enabled(cx.get(state.selected).is_some())
+                            .on_select(move |cx| state.delete_selected(cx)),
                     ],
                 )
                 .menu(Menu::new(
@@ -185,7 +200,13 @@ struct NoteList {
 }
 
 impl NoteList {
-    fn row(note: &Note) -> ListRow {
+    fn row(state: State, note: &Note) -> ListRow {
+        let id = note.id;
+        let pin = if note.pinned {
+            "Unpin Note"
+        } else {
+            "Pin Note"
+        };
         ListRow::new(
             note.id.to_string(),
             VStack::new(list![
@@ -200,7 +221,12 @@ impl NoteList {
             ])
             .spacing(2.0)
             .padding(6.0)
-            .fill_width(),
+            .fill_width()
+            .context_menu([
+                MenuItem::new(pin).on_select(move |cx| state.toggle_pin(cx, id)),
+                MenuItem::separator(),
+                MenuItem::new("Delete").on_select(move |cx| state.delete(cx, id)),
+            ]),
         )
     }
 }
@@ -217,10 +243,18 @@ impl View for NoteList {
             notes.into_iter().partition(|note| note.pinned);
         let mut sections = Vec::new();
         if !pinned.is_empty() {
-            sections.push(ListSection::new(pinned.into_iter().map(Self::row)).title("Pinned"));
-            sections.push(ListSection::new(others.into_iter().map(Self::row)).title("Notes"));
+            sections.push(
+                ListSection::new(pinned.into_iter().map(|note| Self::row(state, note)))
+                    .title("Pinned"),
+            );
+            sections.push(
+                ListSection::new(others.into_iter().map(|note| Self::row(state, note)))
+                    .title("Notes"),
+            );
         } else {
-            sections.push(ListSection::new(others.into_iter().map(Self::row)));
+            sections.push(ListSection::new(
+                others.into_iter().map(|note| Self::row(state, note)),
+            ));
         }
         VStack::new(list![
             HStack::new(list![

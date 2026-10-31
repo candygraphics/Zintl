@@ -465,6 +465,25 @@ fn main() {
     );
     take();
 
+    // Verifies controls inside list rows report events through the window.
+    let rows = ListView::new(&application).unwrap();
+    content.add_subview(&rows).unwrap();
+    let row_button = Button::with_title(&application, "Row").unwrap();
+    rows.as_view()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 100.0))
+        .unwrap();
+    rows.set_entries(&[ListEntry::Row("row".into())], &[row_button.as_view()])
+        .unwrap();
+    rows.set_row_heights(&[30.0]).unwrap();
+    // The table creates row views when it lays out.
+    rows.as_view().layout_subtree_if_needed().unwrap();
+    take();
+    // SAFETY: performClick: sends the live button's action.
+    unsafe {
+        zpd_objc::msg_send!(Checks::native(&row_button), zpd_objc::sel!("performClick:"), ((zpd_objc::NIL): Id) => ())
+    };
+    assert_eq!(take(), vec![WindowEventKind::ButtonClicked]);
+
     // Verifies the editor reports user edits, replaces text silently, and drops stale undo history.
     let editor = TextEditor::new(&application).unwrap();
     content.add_subview(&editor).unwrap();

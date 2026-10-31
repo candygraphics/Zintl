@@ -42,6 +42,8 @@ struct Entry {
     /// `None` for section headers.
     id: Option<String>,
     cell: Strong,
+    /// The row wrapper's Actor under the table, so row views' events reach the window.
+    actor: Option<ActorRef>,
     height: f64,
 }
 
@@ -133,6 +135,49 @@ unsafe extern "C" fn selection_changed(object: Id, _: zpd_objc::Sel, notificatio
     });
 }
 
+/// Fills the table's menu with the context menu of the clicked row's view.
+///
+/// `NSTableView` shows its own menu on right-click and ignores row views'
+/// menus, so the clicked row's items are copied in.
+unsafe extern "C" fn menu_needs_update(object: Id, _: zpd_objc::Sel, menu: Id) {
+    ListState::with(object, |state| {
+        // SAFETY: AppKit passes the live table menu; the scroll Actor holds the table.
+        unsafe {
+            zpd_objc::msg_send!(menu, zpd_objc::sel!("removeAllItems"), () => ());
+            let Ok(scroll) = state.actor.with(|scroll| scroll) else {
+                return;
+            };
+            let table = zpd_objc::msg_send!(scroll, zpd_objc::sel!("documentView"), () => Id);
+            let row = zpd_objc::msg_send!(table, zpd_objc::sel!("clickedRow"), () => i64);
+            let Some(cell) =
+                state.entry(row, |entry| entry.id.is_some().then(|| entry.cell.as_ptr()))
+            else {
+                return;
+            };
+            let subviews = zpd_objc::msg_send!(cell, zpd_objc::sel!("subviews"), () => Id);
+            let content = zpd_objc::msg_send!(subviews, zpd_objc::sel!("firstObject"), () => Id);
+            if content.is_null() {
+                return;
+            }
+            let source = zpd_objc::msg_send!(content, zpd_objc::sel!("menu"), () => Id);
+            if source.is_null() {
+                return;
+            }
+            let count = zpd_objc::msg_send!(source, zpd_objc::sel!("numberOfItems"), () => i64);
+            for index in 0..count {
+                let item = zpd_objc::msg_send!(source, zpd_objc::sel!("itemAtIndex:"), ((index): i64) => Id);
+                // Copies keep the original target and action; the row view keeps the target alive.
+                let copy = Strong::from_retained(
+                    zpd_objc::msg_send!(item, zpd_objc::sel!("copy"), () => Id),
+                );
+                if let Some(copy) = copy {
+                    zpd_objc::msg_send!(menu, zpd_objc::sel!("addItem:"), ((copy.as_ptr()): Id) => ());
+                }
+            }
+        }
+    });
+}
+
 fn release(object: Id) {
     // SAFETY: The caller passes a delegate created by `ListView::new`.
     drop(unsafe { LIST_STATE.take(object) });
@@ -158,6 +203,7 @@ fn delegate_class() -> zpd_objc::Class {
                 "tableView:isGroupRow:": "B@:@q" => is_group,
                 "tableView:shouldSelectRow:": "B@:@q" => should_select,
                 "tableViewSelectionDidChange:": "v@:@" => selection_changed,
+                "menuNeedsUpdate:": "v@:@" => menu_needs_update,
                 "dealloc": "v@:" => dealloc,
             }
         }) as usize
@@ -196,6 +242,10 @@ impl ListView {
             unsafe {
                 zpd_objc::msg_send!(table, zpd_objc::sel!("setDelegate:"), ((zpd_objc::NIL): Id) => ());
                 zpd_objc::msg_send!(table, zpd_objc::sel!("setDataSource:"), ((zpd_objc::NIL): Id) => ());
+                let menu = zpd_objc::msg_send!(table, zpd_objc::sel!("menu"), () => Id);
+                if !menu.is_null() {
+                    zpd_objc::msg_send!(menu, zpd_objc::sel!("setDelegate:"), ((zpd_objc::NIL): Id) => ());
+                }
             }
         })?;
         // SAFETY: The scroll view, table, column, and delegate are live on the main thread.
@@ -215,6 +265,9 @@ impl ListView {
             zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setAllowsMultipleSelection:"), ((false): bool) => ());
             zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setDataSource:"), ((delegate.as_ptr()): Id) => ());
             zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setDelegate:"), ((delegate.as_ptr()): Id) => ());
+            let menu = native::alloc_init(zpd_objc::class!("NSMenu"));
+            zpd_objc::msg_send!(menu.as_ptr(), zpd_objc::sel!("setDelegate:"), ((delegate.as_ptr()): Id) => ());
+            zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setMenu:"), ((menu.as_ptr()): Id) => ());
             zpd_objc::msg_send!(scroll.as_ptr(), zpd_objc::sel!("setDocumentView:"), ((table.as_ptr()): Id) => ());
         }
         Ok(Self {
@@ -246,28 +299,31 @@ impl ListView {
                 ListEntry::Header(title) => Entry {
                     id: None,
                     cell: super::sidebar_table::cell(title, None, true),
+                    actor: None,
                     height: ListState::HEADER_HEIGHT,
                 },
                 ListEntry::Row(id) => {
                     let content = rows.next().ok_or(UiError::InvalidHierarchy)?;
                     let wrapper = view::new_layout_view(Rect::new(0.0, 0.0, 0.0, 0.0))?;
-                    content.with(|content| {
-                        // SAFETY: Both views are live; the wrapper retains its subview.
-                        unsafe {
-                            zpd_objc::msg_send!(content, zpd_objc::sel!("removeFromSuperview"), () => ());
-                            zpd_objc::msg_send!(wrapper.as_ptr(), zpd_objc::sel!("addSubview:"), ((content): Id) => ());
-                        }
-                    })?;
+                    let tree = self.table.tree_handle().ok_or(UiError::Closed)?;
+                    let actor = tree.insert_child(&self.table, wrapper.clone())?;
+                    content.remove_from_superview()?;
+                    ViewRef::from_actor(&actor).add_subview(content)?;
                     Entry {
                         id: Some(id.clone()),
                         cell: wrapper,
+                        actor: Some(actor),
                         height: 44.0,
                     }
                 }
             });
         }
         self.state.release_row_callbacks();
-        *self.state.entries.borrow_mut() = built;
+        let old = std::mem::replace(&mut *self.state.entries.borrow_mut(), built);
+        // Old wrappers are empty now; their rows moved into the new ones.
+        for actor in old.into_iter().filter_map(|entry| entry.actor) {
+            actor.remove();
+        }
         self.quietly(|table| {
             // SAFETY: The Actor holds the live NSTableView backed by this state.
             unsafe { zpd_objc::msg_send!(table, zpd_objc::sel!("reloadData"), () => ()) };
