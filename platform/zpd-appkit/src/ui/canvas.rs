@@ -47,6 +47,8 @@ struct FrameRateRange {
 pub struct CanvasFrame {
     /// The view bounds in flipped logical points.
     pub bounds: Rect,
+    /// The part of `bounds` that the window's title bar does not cover.
+    pub safe_area: Rect,
     pub scale: f64,
     /// `CACurrentMediaTime` seconds at which the frame is expected to appear.
     pub time: f64,
@@ -195,6 +197,13 @@ pub trait CanvasDelegate {
 
     /// Returns whether the input was consumed; unconsumed input goes to the next responder.
     fn input(&self, input: &CanvasInput) -> bool;
+
+    /// Returns whether mouse input at `location` belongs to the canvas although
+    /// it lies under the window's title bar. Other points always reach the canvas.
+    fn title_bar_hit(&self, location: Point) -> bool {
+        let _ = location;
+        false
+    }
 }
 
 /// When a canvas view draws.
@@ -325,6 +334,14 @@ unsafe extern "C" fn draw_rect(object: Id, _: zpd_objc::Sel, _dirty: native::Rec
     if context.is_null() {
         return;
     }
+    // SAFETY: The receiver is a live canvas view.
+    let inset = unsafe { TitleBarHit::top_inset(object) };
+    let safe_area = Rect::new(
+        bounds.x,
+        bounds.y + inset,
+        bounds.width,
+        bounds.height - inset,
+    );
     // SAFETY: CACurrentMediaTime has no preconditions.
     let time = state
         .target_time
@@ -341,6 +358,7 @@ unsafe extern "C" fn draw_rect(object: Id, _: zpd_objc::Sel, _dirty: native::Rec
             &mut graphics,
             CanvasFrame {
                 bounds,
+                safe_area,
                 scale,
                 time,
                 delta,
@@ -693,6 +711,29 @@ impl CanvasView {
                 zpd_objc::msg_send!(view, zpd_objc::sel!("setNeedsDisplay:"), ((true): bool) => ())
             }
         });
+    }
+
+    /// Asks the delegate of `view`, if it is a canvas, whether it takes input at
+    /// `point` in window coordinates under the title bar.
+    ///
+    /// # Safety
+    /// `view` must be a live NSView.
+    pub(crate) unsafe fn title_bar_hit(view: Id, point: native::Point) -> bool {
+        // SAFETY: Guaranteed by the caller; only canvas views carry the state ivar.
+        unsafe {
+            if !zpd_objc::msg_send!(view, zpd_objc::sel!("isKindOfClass:"), ((Self::class()): zpd_objc::Class) => bool)
+            {
+                return false;
+            }
+            let Some(state) = state(view) else {
+                return false;
+            };
+            let Some(delegate) = state.delegate.borrow().clone() else {
+                return false;
+            };
+            let location = zpd_objc::msg_send!(view, zpd_objc::sel!("convertPoint:fromView:"), ((point): native::Point, (zpd_objc::NIL): Id) => native::Point);
+            zpd_objc::abort_on_unwind(|| delegate.title_bar_hit(location.into()))
+        }
     }
 
     /// Lets clicks and [`CanvasView::focus`] make the view the first responder.

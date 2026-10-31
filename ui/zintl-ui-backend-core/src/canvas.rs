@@ -42,6 +42,10 @@ pub enum RedrawPolicy {
 pub struct Frame {
     /// The canvas bounds in logical points; the origin is the top-left.
     pub bounds: Rect,
+    /// The part of `bounds` that the window's title bar does not cover.
+    ///
+    /// It equals `bounds` unless the canvas extends under the title bar.
+    pub safe_area: Rect,
     /// Device pixels per logical point.
     pub scale: f64,
     /// Seconds on a monotonic clock at which the frame is expected to appear.
@@ -79,6 +83,17 @@ pub trait Canvas2DHandler: Clone + 'static {
     /// scroll view or the window's key handling.
     fn event(&mut self, event: &CanvasEvent, cx: &mut CanvasEventContext) -> bool {
         let _ = (event, cx);
+        false
+    }
+
+    /// Returns whether a click at `point` belongs to the canvas although it lies
+    /// under the window's title bar.
+    ///
+    /// The default leaves the whole title bar to the window, so dragging moves
+    /// it. Return `true` for controls drawn there, such as tabs. Points outside
+    /// the title bar always reach the canvas.
+    fn title_bar_hit(&self, point: Point) -> bool {
+        let _ = point;
         false
     }
 
@@ -169,6 +184,7 @@ trait ErasedHandler {
     fn setup(&mut self, cx: &mut CanvasSetup);
     fn draw(&mut self, g: &mut Graphics2D<'_>, frame: &Frame);
     fn event(&mut self, event: &CanvasEvent, cx: &mut CanvasEventContext) -> bool;
+    fn title_bar_hit(&self, point: Point) -> bool;
     /// `next` is a `Box<Self>` produced by [`ErasedHandler::into_any`].
     fn reconcile(&mut self, next: Box<dyn Any>) -> Redraw;
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
@@ -185,6 +201,10 @@ impl<H: Canvas2DHandler> ErasedHandler for H {
 
     fn event(&mut self, event: &CanvasEvent, cx: &mut CanvasEventContext) -> bool {
         Canvas2DHandler::event(self, event, cx)
+    }
+
+    fn title_bar_hit(&self, point: Point) -> bool {
+        Canvas2DHandler::title_bar_hit(self, point)
     }
 
     fn reconcile(&mut self, next: Box<dyn Any>) -> Redraw {
@@ -305,6 +325,18 @@ impl CanvasNode {
             host.set_focus(focused);
         }
         handled
+    }
+
+    /// Asks the handler whether a click at `point` under the title bar belongs to the canvas.
+    ///
+    /// Returns `false` while the handler is busy, such as during its own event.
+    pub fn title_bar_hit(&self, point: Point) -> bool {
+        self.0
+            .handler
+            .try_borrow()
+            .ok()
+            .and_then(|handler| Some(handler.as_ref()?.title_bar_hit(point)))
+            .unwrap_or(false)
     }
 
     /// Schedules a draw if the canvas is mounted.
@@ -579,6 +611,7 @@ mod tests {
     fn frame() -> Frame {
         Frame {
             bounds: Rect::from_size(10.0, 10.0),
+            safe_area: Rect::from_size(10.0, 10.0),
             scale: 2.0,
             time: 0.0,
             delta: 0.0,
@@ -666,6 +699,27 @@ mod tests {
         let first = CanvasNode::new(Bar::new(1));
         assert_eq!(first, first.clone());
         assert_ne!(first, CanvasNode::new(Bar::new(1)));
+    }
+
+    /// Claims title bar clicks left of x = 5.
+    #[derive(Clone)]
+    struct Tabs;
+
+    impl Canvas2DHandler for Tabs {
+        fn draw(&mut self, _g: &mut Graphics2D<'_>, _frame: &Frame) {}
+
+        fn title_bar_hit(&self, point: Point) -> bool {
+            point.x < 5.0
+        }
+    }
+
+    #[test]
+    fn title_bar_hit_asks_the_handler() {
+        // Verifies the canvas forwards title bar hit tests and defaults to leaving them to the window.
+        let tabs = CanvasNode::new(Tabs);
+        assert!(tabs.title_bar_hit(Point::new(1.0, 1.0)));
+        assert!(!tabs.title_bar_hit(Point::new(8.0, 1.0)));
+        assert!(!CanvasNode::new(Bar::new(1)).title_bar_hit(Point::ZERO));
     }
 
     /// Hands the setup invalidator to the test.

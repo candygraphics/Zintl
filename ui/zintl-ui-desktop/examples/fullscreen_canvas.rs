@@ -1,9 +1,9 @@
 //! A `Canvas2D` that fills its window under a hidden title bar.
 //!
 //! On macOS only the window buttons stay above the drawing. Move the pointer
-//! to pull the particles; click to toggle the animation. Clicks in the title
-//! bar area move the window instead of reaching the canvas; mark a view with
-//! `.title_bar_interactive()` to receive them there.
+//! to pull the particles. The pause button is drawn in the title bar area:
+//! `title_bar_hit` claims clicks on it, while dragging anywhere else in that
+//! area moves the window. Text stays inside `Frame::safe_area`.
 
 use std::f64::consts::TAU;
 
@@ -19,6 +19,8 @@ struct Orbits {
     /// Animation time that stops advancing while paused.
     elapsed: f64,
     paused: bool,
+    /// Where the last frame drew the pause button.
+    pause_button: Rect,
     font: Font,
 }
 
@@ -28,6 +30,7 @@ impl Orbits {
             center: None,
             elapsed: 0.0,
             paused: false,
+            pause_button: Rect::default(),
             font: Font::system(13.0).weight(FontWeight::MEDIUM),
         }
     }
@@ -85,18 +88,47 @@ impl Canvas2DHandler for Orbits {
             g.fill_path(&Path::circle(point, 2.0 + 4.0 * (1.0 - share)), color);
         }
 
-        let hint = if self.paused {
-            "Paused — click to resume"
-        } else {
-            "Move the pointer · click to pause"
-        };
+        // Center the button in the title bar area, or in a top margin without one.
+        let label = if self.paused { "Resume" } else { "Pause" };
+        let metrics = g.measure_text(label, &self.font);
+        let bar = frame.safe_area.y.max(32.0);
+        let size = (metrics.width + 24.0, 22.0);
+        self.pause_button = Rect::new(
+            bounds.width - size.0 - 12.0,
+            (bar - size.1) / 2.0,
+            size.0,
+            size.1,
+        );
+        g.fill_path(
+            &Path::rounded_rect(self.pause_button, size.1 / 2.0),
+            Color::rgba(1.0, 1.0, 1.0, 0.15),
+        );
+        g.fill_text(
+            label,
+            Point::new(
+                self.pause_button.x + 12.0,
+                self.pause_button.center().y + (metrics.ascent - metrics.descent) / 2.0,
+            ),
+            &self.font,
+            Color::WHITE,
+        );
+
+        let safe = frame.safe_area;
+        let hint = "Move the pointer to pull the particles";
         let metrics = g.measure_text(hint, &self.font);
         g.fill_text(
             hint,
-            Point::new((bounds.width - metrics.width) / 2.0, bounds.height - 24.0),
+            Point::new(
+                safe.x + (safe.width - metrics.width) / 2.0,
+                safe.max_y() - 24.0,
+            ),
             &self.font,
             Color::rgba(1.0, 1.0, 1.0, 0.6),
         );
+    }
+
+    fn title_bar_hit(&self, point: Point) -> bool {
+        self.pause_button.contains(point)
     }
 
     fn event(&mut self, event: &CanvasEvent, cx: &mut CanvasEventContext) -> bool {
@@ -106,7 +138,10 @@ impl Canvas2DHandler for Orbits {
         match pointer.phase {
             PointerPhase::Moved | PointerPhase::Entered => self.center = Some(pointer.location),
             PointerPhase::Exited => self.center = None,
-            PointerPhase::Down => self.paused = !self.paused,
+            PointerPhase::Down if self.pause_button.contains(pointer.location) => {
+                self.paused = !self.paused
+            }
+            PointerPhase::Down => {}
             PointerPhase::Up => {}
         }
         cx.invalidate();
@@ -133,7 +168,8 @@ impl View for FullscreenCanvas {
                         preferred_fps: None,
                     })
                     .fill_width()
-                    .grow(),
+                    .grow()
+                    .ignores_safe_area(),
             )
     }
 }

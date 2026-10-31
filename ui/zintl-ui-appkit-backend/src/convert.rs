@@ -242,6 +242,14 @@ impl Shared for ui::CanvasInput {
     }
 }
 
+impl Shared for geometry::Rect {
+    type Output = core::Rect;
+
+    fn shared(self) -> core::Rect {
+        core::Rect::new(self.x, self.y, self.width, self.height)
+    }
+}
+
 impl Native for core::Color {
     type Output = ui::Color;
 

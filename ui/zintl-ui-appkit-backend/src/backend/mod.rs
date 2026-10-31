@@ -311,9 +311,12 @@ impl AppKitBackend {
             let callback_layout = layout.clone();
             let callback_error = self.pending_error.clone();
             cx.with_window(native, |window| {
-                window.set_content_layout_handler(move |bounds| {
+                window.set_content_layout_handler(move |bounds, title_bar_inset| {
                     let size = Size::new(bounds.width as f32, bounds.height as f32);
-                    if let Err(error) = callback_layout.borrow().layout(size) {
+                    if let Err(error) = callback_layout
+                        .borrow()
+                        .layout(size, title_bar_inset as f32)
+                    {
                         callback_error.record(error);
                     }
                 })
@@ -607,7 +610,7 @@ impl AppKitBackend {
                     let callback_error = self.pending_error.clone();
                     popover.set_content_layout_handler(move |bounds| {
                         let size = Size::new(bounds.width as f32, bounds.height as f32);
-                        if let Err(error) = callback_layout.borrow().layout(size) {
+                        if let Err(error) = callback_layout.borrow().layout(size, 0.0) {
                             callback_error.record(error);
                         }
                     })?;

@@ -398,6 +398,12 @@ impl HStack {
         self.stack.layout.grow = 1.0;
         self
     }
+
+    /// As a window's content, extends under its title bar instead of starting below it.
+    pub fn ignores_safe_area(mut self) -> Self {
+        self.stack.layout.ignores_safe_area = true;
+        self
+    }
 }
 
 impl NativeView for HStack {
@@ -455,6 +461,12 @@ impl VStack {
     /// Takes the remaining space along the parent's main axis.
     pub fn grow(mut self) -> Self {
         self.stack.layout.grow = 1.0;
+        self
+    }
+
+    /// As a window's content, extends under its title bar instead of starting below it.
+    pub fn ignores_safe_area(mut self) -> Self {
+        self.stack.layout.ignores_safe_area = true;
         self
     }
 }

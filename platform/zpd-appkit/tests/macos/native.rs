@@ -89,7 +89,7 @@ fn main() {
     let first_layout_drops = Rc::new(Cell::new(0));
     let first_probe = DropProbe(first_layout_drops.clone());
     window
-        .set_content_layout_handler(move |_| {
+        .set_content_layout_handler(move |_, _| {
             let _ = &first_probe;
         })
         .unwrap();
@@ -101,7 +101,7 @@ fn main() {
     content.add_subview(layout_child.as_ref()).unwrap();
     let resized_child = layout_child.clone();
     window
-        .set_content_layout_handler(move |bounds| {
+        .set_content_layout_handler(move |bounds, _| {
             let _ = &second_probe;
             received_layouts.borrow_mut().push(bounds);
             resized_child

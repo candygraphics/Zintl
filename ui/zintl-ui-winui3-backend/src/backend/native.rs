@@ -63,7 +63,8 @@ impl CanvasHost {
             return;
         };
         let result = match content.as_ref() {
-            Some(HostContent::Host(layout)) => layout.layout(size),
+            // TODO: Pass the title bar height once WinUI reports it; see TODO.md.
+            Some(HostContent::Host(layout)) => layout.layout(size, 0.0),
             Some(HostContent::Page { style, children }) => {
                 LayoutSnapshot::apply_children(*style, children, size)
             }

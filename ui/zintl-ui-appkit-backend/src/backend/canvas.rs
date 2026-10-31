@@ -6,6 +6,7 @@ use std::collections::hash_map::Entry;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use zpd_appkit::geometry;
 use zpd_appkit::graphics::{self as native, GraphicsContext};
 use zpd_appkit::ui::{CanvasDelegate, CanvasFrame, CanvasHandle, CanvasInput, CanvasView};
 
@@ -65,12 +66,7 @@ impl CanvasBridge {
 impl CanvasDelegate for CanvasBridge {
     fn draw(&self, context: &mut GraphicsContext<'_>, frame: CanvasFrame) {
         let mut resources = self.resources.borrow_mut();
-        let bounds = Rect::new(
-            frame.bounds.x,
-            frame.bounds.y,
-            frame.bounds.width,
-            frame.bounds.height,
-        );
+        let bounds = frame.bounds.shared();
         let mut backend = CoreGraphics {
             context,
             resources: &mut resources,
@@ -80,6 +76,7 @@ impl CanvasDelegate for CanvasBridge {
             &mut graphics,
             &Frame {
                 bounds,
+                safe_area: frame.safe_area.shared(),
                 scale: frame.scale,
                 time: frame.time,
                 delta: frame.delta,
@@ -90,6 +87,11 @@ impl CanvasDelegate for CanvasBridge {
 
     fn input(&self, input: &CanvasInput) -> bool {
         self.canvas.event(&input.clone().shared())
+    }
+
+    fn title_bar_hit(&self, location: geometry::Point) -> bool {
+        self.canvas
+            .title_bar_hit(Point::new(location.x, location.y))
     }
 }
 

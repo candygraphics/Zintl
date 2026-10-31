@@ -363,9 +363,11 @@ impl<'application> Window<'application> {
         self.ensure_open()?;
         Ok(ViewRef::from_actor(&self.content))
     }
+    /// Runs `callback` with the content bounds and the height of their top
+    /// that the title bar covers, whenever the content view lays out.
     pub fn set_content_layout_handler(
         &self,
-        callback: impl FnMut(Rect) + 'static,
+        callback: impl FnMut(Rect, f64) + 'static,
     ) -> Result<(), UiError> {
         view::set_layout_callback(ViewRef::from_actor(&self.content), callback)
     }

@@ -91,6 +91,14 @@ impl<H: Canvas2DHandler> Canvas2D<H> {
         self.layout.grow = 1.0;
         self
     }
+
+    /// As a window's content, extends under its title bar instead of starting below it.
+    ///
+    /// Use [`Frame::safe_area`](crate::Frame::safe_area) to keep drawing clear of it.
+    pub fn ignores_safe_area(mut self) -> Self {
+        self.layout.ignores_safe_area = true;
+        self
+    }
 }
 
 impl<H: Canvas2DHandler> NativeView for Canvas2D<H> {

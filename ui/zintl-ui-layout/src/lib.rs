@@ -79,6 +79,10 @@ pub struct LayoutStyle {
     pub main_axis_distribution: MainAxisDistribution,
     pub child_sizing: ChildSizing,
     pub cross_axis_alignment: CrossAxisAlignment,
+    /// Lays out a window's top-level view under its title bar instead of below it.
+    ///
+    /// Only top-level views read this; nested views follow their parent.
+    pub ignores_safe_area: bool,
 }
 
 impl LayoutStyle {
@@ -94,6 +98,7 @@ impl LayoutStyle {
             main_axis_distribution: MainAxisDistribution::Start,
             child_sizing: ChildSizing::Intrinsic,
             cross_axis_alignment: CrossAxisAlignment::Stretch,
+            ignores_safe_area: false,
         }
     }
 
@@ -117,6 +122,7 @@ impl LayoutStyle {
             main_axis_distribution: MainAxisDistribution::Start,
             child_sizing: ChildSizing::Intrinsic,
             cross_axis_alignment: CrossAxisAlignment::Stretch,
+            ignores_safe_area: false,
         }
     }
 }

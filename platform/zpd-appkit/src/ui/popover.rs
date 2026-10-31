@@ -84,9 +84,10 @@ impl Popover {
     }
     pub fn set_content_layout_handler(
         &self,
-        callback: impl FnMut(Rect) + 'static,
+        mut callback: impl FnMut(Rect) + 'static,
     ) -> Result<(), UiError> {
-        view::set_layout_callback(self.content_view(), callback)
+        // Popovers have no title bar.
+        view::set_layout_callback(self.content_view(), move |bounds, _| callback(bounds))
     }
     pub fn set_content_size(&self, width: f64, height: f64) -> Result<(), UiError> {
         let size = native::Size { width, height };

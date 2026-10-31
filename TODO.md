@@ -39,10 +39,16 @@ for Windows yet.
 
 ## Title bar interactive views on Windows
 
-`title_bar_interactive` is ignored by the WinUI 3 backend. With
-`ExtendsContentIntoTitleBar`, register the marked views' bounds with
-`InputNonClientPointerSource::SetRegionRects(NonClientRegionKind::Passthrough, ...)`
-and update them after layout.
+`title_bar_interactive`, `Canvas2DHandler::title_bar_hit`, and the title bar
+inset are ignored by the WinUI 3 backend (it passes an inset of 0). With
+`ExtendsContentIntoTitleBar`:
+
+- Report the title bar height (`AppWindow.TitleBar.Height`) to `HostLayout::layout`
+  and to canvas frames as the safe area.
+- Register marked views' bounds with
+  `InputNonClientPointerSource::SetRegionRects(NonClientRegionKind::Passthrough, ...)`
+  after each layout. Canvases need rectangles rather than a per-point query,
+  so `title_bar_hit` may need a region-based companion.
 
 ## Canvas2D: follow-ups
 

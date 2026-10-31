@@ -243,19 +243,26 @@ Focusable canvases take keyboard focus when clicked.
 To fill a window, hide its title bar. On macOS only the window buttons stay
 above the content; on Windows the content extends into the title bar.
 
+Content starts below the title bar by default. A top-level view that calls
+`ignores_safe_area()` extends under it instead; a canvas then reads
+`Frame::safe_area` to keep text and controls clear of the title bar.
+
 ```rust,ignore
 Window::new(bounds, "Orbits")
     .title_bar(TitleBar::Hidden) // or TitleBar::Overlay to keep the title
-    .content(Canvas2D::new(Orbits::new()).fill_width().grow())
+    .content(Canvas2D::new(Orbits::new()).fill_width().grow().ignores_safe_area())
 ```
 
 Clicks in the title bar area move the window and do not reach the views under
-it. Mark a view with `title_bar_interactive()` (from `Attach`) to keep mouse
-input for it and its subviews there; a hovering canvas sees `Exited` while the
-pointer is in that area.
+it. A canvas claims points there with `Canvas2DHandler::title_bar_hit`, for
+example for tabs it draws; other views opt in as a whole with
+`title_bar_interactive()` (from `Attach`). A hovering canvas sees `Exited`
+while the pointer is in the title bar area outside the points it claims.
 
 ```rust,ignore
-Button::new("Share").title_bar_interactive()
+fn title_bar_hit(&self, point: Point) -> bool {
+    self.tabs.iter().any(|tab| tab.contains(point))
+}
 ```
 
 On Windows the canvas is not drawn yet; see `TODO.md`. See

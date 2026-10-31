@@ -761,6 +761,7 @@ fn canvas_node(node: &RenderNode) -> zintl_ui_native::CanvasNode {
 fn canvas_frame() -> Frame {
     Frame {
         bounds: Rect::new(0.0, 0.0, 100.0, 100.0),
+        safe_area: Rect::new(0.0, 0.0, 100.0, 100.0),
         scale: 2.0,
         time: 0.0,
         delta: 0.0,

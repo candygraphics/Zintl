@@ -271,6 +271,7 @@ mod tests {
     fn frame() -> Frame {
         Frame {
             bounds: Rect::new(0.0, 0.0, 10.0, 10.0),
+            safe_area: Rect::new(0.0, 0.0, 10.0, 10.0),
             scale: 1.0,
             time: 0.0,
             delta: 0.0,
