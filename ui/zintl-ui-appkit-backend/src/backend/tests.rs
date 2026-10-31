@@ -22,6 +22,7 @@ impl Nodes {
             layout: LayoutStyle::leaf(Size::new(0.0, 0.0)),
             id: None,
             enabled: true,
+            title_bar_interactive: false,
         }
     }
 
@@ -30,7 +31,7 @@ impl Nodes {
             sidebar: None,
             bounds: Rect::new(0.0, 0.0, 100.0, 100.0),
             title: String::new(),
-            full_size_content_view: false,
+            title_bar: crate::TitleBar::Standard,
             id: None,
             style,
         }

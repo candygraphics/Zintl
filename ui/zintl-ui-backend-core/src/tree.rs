@@ -231,7 +231,7 @@ enum MainTaskRoute {
 /// Queues main-thread tasks until a message loop connects a sender.
 pub struct MainTasks {
     route: Arc<Mutex<MainTaskRoute>>,
-    sender: Box<MainTaskSender>,
+    sender: Arc<MainTaskSender>,
 }
 
 impl Default for MainTasks {
@@ -245,7 +245,7 @@ impl MainTasks {
         let route = Arc::new(Mutex::new(MainTaskRoute::Pending(Vec::new())));
         let target = route.clone();
         // Tasks queued during the initial mount wait until the loop connects.
-        let sender = Box::new(move |task: MainTask| {
+        let sender = Arc::new(move |task: MainTask| {
             match &mut *target.lock().unwrap_or_else(PoisonError::into_inner) {
                 MainTaskRoute::Pending(tasks) => {
                     tasks.push(task);
@@ -259,6 +259,11 @@ impl MainTasks {
 
     pub fn sender(&self) -> &MainTaskSender {
         &*self.sender
+    }
+
+    /// Returns an owned sender, for handles that outlive a borrow such as canvas invalidators.
+    pub fn shared_sender(&self) -> Arc<MainTaskSender> {
+        self.sender.clone()
     }
 
     /// Forwards queued and future tasks to `sender`.

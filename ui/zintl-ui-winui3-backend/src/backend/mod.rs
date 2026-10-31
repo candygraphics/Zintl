@@ -12,7 +12,7 @@ use zintl_ui_backend_core::layout::{HostLayout, LayoutSnapshot};
 use zintl_ui_backend_core::tree::{ErrorSlot, MainTasks, NodeTree};
 use zintl_ui_backend_core::{
     AlertButtonRole, AlertConfig, Color, CommandSet, Context, Event, FileDialogConfig,
-    FileDialogMode, MainTask, NodeId, PopoverEdge, Rect, RenderNode, Sidebar, ViewKind,
+    FileDialogMode, MainTask, NodeId, PopoverEdge, Rect, RenderNode, Sidebar, TitleBar, ViewKind,
     WindowStyle,
 };
 use zintl_ui_layout::{LayoutError, Size};
@@ -102,7 +102,7 @@ struct WindowState {
     style: WindowStyle,
     applied_bounds: Option<Rect>,
     applied_title: Option<String>,
-    applied_full_size_content_view: Option<bool>,
+    applied_title_bar: Option<TitleBar>,
     /// `None` until the sidebar declaration has been applied once.
     applied_sidebar: Option<Option<Sidebar>>,
     applied_menu: Option<u64>,
@@ -297,7 +297,7 @@ impl WinUI3Backend {
             style,
             applied_bounds: None,
             applied_title: None,
-            applied_full_size_content_view: None,
+            applied_title_bar: None,
             applied_sidebar: None,
             applied_menu: None,
             closed,
@@ -314,7 +314,7 @@ impl WinUI3Backend {
         let RenderNode::Window {
             bounds,
             title,
-            full_size_content_view,
+            title_bar,
             sidebar,
             style,
             ..
@@ -358,11 +358,11 @@ impl WinUI3Backend {
             state.native.set_title(&title)?;
             state.applied_title = Some(title);
         }
-        if state.applied_full_size_content_view != Some(full_size_content_view) {
+        if state.applied_title_bar != Some(title_bar) {
             state
                 .native
-                .set_extends_content_into_title_bar(full_size_content_view)?;
-            state.applied_full_size_content_view = Some(full_size_content_view);
+                .set_extends_content_into_title_bar(title_bar != TitleBar::Standard)?;
+            state.applied_title_bar = Some(title_bar);
         }
         if state.applied_sidebar.as_ref() != Some(&sidebar) {
             Self::apply_sidebar(state, sidebar.as_ref(), sender, &route)?;
@@ -920,11 +920,12 @@ impl RenderBackend<RenderNode> for WinUI3Backend {
 
     fn update(&mut self, id: Self::NodeId, value: &RenderNode) {
         let old = self.kind(id);
-        let new = value.clone();
+        let mut new = value.clone();
+        new.adopt_canvas(&old);
         if let Err(error) = self.update_native(id, &old, &new) {
             self.pending_error.record(error);
         }
-        self.tree.node_mut(id).value = Some(value.clone());
+        self.tree.node_mut(id).value = Some(new);
         self.layout_dirty = true;
     }
 

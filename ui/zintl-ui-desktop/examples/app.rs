@@ -69,7 +69,7 @@ impl View for MainView {
                 .fill_width()
                 .spacing(32.0),
             )
-            .extend_client_area()
+            .title_bar(TitleBar::Overlay)
     }
 }
 

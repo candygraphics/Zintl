@@ -7,6 +7,7 @@ compile_error!("zpd-appkit supports Apple Silicon macOS only");
 
 pub mod actor;
 pub mod geometry;
+pub mod graphics;
 mod native;
 pub mod runloop;
 pub mod ui;

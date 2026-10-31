@@ -1,5 +1,6 @@
 mod button;
 mod callback;
+mod canvas;
 mod color;
 pub(crate) mod commands;
 mod controls;
@@ -18,6 +19,10 @@ mod view;
 mod window;
 
 pub use button::{BezelStyle, Button, ButtonType};
+pub use canvas::{
+    CanvasDelegate, CanvasFrame, CanvasHandle, CanvasInput, CanvasRedraw, CanvasView, KeyInput,
+    Modifiers, MouseButton, MouseInput, MousePhase, NamedKey, ScrollInput,
+};
 pub use color::Color;
 pub use commands::{
     CommandItem, CommandMenu, CommandModifier, CommandRole, CommandSet, MenuRole, WindowAppMenu,
@@ -41,4 +46,4 @@ pub use text_field::TextField;
 pub use view::{AsView, View, ViewRef};
 #[cfg(feature = "wgpu")]
 pub use window::{MetalLayer, WgpuSurface};
-pub use window::{Window, WindowStyle};
+pub use window::{TitleBar, Window, WindowStyle};

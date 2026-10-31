@@ -1,15 +1,17 @@
 use std::cell::Cell;
+use std::sync::Arc;
 
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
-    AsView, Button, ColorWell, ComboBox, NumberField, PopUpButton, ScrollView, SearchField,
-    SegmentedControl, Slider, Switch, TabView, TextField, UiError, View, ViewRef,
+    AsView, Button, CanvasView, ColorWell, ComboBox, NumberField, PopUpButton, ScrollView,
+    SearchField, SegmentedControl, Slider, Switch, TabView, TextField, UiError, View, ViewRef,
 };
 
 use zpd_appkit::geometry::Rect;
 
+use super::canvas::CanvasBridge;
 use crate::convert::Native;
-use crate::{ButtonType, ViewKind};
+use crate::{ButtonType, MainTaskSender, ViewKind};
 
 /// A native view created for a [`ViewKind`].
 pub(super) enum NativeNode {
@@ -27,6 +29,7 @@ pub(super) enum NativeNode {
     /// The offset waits until layout has sized the document.
     ScrollView(ScrollView, Cell<Option<(f64, f64)>>),
     TabView(TabView),
+    Canvas(CanvasView),
 }
 
 impl NativeNode {
@@ -45,11 +48,18 @@ impl NativeNode {
             Self::ColorWell(view) => view.as_view(),
             Self::ScrollView(view, _) => view.as_view(),
             Self::TabView(view) => view.as_view(),
+            Self::Canvas(view) => view.as_view(),
         }
     }
 
     /// Creates a native view and applies every property of `kind`.
-    pub(super) fn create(application: &Application, kind: &ViewKind) -> Result<Self, UiError> {
+    ///
+    /// `main_tasks` lets canvas invalidators reach the main thread.
+    pub(super) fn create(
+        application: &Application,
+        kind: &ViewKind,
+        main_tasks: Arc<MainTaskSender>,
+    ) -> Result<Self, UiError> {
         let native = match kind {
             ViewKind::Container => {
                 Self::Container(View::new(application, Rect::new(0.0, 0.0, 0.0, 0.0))?)
@@ -74,6 +84,11 @@ impl NativeNode {
                 Self::ScrollView(ScrollView::new(application)?, Cell::new(None))
             }
             ViewKind::TabView { .. } => Self::TabView(TabView::new(application)?),
+            ViewKind::Canvas2D { canvas, .. } => {
+                let view = CanvasView::new(application)?;
+                CanvasBridge::install(&view, canvas, main_tasks);
+                Self::Canvas(view)
+            }
         };
         native.apply(None, kind)?;
         Ok(native)
@@ -263,6 +278,25 @@ impl NativeNode {
             (Self::TabView(tabs), ViewKind::TabView { selected, .. }) => {
                 // Titles are applied with the pages while attaching children.
                 tabs.select(*selected)?;
+            }
+            (
+                Self::Canvas(view),
+                ViewKind::Canvas2D {
+                    redraw, focusable, ..
+                },
+            ) => {
+                let (old_redraw, old_focusable) = match old {
+                    Some(ViewKind::Canvas2D {
+                        redraw, focusable, ..
+                    }) => (Some(redraw), Some(focusable)),
+                    _ => (None, None),
+                };
+                if old_redraw != Some(redraw) {
+                    view.set_redraw(redraw.native())?;
+                }
+                if old_focusable != Some(focusable) {
+                    view.set_focusable(*focusable);
+                }
             }
             _ => return Err(UiError::InvalidHierarchy),
         }

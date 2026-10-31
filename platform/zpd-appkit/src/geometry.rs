@@ -58,3 +58,31 @@ impl PhysicalSize {
         Self { width, height }
     }
 }
+
+/// A point in logical points / DIP.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Point {
+    pub x: f64,
+    pub y: f64,
+}
+
+impl Point {
+    pub const fn new(x: f64, y: f64) -> Self {
+        Self { x, y }
+    }
+}
+
+impl From<Point> for crate::native::Point {
+    fn from(point: Point) -> Self {
+        Self {
+            x: point.x,
+            y: point.y,
+        }
+    }
+}
+
+impl From<crate::native::Point> for Point {
+    fn from(point: crate::native::Point) -> Self {
+        Self::new(point.x, point.y)
+    }
+}

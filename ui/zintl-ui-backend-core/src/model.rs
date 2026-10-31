@@ -1,59 +1,5 @@
 //! Plain UI descriptions that every native backend reads.
 
-/// Rectangle in logical points / DIP.
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[repr(C)]
-pub struct Rect {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-}
-
-impl Rect {
-    pub const fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            height,
-        }
-    }
-}
-
-/// An sRGB color with components in `0.0..=1.0`.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Color {
-    pub red: f64,
-    pub green: f64,
-    pub blue: f64,
-    pub alpha: f64,
-}
-
-impl Color {
-    pub const BLACK: Self = Self::rgb(0.0, 0.0, 0.0);
-    pub const WHITE: Self = Self::rgb(1.0, 1.0, 1.0);
-
-    pub const fn rgb(red: f64, green: f64, blue: f64) -> Self {
-        Self::rgba(red, green, blue, 1.0)
-    }
-
-    pub const fn rgba(red: f64, green: f64, blue: f64, alpha: f64) -> Self {
-        Self {
-            red,
-            green,
-            blue,
-            alpha,
-        }
-    }
-}
-
-impl Default for Color {
-    fn default() -> Self {
-        Self::BLACK
-    }
-}
-
 /// How a button responds to clicks.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ButtonType {
@@ -307,6 +253,20 @@ pub struct SidebarItem {
     pub id: String,
     pub title: String,
     pub system_image: Option<String>,
+}
+
+/// How the title bar relates to the window content.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TitleBar {
+    #[default]
+    Standard,
+    /// Content extends under the visible title bar.
+    Overlay,
+    /// Content fills the window; only the window buttons stay above it.
+    ///
+    /// On macOS the title and title bar background are hidden. On Windows the
+    /// content extends into the title bar, like `Overlay`.
+    Hidden,
 }
 
 /// Selects the native window class and chrome.

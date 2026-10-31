@@ -39,6 +39,7 @@ impl NativeView for View {
             layout: self.layout,
             id: self.id.clone(),
             enabled: true,
+            title_bar_interactive: false,
         })
         .with_children([self.children.clone().into_element()])
     }

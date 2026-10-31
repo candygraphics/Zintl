@@ -102,6 +102,8 @@ pub enum WindowEventKind {
         paths: Option<Vec<String>>,
     },
     ColorPanelClosed,
+    /// Input a canvas view received, after its delegate saw it.
+    CanvasInput(crate::ui::CanvasInput),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -192,6 +194,15 @@ impl ActorRef {
             .ok_or(ActorError::Dropped)?
             .event_route = route;
         Ok(())
+    }
+
+    /// Returns whether an event route is attached, so emitting would reach a handler.
+    pub(crate) fn has_event_route(&self) -> bool {
+        self.tree.upgrade().is_some_and(|tree| {
+            tree.borrow()
+                .node(self.id)
+                .is_some_and(|node| node.event_route.is_some())
+        })
     }
 
     pub(crate) fn with<R>(&self, operation: impl FnOnce(Id) -> R) -> Result<R, ActorError> {

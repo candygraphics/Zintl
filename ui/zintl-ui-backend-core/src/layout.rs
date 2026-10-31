@@ -78,7 +78,7 @@ impl<N: LayoutNative> LayoutSnapshot<N> {
         let root = layout.create_node(style, &child_nodes)?;
         layout.compute(root, size)?;
         for child in &built {
-            child.apply(&layout, Some(size.height))?;
+            child.apply(&layout, Some(size.height), 0.0)?;
         }
         Ok(())
     }
@@ -102,12 +102,19 @@ struct BuiltLayout<'snapshot, N> {
 }
 
 impl<N: LayoutNative> BuiltLayout<'_, N> {
-    fn apply(&self, layout: &LayoutTree, parent_height: Option<f32>) -> Result<(), N::Error> {
-        let frame = layout.layout(self.layout)?;
+    /// Applies frames to this subtree, moving this view down by `offset_y`.
+    fn apply(
+        &self,
+        layout: &LayoutTree,
+        parent_height: Option<f32>,
+        offset_y: f32,
+    ) -> Result<(), N::Error> {
+        let mut frame = layout.layout(self.layout)?;
+        frame.y += offset_y;
         let native = &self.snapshot.native;
         native.apply_frame(frame, parent_height)?;
         for child in &self.children {
-            child.apply(layout, Some(frame.height))?;
+            child.apply(layout, Some(frame.height), 0.0)?;
         }
         native.layout_hosted(frame, &self.snapshot.hosted)
     }
@@ -129,16 +136,33 @@ impl<N> Default for HostLayout<N> {
 }
 
 impl<N: LayoutNative> HostLayout<N> {
-    /// Lays out the children to fill `size`.
-    pub fn layout(&self, size: Size) -> Result<(), N::Error> {
-        Self::place(
+    /// Lays out the children to fill `size` below a `top_inset` covered by the title bar.
+    ///
+    /// Children fill the whole size when one of them ignores the safe area.
+    pub fn layout(&self, size: Size, top_inset: f32) -> Result<(), N::Error> {
+        let inset = if self
+            .children
+            .iter()
+            .any(|child| child.style.ignores_safe_area)
+        {
+            0.0
+        } else {
+            top_inset.clamp(0.0, size.height)
+        };
+        let safe = Size::new(size.width, size.height - inset);
+        let mut layout = LayoutTree::new();
+        let (root, built) = Self::build(
             &self.children,
             self.padding,
-            Some(size.width),
-            Some(size.height),
-            size,
-            Some(size.height),
+            &mut layout,
+            Some(safe.width),
+            Some(safe.height),
+            safe,
         )?;
+        layout.compute_fitting(root, Some(safe.width), Some(safe.height))?;
+        for child in &built {
+            child.apply(&layout, Some(size.height), inset)?;
+        }
         Ok(())
     }
 
@@ -194,9 +218,68 @@ impl<N: LayoutNative> HostLayout<N> {
         let (root, built) = Self::build(children, padding, &mut layout, width, height, minimum)?;
         layout.compute_fitting(root, width, height)?;
         for child in &built {
-            child.apply(&layout, parent_height)?;
+            child.apply(&layout, parent_height, 0.0)?;
         }
         let frame = layout.layout(root)?;
         Ok(Size::new(frame.width, frame.height))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    /// Records the frame it receives.
+    #[derive(Default)]
+    struct Probe {
+        frame: Cell<Option<LayoutRect>>,
+    }
+
+    impl LayoutNative for Probe {
+        type Error = LayoutError;
+
+        fn apply_frame(&self, frame: LayoutRect, _: Option<f32>) -> Result<(), LayoutError> {
+            self.frame.set(Some(frame));
+            Ok(())
+        }
+    }
+
+    fn host(style: LayoutStyle) -> (HostLayout<Probe>, Rc<Probe>) {
+        let probe = Rc::new(Probe::default());
+        let snapshot = LayoutSnapshot {
+            style,
+            native: probe.clone(),
+            children: Vec::new(),
+            hosted: Vec::new(),
+        };
+        (
+            HostLayout {
+                children: vec![snapshot],
+                padding: 0.0,
+            },
+            probe,
+        )
+    }
+
+    #[test]
+    fn content_starts_below_the_title_bar() {
+        // Verifies top-level views fill the area below the title bar inset.
+        let (host, probe) = host(LayoutStyle::fill(Size::new(0.0, 0.0)));
+        host.layout(Size::new(400.0, 300.0), 28.0).unwrap();
+        let frame = probe.frame.get().unwrap();
+        assert_eq!((frame.y, frame.height), (28.0, 272.0));
+    }
+
+    #[test]
+    fn ignoring_the_safe_area_fills_the_window() {
+        // Verifies a top-level view that ignores the safe area extends under the title bar.
+        let mut style = LayoutStyle::fill(Size::new(0.0, 0.0));
+        style.ignores_safe_area = true;
+        let (host, probe) = host(style);
+        host.layout(Size::new(400.0, 300.0), 28.0).unwrap();
+        let frame = probe.frame.get().unwrap();
+        assert_eq!((frame.y, frame.height), (0.0, 300.0));
     }
 }

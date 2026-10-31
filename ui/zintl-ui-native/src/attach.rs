@@ -12,9 +12,20 @@ pub trait NativeView: Clone + 'static {
 
     fn attachments_mut(&mut self) -> &mut Attachments;
 
-    /// Renders the native element with its context menu and popovers.
+    /// Renders the native element with its context menu, popovers, and input options.
     fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let element = self.base_element(cx);
+        let mut element = self.base_element(cx);
+        if let Element::Node {
+            value:
+                RenderNode::View {
+                    title_bar_interactive,
+                    ..
+                },
+            ..
+        } = &mut element
+        {
+            *title_bar_interactive = self.attachments().title_bar_interactive;
+        }
         self.attachments().attach(element, cx)
     }
 }
@@ -34,6 +45,15 @@ pub trait Attach: NativeView + Sized {
         self.attachments_mut().popovers.push(popover);
         self
     }
+
+    /// Keeps mouse input for this view and its subviews inside the title bar area.
+    ///
+    /// When a window's content extends under its title bar, clicks there move
+    /// the window unless they land on a view marked with this modifier.
+    fn title_bar_interactive(mut self) -> Self {
+        self.attachments_mut().title_bar_interactive = true;
+        self
+    }
 }
 
 impl<V: NativeView> Attach for V {}
@@ -43,6 +63,7 @@ impl<V: NativeView> Attach for V {}
 pub struct Attachments {
     menu: Option<Menu>,
     popovers: Vec<Popover>,
+    title_bar_interactive: bool,
 }
 
 impl Attachments {

@@ -2,6 +2,7 @@
 
 mod attach;
 mod button;
+mod canvas;
 mod containers;
 mod controls;
 mod menu;
@@ -14,6 +15,7 @@ mod window;
 
 pub use attach::{Attach, Attachments, NativeView};
 pub use button::Button;
+pub use canvas::Canvas2D;
 pub use containers::{ScrollView, TabView, TabViewItem};
 pub use controls::{
     ColorWell, ComboBox, NumberField, PopUpButton, SearchField, SegmentedControl, Slider, Switch,
@@ -33,8 +35,11 @@ pub use zintl_ui::element::{Element, IntoElement, ListFactory};
 pub use zintl_ui::list;
 pub use zintl_ui::store::Store;
 pub use zintl_ui_backend_core::{
-    AlertStyle, BezelStyle, ButtonType, Color, Event, EventKind, NodeId, PopoverEdge, Rect,
-    RenderNode, ScrollAxes, ViewKind, WindowStyle,
+    AlertStyle, BezelStyle, ButtonType, Canvas2DHandler, CanvasEvent, CanvasEventContext,
+    CanvasNode, CanvasSetup, Color, Event, EventKind, Frame, Invalidator, Key, KeyEvent, KeyPhase,
+    Modifiers, NamedKey, NodeId, PointerButton, PointerEvent, PointerPhase, PopoverEdge, Rect,
+    Redraw, RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, TitleBar, ViewKind, WindowStyle,
+    graphics,
 };
 pub use zintl_ui_layout::{LayoutStyle, Size};
 
@@ -177,11 +182,11 @@ mod tests {
     }
 
     #[test]
-    fn window_full_size_content_view_is_opt_in() {
-        // Verifies Window::new uses normal content unless the builder enables full-size content.
+    fn window_title_bar_is_standard_by_default() {
+        // Verifies Window::new keeps the standard title bar unless the builder changes it.
         let normal = composer(Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Normal"));
         let full_size = composer(
-            Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Full Size").full_size_content_view(),
+            Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Hidden").title_bar(TitleBar::Hidden),
         );
         let normal = normal.backend().value(root_id(&normal)).unwrap();
         let full_size = full_size.backend().value(root_id(&full_size)).unwrap();
@@ -189,14 +194,14 @@ mod tests {
         assert!(matches!(
             normal,
             RenderNode::Window {
-                full_size_content_view: false,
+                title_bar: TitleBar::Standard,
                 ..
             }
         ));
         assert!(matches!(
             full_size,
             RenderNode::Window {
-                full_size_content_view: true,
+                title_bar: TitleBar::Hidden,
                 ..
             }
         ));
@@ -231,6 +236,156 @@ mod tests {
         assert!(composer.dispatch_event(button_route, Event::Activated));
         assert_eq!(composer.context(|cx| cx.get(value).clone()), "typed");
         assert_eq!(changes.get(), 1);
+    }
+
+    /// Draws a bar `width` points wide and counts its draws.
+    #[derive(Clone)]
+    struct Bar {
+        width: f64,
+        draws: Rc<Cell<u32>>,
+    }
+
+    impl Canvas2DHandler for Bar {
+        fn draw(&mut self, g: &mut graphics::Graphics2D<'_>, _frame: &Frame) {
+            self.draws.set(self.draws.get() + 1);
+            g.fill_rect(Rect::new(0.0, 0.0, self.width, 1.0), Color::BLACK);
+        }
+
+        fn reconcile(&mut self, next: Self) -> Redraw {
+            // Keep the mounted counter so the test sees draws of one handler.
+            self.width = next.width;
+            Redraw::Yes
+        }
+    }
+
+    fn canvas(node: &RenderNode) -> CanvasNode {
+        match node {
+            RenderNode::View {
+                kind: ViewKind::Canvas2D { canvas, .. },
+                ..
+            } => canvas.clone(),
+            _ => panic!("expected a canvas node"),
+        }
+    }
+
+    fn frame() -> Frame {
+        Frame {
+            bounds: Rect::new(0.0, 0.0, 10.0, 10.0),
+            safe_area: Rect::new(0.0, 0.0, 10.0, 10.0),
+            scale: 1.0,
+            time: 0.0,
+            delta: 0.0,
+        }
+    }
+
+    #[test]
+    fn canvas_rerender_reconciles_into_the_mounted_handler() {
+        // Verifies a Store update keeps the mounted canvas and hands it the new handler.
+        let mut composer = Composer::new(HeadlessBackend::new());
+        let width = composer.context(|cx: &mut Context<'_>| cx.store(2.0));
+        let draws = Rc::new(Cell::new(0));
+        let counter = draws.clone();
+        let root = composer.context(|cx| {
+            cx.watch(width, move |width| {
+                Canvas2D::new(Bar {
+                    width: *width,
+                    draws: counter.clone(),
+                })
+            })
+        });
+        composer.mount(root);
+        let node = root_id(&composer);
+        let mounted = canvas(composer.backend().value(node).unwrap());
+        mounted.record(&frame());
+
+        composer.context(|cx| cx.update(width, |width| *width = 5.0));
+        composer.flush();
+        let current = canvas(composer.backend().value(root_id(&composer)).unwrap());
+
+        assert_eq!(current, mounted);
+        let commands = current.record(&frame());
+        assert!(
+            matches!(&commands[..], [graphics::DrawCommand::Fill { path, .. }]
+            if *path == graphics::Path::rect(Rect::new(0.0, 0.0, 5.0, 1.0)))
+        );
+        assert_eq!(draws.get(), 2);
+    }
+
+    #[test]
+    fn canvas_events_route_to_on_event() {
+        // Verifies canvas input reaches the declared action with a Context.
+        let mut composer = Composer::new(HeadlessBackend::new());
+        let clicks = composer.context(|cx: &mut Context<'_>| cx.store(0));
+        composer.mount(
+            Canvas2D::new(Bar {
+                width: 1.0,
+                draws: Rc::default(),
+            })
+            .on_event(move |cx, event| {
+                if matches!(
+                    event,
+                    CanvasEvent::Pointer(PointerEvent {
+                        phase: PointerPhase::Down,
+                        ..
+                    })
+                ) {
+                    cx.update(clicks, |clicks| *clicks += 1);
+                }
+            }),
+        );
+        let route = composer.backend().event_route(root_id(&composer)).unwrap();
+        let down = CanvasEvent::Pointer(PointerEvent {
+            phase: PointerPhase::Down,
+            button: Some(PointerButton::Primary),
+            location: graphics::Point::new(1.0, 1.0),
+            modifiers: Modifiers::default(),
+            click_count: 1,
+        });
+
+        assert!(composer.dispatch_event(route, Event::Canvas(down)));
+        assert_eq!(composer.context(|cx| *cx.get(clicks)), 1);
+    }
+
+    #[test]
+    fn title_bar_interactive_is_opt_in_per_view() {
+        // Verifies only views marked with the modifier keep input under the title bar.
+        let plain = composer(Button::new("Plain"));
+        let marked = composer(Button::new("Marked").title_bar_interactive());
+        let plain = plain.backend().value(root_id(&plain)).unwrap();
+        let marked = marked.backend().value(root_id(&marked)).unwrap();
+
+        assert!(matches!(
+            plain,
+            RenderNode::View {
+                title_bar_interactive: false,
+                ..
+            }
+        ));
+        assert!(matches!(
+            marked,
+            RenderNode::View {
+                title_bar_interactive: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn canvases_of_different_handlers_are_different_kinds() {
+        // Verifies switching handler types recreates the canvas instead of reconciling.
+        #[derive(Clone)]
+        struct Empty;
+        impl Canvas2DHandler for Empty {
+            fn draw(&mut self, _g: &mut graphics::Graphics2D<'_>, _frame: &Frame) {}
+        }
+        let bar = composer(Canvas2D::new(Bar {
+            width: 1.0,
+            draws: Rc::default(),
+        }));
+        let empty = composer(Canvas2D::new(Empty));
+        let bar = bar.backend().value(root_id(&bar)).unwrap();
+        let empty = empty.backend().value(root_id(&empty)).unwrap();
+        assert!(!bar.same_kind(empty));
     }
 
     #[test]

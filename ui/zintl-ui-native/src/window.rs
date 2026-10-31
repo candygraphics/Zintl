@@ -7,7 +7,7 @@ use zintl_ui::view::View;
 
 use crate::{
     Alert, ColorPanel, Context, Element, EventKind, FileDialog, Rect, RenderNode, Sidebar,
-    WindowStyle,
+    TitleBar, WindowStyle,
 };
 
 type Action = dyn for<'a> Fn(&mut Context<'a>);
@@ -35,7 +35,7 @@ pub struct Window {
     sidebar: Option<Sidebar>,
     bounds: Rect,
     title: String,
-    full_size_content_view: bool,
+    title_bar: TitleBar,
     style: WindowStyle,
     id: Option<String>,
     children: ListFactory<RenderNode>,
@@ -50,7 +50,7 @@ impl Window {
             sidebar: None,
             bounds,
             title: title.into(),
-            full_size_content_view: false,
+            title_bar: TitleBar::Standard,
             style: WindowStyle::Normal,
             id: None,
             children: Vec::new(),
@@ -70,8 +70,8 @@ impl Window {
         self
     }
 
-    pub fn full_size_content_view(mut self) -> Self {
-        self.full_size_content_view = true;
+    pub fn title_bar(mut self, title_bar: TitleBar) -> Self {
+        self.title_bar = title_bar;
         self
     }
 
@@ -135,7 +135,7 @@ impl View for Window {
             sidebar: self.sidebar.as_ref().map(|sidebar| sidebar.state(cx)),
             bounds: self.bounds,
             title: self.title.clone(),
-            full_size_content_view: self.full_size_content_view,
+            title_bar: self.title_bar,
             id: self.id.clone(),
             style: self.style,
         })
