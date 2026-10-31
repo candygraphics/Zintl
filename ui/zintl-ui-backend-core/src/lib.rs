@@ -64,8 +64,10 @@ pub enum ViewKind {
     },
     /// A scrolling multiline editor that fills its parent.
     TextEditor {
-        value: String,
-        /// `None` uses the platform's standard editor font.
+        text: graphics::AttributedText,
+        /// Edits styled runs and paragraph styles instead of plain text.
+        rich: bool,
+        /// The plain-text font; `None` uses the platform's standard editor font.
         font: Option<graphics::Font>,
         editable: bool,
     },

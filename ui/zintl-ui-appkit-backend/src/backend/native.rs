@@ -17,7 +17,7 @@ use zintl_ui_backend_core::tree::ErrorSlot;
 
 use super::AppError;
 use super::canvas::CanvasBridge;
-use crate::convert::Native;
+use crate::convert::{Native, Shared};
 use crate::{ButtonType, MainTaskSender, ViewKind};
 
 /// A native view created for a [`ViewKind`].
@@ -260,20 +260,41 @@ impl NativeNode {
             (
                 Self::TextEditor(editor),
                 ViewKind::TextEditor {
-                    value,
+                    text,
+                    rich,
                     font,
                     editable,
                 },
             ) => {
-                // Only outside changes are written back, so typing keeps the insertion point.
-                if editor.string_value()? != *value {
-                    editor.set_string_value(value)?;
+                let old = match old {
+                    Some(ViewKind::TextEditor {
+                        text,
+                        rich,
+                        font,
+                        editable,
+                    }) => Some((text, rich, font, editable)),
+                    _ => None,
+                };
+                if old.is_none_or(|(_, old, ..)| old != rich) {
+                    editor.set_rich(*rich)?;
                 }
-                if !matches!(old, Some(ViewKind::TextEditor { font: old, .. }) if old == font) {
-                    editor.set_font(font.as_ref().map(Native::native).as_ref())?;
+                // Text the editor already shows is not written back, so typing keeps
+                // the insertion point. Unchanged rich text is skipped too: AppKit
+                // cannot keep a paragraph style on an empty last line.
+                if *rich {
+                    let unchanged = old.is_some_and(|(old, old_rich, ..)| old == text && *old_rich);
+                    if !unchanged && editor.rich_text()?.shared() != *text {
+                        editor.set_rich_text(&text.native())?;
+                    }
+                } else {
+                    if editor.string_value()? != text.text() {
+                        editor.set_string_value(text.text())?;
+                    }
+                    if old.is_none_or(|(_, old_rich, old_font, _)| old_font != font || *old_rich) {
+                        editor.set_font(font.as_ref().map(Native::native).as_ref())?;
+                    }
                 }
-                if !matches!(old, Some(ViewKind::TextEditor { editable: old, .. }) if old == editable)
-                {
+                if old.is_none_or(|(.., old)| old != editable) {
                     editor.set_editable(*editable)?;
                 }
             }

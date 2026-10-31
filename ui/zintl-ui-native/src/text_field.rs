@@ -3,7 +3,7 @@ use std::rc::Rc;
 use zintl_ui::element::IntoElement;
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
-use zintl_ui_backend_core::graphics::Font;
+use zintl_ui_backend_core::graphics::{AttributedText, Font};
 use zintl_ui_backend_core::{TextAlignment, TextColor, TextStyle, ViewKind};
 use zintl_ui_layout::{LayoutDimension, LayoutStyle, Size};
 
@@ -210,10 +210,21 @@ impl TextChange {
     }
 }
 
+/// The Store a [`TextEditor`] edits.
+#[derive(Clone, Copy)]
+enum EditorBinding {
+    None,
+    Plain(Store<String>),
+    Rich(Store<AttributedText>),
+}
+
 /// A scrolling multiline editor that fills its parent, like a document body.
+///
+/// Bound with [`TextEditor::bind_rich`], it edits styled runs and paragraph
+/// styles; `StandardAction::Bold` and the paragraph style actions apply to it.
 #[derive(Clone)]
 pub struct TextEditor {
-    binding: Option<Store<String>>,
+    binding: EditorBinding,
     action: Option<Rc<ChangeAction>>,
     font: Option<Font>,
     editable: bool,
@@ -225,7 +236,7 @@ pub struct TextEditor {
 impl TextEditor {
     pub fn new() -> Self {
         Self {
-            binding: None,
+            binding: EditorBinding::None,
             action: None,
             font: None,
             editable: true,
@@ -235,17 +246,25 @@ impl TextEditor {
         }
     }
 
+    /// Edits plain text.
     pub fn bind(mut self, store: Store<String>) -> Self {
-        self.binding = Some(store);
+        self.binding = EditorBinding::Plain(store);
         self
     }
 
-    /// Runs after each edit, once the bound Store is updated.
+    /// Edits rich text with styled runs and paragraph styles.
+    pub fn bind_rich(mut self, store: Store<AttributedText>) -> Self {
+        self.binding = EditorBinding::Rich(store);
+        self
+    }
+
+    /// Runs after each edit with the plain text, once the bound Store is updated.
     pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static) -> Self {
         self.action = Some(Rc::new(action));
         self
     }
 
+    /// Sets the plain-text font; rich text takes fonts from its paragraph styles.
     pub fn font(mut self, font: Font) -> Self {
         self.font = Some(font);
         self
@@ -277,13 +296,15 @@ impl NativeView for TextEditor {
     attachments!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let value = self
-            .binding
-            .map(|store| cx.get(store).clone())
-            .unwrap_or_default();
+        let (text, rich) = match self.binding {
+            EditorBinding::None => (AttributedText::new(), false),
+            EditorBinding::Plain(store) => (AttributedText::from(cx.get(store).as_str()), false),
+            EditorBinding::Rich(store) => (cx.get(store).clone(), true),
+        };
         let element = Element::node(RenderNode::View {
             kind: ViewKind::TextEditor {
-                value,
+                text,
+                rich,
                 font: self.font.clone(),
                 editable: self.editable,
             },
@@ -292,7 +313,23 @@ impl NativeView for TextEditor {
             enabled: true,
             title_bar_interactive: false,
         });
-        TextChange::route(element, self.binding, self.action.clone())
+        match self.binding {
+            EditorBinding::None => TextChange::route(element, None, self.action.clone()),
+            EditorBinding::Plain(store) => {
+                TextChange::route(element, Some(store), self.action.clone())
+            }
+            EditorBinding::Rich(store) => {
+                let action = self.action.clone();
+                element.on_event(EventKind::RichTextChanged, move |cx, event| {
+                    if let Event::RichTextChanged { text } = event {
+                        cx.update(store, |current| current.clone_from(&text));
+                        if let Some(action) = &action {
+                            action(cx, text.text());
+                        }
+                    }
+                })
+            }
+        }
     }
 }
 

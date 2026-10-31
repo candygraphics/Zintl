@@ -82,3 +82,11 @@ selection or section headers. Use a WinUI `ListView` with grouped items,
 read-only state are not applied yet, and it does not fill the column with
 scrolling like `NSTextView`. Set `AcceptsReturn`, `TextWrapping::Wrap`,
 `IsReadOnly`, `FontSize`/`FontWeight`, and vertical scrolling.
+
+## Rich text on Windows
+
+`TextEditor::bind_rich` edits plain text on WinUI 3: the backend shows
+`AttributedText::text` in a `TextBox` and reports plain edits. Use a
+`RichEditBox`, map paragraph styles to character formats, and report
+`Event::RichTextChanged`. The paragraph style and font trait menu items are
+omitted from WinUI menus.

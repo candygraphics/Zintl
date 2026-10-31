@@ -115,6 +115,23 @@ TextEditor::new()
 Replacing the bound text from code moves the insertion point to the end and
 clears the editor's undo history, since it describes the replaced text.
 
+`bind_rich` edits an `AttributedText`: plain text with styled runs (bold,
+italic, underline, strikethrough, monospace, link) and one `ParagraphStyle`
+per line (Title, Heading, Subheading, Body, Monospaced). Formatting comes from
+standard actions that the focused editor performs, so it is undoable and the
+menu shows the current paragraph style with a check mark.
+
+```rust,ignore
+MainMenu::standard().menu(Menu::new("Format", [
+    MenuItem::standard(StandardAction::TitleStyle),   // ⇧⌘T
+    MenuItem::standard(StandardAction::BodyStyle),    // ⇧⌘B
+    MenuItem::separator(),
+    MenuItem::standard(StandardAction::Bold),         // ⌘B
+]));
+
+TextEditor::new().bind_rich(self.body).on_change(|cx, plain| { /* … */ })
+```
+
 ## Lists
 
 `List` is a native `NSTableView` with inset rows, rounded selection, arrow-key

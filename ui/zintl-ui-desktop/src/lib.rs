@@ -30,8 +30,8 @@ pub use zintl_ui_layout::{
     Axis, ChildSizing, CrossAxisAlignment, LayoutDimension, LayoutStyle, MainAxisDistribution, Size,
 };
 pub use zintl_ui_native::graphics::{
-    FillRule, Font, FontWeight, GradientStop, Graphics2D, Image, LineCap, LineJoin, Paint, Path,
-    Point, StrokeStyle, TextMetrics, Transform,
+    AttributedText, FillRule, Font, FontWeight, GradientStop, Graphics2D, Image, LineCap, LineJoin,
+    Paint, ParagraphStyle, Path, Point, SpanStyle, StrokeStyle, TextMetrics, Transform,
 };
 pub use zintl_ui_native::{
     Alert, AlertButton, AlertStyle, Attach, Attachments, ButtonRole, Canvas2D, Canvas2DHandler,

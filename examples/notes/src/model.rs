@@ -1,5 +1,7 @@
 //! The note library, independent of the UI.
 
+use zintl_ui_desktop::{AttributedText, ParagraphStyle};
+
 pub type NoteId = u64;
 
 /// Sidebar IDs of the folders the library manages itself.
@@ -20,7 +22,7 @@ pub struct Folder {
 pub struct Note {
     pub id: NoteId,
     pub folder: String,
-    pub body: String,
+    pub body: AttributedText,
     pub pinned: bool,
     pub deleted: bool,
     /// Increases on every edit; orders the list until real timestamps land.
@@ -40,6 +42,7 @@ impl Note {
 
     fn lines(&self) -> impl Iterator<Item = &str> {
         self.body
+            .text()
             .lines()
             .map(str::trim)
             .filter(|line| !line.is_empty())
@@ -69,16 +72,21 @@ impl Library {
             ],
             ..Self::default()
         };
-        let welcome = library.create("notes");
-        library.set_body(
-            welcome,
-            "Welcome to Notes\nThis app is built with zintl-ui-desktop.",
-        );
-        library.set_pinned(welcome, true);
-        let groceries = library.create("notes");
-        library.set_body(groceries, "Groceries\nMilk, eggs, bread");
-        let curry = library.create("recipes");
-        library.set_body(curry, "Curry\nOnion, carrot, potato, roux");
+        for (folder, body, pinned) in [
+            (
+                "notes",
+                "Welcome to Notes\nThis app is built with zintl-ui-desktop.",
+                true,
+            ),
+            ("notes", "Groceries\nMilk, eggs, bread", false),
+            ("recipes", "Curry\nOnion, carrot, potato, roux", false),
+        ] {
+            let id = library.create(folder);
+            let mut body = AttributedText::from(body);
+            body.set_paragraph(0, ParagraphStyle::Title);
+            library.set_body(id, &body);
+            library.set_pinned(id, pinned);
+        }
         library
     }
 
@@ -115,7 +123,7 @@ impl Library {
         let note = Note {
             id: self.next_id,
             folder,
-            body: String::new(),
+            body: AttributedText::new(),
             pinned: false,
             deleted: false,
             revision: self.tick(),
@@ -125,12 +133,12 @@ impl Library {
     }
 
     /// Stores an edit; unchanged bodies keep their position in the list.
-    pub fn set_body(&mut self, id: NoteId, body: &str) {
+    pub fn set_body(&mut self, id: NoteId, body: &AttributedText) {
         let revision = self.clock + 1;
         if let Some(note) = self.notes.iter_mut().find(|note| note.id == id)
-            && note.body != body
+            && note.body != *body
         {
-            note.body = body.to_owned();
+            note.body = body.clone();
             note.revision = revision;
             self.clock = revision;
         }
@@ -171,7 +179,7 @@ mod tests {
         let mut library = Library::default();
         let id = library.create("notes");
         assert_eq!(library.note(id).unwrap().title(), "New Note");
-        library.set_body(id, "\n  Title  \n\nBody");
+        library.set_body(id, &"\n  Title  \n\nBody".into());
         let note = library.note(id).unwrap();
         assert_eq!((note.title(), note.preview()), ("Title", "Body"));
     }
@@ -183,7 +191,7 @@ mod tests {
         let a = library.create("notes");
         let b = library.create("notes");
         let c = library.create("notes");
-        library.set_body(a, "edited");
+        library.set_body(a, &"edited".into());
         library.set_pinned(c, true);
         let order: Vec<_> = library.notes_in("notes").iter().map(|n| n.id).collect();
         assert_eq!(order, [c, a, b]);
@@ -195,7 +203,7 @@ mod tests {
         let mut library = Library::default();
         let a = library.create("notes");
         let b = library.create("notes");
-        library.set_body(a, "");
+        library.set_body(a, &AttributedText::new());
         assert_eq!(library.notes_in("notes")[0].id, b);
     }
 

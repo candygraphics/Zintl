@@ -90,6 +90,12 @@ pub enum CommandRole {
     Bold,
     Italic,
     Underline,
+    /// Paragraph styles, which a rich `TextEditor` applies to the selection.
+    TitleStyle,
+    HeadingStyle,
+    SubheadingStyle,
+    BodyStyle,
+    MonospacedStyle,
     ToggleSidebar,
     ToggleFullScreen,
     Minimize,
@@ -129,6 +135,11 @@ impl CommandRole {
             | Self::UseSelectionForFind => zpd_objc::sel!("performTextFinderAction:"),
             Self::Bold | Self::Italic => zpd_objc::sel!("addFontTrait:"),
             Self::Underline => zpd_objc::sel!("underline:"),
+            Self::TitleStyle
+            | Self::HeadingStyle
+            | Self::SubheadingStyle
+            | Self::BodyStyle
+            | Self::MonospacedStyle => zpd_objc::sel!("zintlApplyParagraphStyle:"),
             Self::ToggleSidebar => zpd_objc::sel!("toggleSidebar:"),
             Self::ToggleFullScreen => zpd_objc::sel!("toggleFullScreen:"),
             Self::Minimize => zpd_objc::sel!("performMiniaturize:"),
@@ -150,6 +161,11 @@ impl CommandRole {
             // NSFontTraitMask values.
             Self::Bold => 2,
             Self::Italic => 1,
+            Self::TitleStyle => super::RichParagraph::Title.tag(),
+            Self::HeadingStyle => super::RichParagraph::Heading.tag(),
+            Self::SubheadingStyle => super::RichParagraph::Subheading.tag(),
+            Self::BodyStyle => super::RichParagraph::Body.tag(),
+            Self::MonospacedStyle => super::RichParagraph::Monospaced.tag(),
             _ => 0,
         }
     }

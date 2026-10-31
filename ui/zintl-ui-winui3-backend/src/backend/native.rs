@@ -274,12 +274,11 @@ impl NativeNode {
                     )?;
                 }
             }
-            ViewKind::TextEditor {
-                value, editable, ..
-            } => {
+            ViewKind::TextEditor { text, editable, .. } => {
                 // Only outside changes are written back, so typing keeps the caret.
-                if control.text(TextProperty::Text)? != *value {
-                    control.set_text(TextProperty::Text, value)?;
+                // TODO: Edit rich text with a RichEditBox; see TODO.md.
+                if control.text(TextProperty::Text)? != text.text() {
+                    control.set_text(TextProperty::Text, text.text())?;
                 }
                 if old.is_none() {
                     control.set_bool(BoolProperty::Multiline, true)?;

@@ -1022,7 +1022,7 @@ fn text_views_update_their_store_before_on_change() {
 
     assert!(matches!(
         &app.render_tree().children[0].value,
-        RenderNode::View { kind: ViewKind::TextEditor { value, editable: true, .. }, .. } if value == "Body"
+        RenderNode::View { kind: ViewKind::TextEditor { text, rich: false, editable: true, .. }, .. } if text.text() == "Body"
     ));
     app.dispatch_at(
         &[0, 0],
@@ -1039,4 +1039,48 @@ fn text_views_update_their_store_before_on_change() {
             ("T".to_owned(), "T".to_owned())
         ]
     );
+}
+
+#[test]
+fn rich_editor_writes_attributed_text_and_reports_plain_text() {
+    // Verifies a rich binding renders styled text and stores native rich edits before `on_change`.
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let recorded = seen.clone();
+    let (mut app, body) = Harness::mount(
+        |cx| {
+            let mut text = AttributedText::from("Title");
+            text.set_paragraph(0, ParagraphStyle::Title);
+            cx.store(text)
+        },
+        move |body| {
+            let recorded = recorded.clone();
+            TextEditor::new()
+                .bind_rich(body)
+                .on_change(move |_, text| recorded.borrow_mut().push(text.to_owned()))
+        },
+    );
+
+    assert!(matches!(
+        &app.render_tree().value,
+        RenderNode::View { kind: ViewKind::TextEditor { text, rich: true, .. }, .. }
+            if text.paragraphs() == [ParagraphStyle::Title]
+    ));
+    let mut edited = AttributedText::from("Title\n");
+    edited.set_paragraph(0, ParagraphStyle::Title);
+    edited.push(
+        "bold",
+        SpanStyle {
+            bold: true,
+            ..SpanStyle::default()
+        },
+    );
+    assert!(app.dispatch_at(
+        &[0],
+        Event::RichTextChanged {
+            text: edited.clone()
+        }
+    ));
+
+    assert_eq!(app.get(body), edited);
+    assert_eq!(*seen.borrow(), ["Title\nbold"]);
 }

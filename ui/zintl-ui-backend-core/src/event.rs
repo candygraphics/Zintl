@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use zintl_ui::event::Event as EventTrait;
 
+use crate::graphics::AttributedText;
 use crate::{CanvasEvent, Color};
 
 /// Selects the event an element route handles.
@@ -9,6 +10,7 @@ use crate::{CanvasEvent, Color};
 pub enum EventKind {
     Activated,
     TextChanged,
+    RichTextChanged,
     StateChanged,
     ValueChanged,
     SelectionChanged,
@@ -35,6 +37,10 @@ pub enum Event {
     Activated,
     TextChanged {
         value: String,
+    },
+    /// A rich text editor's content changed.
+    RichTextChanged {
+        text: AttributedText,
     },
     /// A switch, checkbox, radio button, or toggle button changed.
     StateChanged {
@@ -94,6 +100,7 @@ impl EventTrait for Event {
         match self {
             Self::Activated => EventKind::Activated,
             Self::TextChanged { .. } => EventKind::TextChanged,
+            Self::RichTextChanged { .. } => EventKind::RichTextChanged,
             Self::StateChanged { .. } => EventKind::StateChanged,
             Self::ValueChanged { .. } => EventKind::ValueChanged,
             Self::SelectionChanged { .. } => EventKind::SelectionChanged,

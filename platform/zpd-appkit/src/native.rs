@@ -71,6 +71,14 @@ pub struct Rect {
     pub size: Size,
 }
 
+/// An `NSRange` in UTF-16 code units.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Range {
+    pub location: u64,
+    pub length: u64,
+}
+
 #[link(name = "AppKit", kind = "framework")]
 unsafe extern "C" {
     pub static NSFontWeightRegular: CFloat;

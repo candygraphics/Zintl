@@ -14,7 +14,7 @@ struct State {
     /// The list's selection, which mirrors `selected` as a row ID.
     row: Store<Option<String>>,
     /// The editor's text, which mirrors the selected note's body.
-    draft: Store<String>,
+    draft: Store<AttributedText>,
 }
 
 impl State {
@@ -24,12 +24,13 @@ impl State {
             .unwrap_or_else(|| SmartFolder::ALL.to_owned())
     }
 
-    /// Stores an edit of the selected note, which moves it to the top of its list.
-    fn save(&self, cx: &mut Context<'_>, text: &str) {
+    /// Stores the edited draft in the selected note, which moves it to the top of its list.
+    fn save(&self, cx: &mut Context<'_>) {
         let Some(id) = *cx.get(self.selected) else {
             return;
         };
-        cx.update(self.library, |library| library.set_body(id, text));
+        let draft = cx.get(self.draft).clone();
+        cx.update(self.library, |library| library.set_body(id, &draft));
     }
 
     fn select(&self, cx: &mut Context<'_>, id: Option<NoteId>) {
@@ -98,15 +99,31 @@ impl View for NotesApp {
         let folders = cx.get(state.library).folders.clone();
 
         list![
-            MainMenu::standard().app_name("Notes").extend(
-                StandardMenu::File,
-                [
-                    MenuItem::new("New Note")
-                        .shortcut(Shortcut::command("n"))
-                        .on_select(move |cx| state.new_note(cx)),
-                    MenuItem::new("Delete Note").on_select(move |cx| state.delete_selected(cx)),
-                ],
-            ),
+            MainMenu::standard()
+                .app_name("Notes")
+                .extend(
+                    StandardMenu::File,
+                    [
+                        MenuItem::new("New Note")
+                            .shortcut(Shortcut::command("n"))
+                            .on_select(move |cx| state.new_note(cx)),
+                        MenuItem::new("Delete Note").on_select(move |cx| state.delete_selected(cx)),
+                    ],
+                )
+                .menu(Menu::new(
+                    "Format",
+                    [
+                        MenuItem::standard(StandardAction::TitleStyle),
+                        MenuItem::standard(StandardAction::HeadingStyle),
+                        MenuItem::standard(StandardAction::SubheadingStyle),
+                        MenuItem::standard(StandardAction::BodyStyle),
+                        MenuItem::standard(StandardAction::MonospacedStyle),
+                        MenuItem::separator(),
+                        MenuItem::standard(StandardAction::Bold),
+                        MenuItem::standard(StandardAction::Italic),
+                        MenuItem::standard(StandardAction::Underline),
+                    ],
+                )),
             Window::new(Rect::new(120.0, 120.0, 960.0, 600.0), "Notes")
                 .sidebar(
                     Sidebar::new([
@@ -208,7 +225,7 @@ impl View for NoteList {
 }
 
 /// The detail column: the selected note's text.
-// TODO: Edit rich text; see PLAN.md (C3, C4).
+// TODO: Lists and checklists; see PLAN.md (C3).
 #[derive(Clone)]
 struct Editor {
     state: State,
@@ -234,8 +251,8 @@ impl View for Editor {
             ])
             .padding(8.0),
             TextEditor::new()
-                .bind(state.draft)
-                .on_change(move |cx, text| state.save(cx, text)),
+                .bind_rich(state.draft)
+                .on_change(move |cx, _| state.save(cx)),
         ])
         .spacing(0.0)
         .fill_width()

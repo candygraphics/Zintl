@@ -11,7 +11,7 @@ use zpd_appkit::ui::{
     ColorWell, ListEntry, ListView, CommandItem, CommandMenu, CommandRole, CommandSet, ContextMenu, MenuRole,
     NumberField, NumberFormat, PopUpButton, Popover, ScrollView, SegmentedControl, Sidebar,
     SidebarItem, SidebarSearch, SidebarSection, Slider, Switch, TabView, TextAlignment, TextColor,
-    TextEditor, TextField, View, WindowStyle,
+    RichParagraph, RichRun, RichStyle, TextEditor, TextField, View, WindowStyle,
 };
 use zpd_objc::Id;
 
@@ -86,6 +86,11 @@ impl Checks {
 }
 
 /// Reads an NSString as UTF-8.
+/// Returns an empty `NSRange` at `location` in its C layout.
+fn empty_range(location: u64) -> [u64; 2] {
+    [location, 0]
+}
+
 /// Returns an autoreleased `NSString` for `value`.
 ///
 /// # Safety
@@ -307,6 +312,85 @@ fn main() {
             id: Some("a".into())
         }]
     );
+
+    // Verifies rich runs round-trip, and the paragraph action restyles undoably and validates its items.
+    let rich = TextEditor::new(&application).unwrap();
+    content.add_subview(&rich).unwrap();
+    rich.set_rich(true).unwrap();
+    let runs = vec![
+        RichRun {
+            text: "Title\n".into(),
+            style: RichStyle {
+                paragraph: RichParagraph::Title,
+                ..RichStyle::default()
+            },
+        },
+        RichRun {
+            text: "plain ".into(),
+            style: RichStyle::default(),
+        },
+        RichRun {
+            text: "bold".into(),
+            style: RichStyle {
+                bold: true,
+                italic: true,
+                underline: true,
+                ..RichStyle::default()
+            },
+        },
+    ];
+    rich.set_rich_text(&runs).unwrap();
+    assert_eq!(rich.rich_text().unwrap(), runs);
+    assert!(take().is_empty());
+    // SAFETY: The editor's document view is its live text view; the menu item is retained here.
+    let (text, item) = unsafe {
+        let text = zpd_objc::msg_send!(Checks::native(&rich), zpd_objc::sel!("documentView"), () => Id);
+        zpd_objc::msg_send!(text, zpd_objc::sel!("setSelectedRange:"), ((empty_range(8)): [u64; 2]) => ());
+        let item = zpd_objc::msg_send!(zpd_objc::msg_send!(zpd_objc::class!("NSMenuItem"), zpd_objc::sel!("alloc"), () => Id), zpd_objc::sel!("initWithTitle:action:keyEquivalent:"), ((ns_string("Heading")): Id, (zpd_objc::sel!("zintlApplyParagraphStyle:")): zpd_objc::Sel, (ns_string("")): Id) => Id);
+        zpd_objc::msg_send!(item, zpd_objc::sel!("setTag:"), ((RichParagraph::Heading.tag()): i64) => ());
+        (text, item)
+    };
+    // SAFETY: The live text view validates and performs the action for the live item.
+    unsafe {
+        assert!(zpd_objc::msg_send!(text, zpd_objc::sel!("validateMenuItem:"), ((item): Id) => bool));
+        assert_eq!(zpd_objc::msg_send!(item, zpd_objc::sel!("state"), () => isize), 0);
+        zpd_objc::msg_send!(text, zpd_objc::sel!("zintlApplyParagraphStyle:"), ((item): Id) => ());
+        assert!(zpd_objc::msg_send!(text, zpd_objc::sel!("validateMenuItem:"), ((item): Id) => bool));
+        assert_eq!(zpd_objc::msg_send!(item, zpd_objc::sel!("state"), () => isize), 1);
+    }
+    let heading = |style: RichStyle| RichStyle {
+        paragraph: RichParagraph::Heading,
+        ..style
+    };
+    let mut expected = runs.clone();
+    expected[1].style = heading(expected[1].style.clone());
+    // A bold span adds nothing to a bold heading font, so it reads back without bold.
+    expected[2].style = heading(RichStyle {
+        bold: false,
+        ..expected[2].style.clone()
+    });
+    assert_eq!(rich.rich_text().unwrap(), expected);
+    assert_eq!(
+        take(),
+        vec![WindowEventKind::RichTextChanged { runs: expected }]
+    );
+    // SAFETY: The window's undo manager is live; the item is released after use.
+    unsafe {
+        let undo = zpd_objc::msg_send!(text, zpd_objc::sel!("undoManager"), () => Id);
+        assert!(zpd_objc::msg_send!(undo, zpd_objc::sel!("canUndo"), () => bool));
+        zpd_objc::msg_send!(undo, zpd_objc::sel!("undo"), () => ());
+        zpd_objc::msg_send!(item, zpd_objc::sel!("release"), () => ());
+    }
+    assert_eq!(rich.rich_text().unwrap(), runs);
+    take();
+    // Plain editors disable paragraph styles.
+    rich.set_rich(false).unwrap();
+    // SAFETY: The live text view validates a live item.
+    unsafe {
+        let item = zpd_objc::msg_send!(zpd_objc::msg_send!(zpd_objc::class!("NSMenuItem"), zpd_objc::sel!("alloc"), () => Id), zpd_objc::sel!("initWithTitle:action:keyEquivalent:"), ((ns_string("Body")): Id, (zpd_objc::sel!("zintlApplyParagraphStyle:")): zpd_objc::Sel, (ns_string("")): Id) => Id);
+        assert!(!zpd_objc::msg_send!(text, zpd_objc::sel!("validateMenuItem:"), ((item): Id) => bool));
+        zpd_objc::msg_send!(item, zpd_objc::sel!("release"), () => ());
+    }
 
     // Verifies the editor reports user edits, replaces text silently, and drops stale undo history.
     let editor = TextEditor::new(&application).unwrap();

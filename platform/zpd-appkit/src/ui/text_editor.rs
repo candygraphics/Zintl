@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use crate::actor::WindowEventKind;
 use crate::graphics::Font;
 use crate::native;
@@ -6,54 +8,201 @@ use zpd_objc::{Id, Strong};
 
 use super::UiError;
 use super::callback;
+use super::rich_text::{RichParagraph, RichRun, RichStyle, RichText};
 use super::view::{AsView, ViewActor, ViewRef};
 
-/// A scrolling, multiline plain-text `NSTextView` with undo.
+/// Applies the paragraph style in the sender's tag to the selected paragraphs.
+///
+/// The change goes through `shouldChangeTextInRange:replacementString:`, so
+/// it is undoable and reported like typing.
+unsafe extern "C" fn apply_paragraph_style(object: Id, _: zpd_objc::Sel, sender: Id) {
+    zpd_objc::abort_on_unwind(|| {
+        // SAFETY: AppKit sends this action to the live text view with a menu item or nil sender.
+        unsafe {
+            let tag = if sender.is_null() {
+                0
+            } else {
+                zpd_objc::msg_send!(sender, zpd_objc::sel!("tag"), () => native::Integer)
+            };
+            if let Some(paragraph) = RichParagraph::from_tag(tag) {
+                TextEditor::restyle_selection(object, paragraph);
+            }
+        }
+    });
+}
+
+/// Enables paragraph style items in rich editors and checks the current style.
+unsafe extern "C" fn validate_menu_item(object: Id, selector: zpd_objc::Sel, item: Id) -> bool {
+    zpd_objc::abort_on_unwind(|| {
+        // SAFETY: AppKit validates live menu items against the live text view.
+        unsafe {
+            let action = zpd_objc::msg_send!(item, zpd_objc::sel!("action"), () => zpd_objc::Sel);
+            if action != zpd_objc::sel!("zintlApplyParagraphStyle:") {
+                return zpd_objc::msg_send_super!(object, zpd_objc::class!("NSTextView"), selector, ((item): Id) => bool);
+            }
+            let tag = zpd_objc::msg_send!(item, zpd_objc::sel!("tag"), () => native::Integer);
+            let current = TextEditor::paragraph_at_selection(object);
+            let state = if current.tag() == tag {
+                native::NS_CONTROL_STATE_VALUE_ON
+            } else {
+                0
+            };
+            zpd_objc::msg_send!(item, zpd_objc::sel!("setState:"), ((state): native::Integer) => ());
+            zpd_objc::msg_send!(object, zpd_objc::sel!("isRichText"), () => bool)
+                && zpd_objc::msg_send!(object, zpd_objc::sel!("isEditable"), () => bool)
+        }
+    })
+}
+
+/// A scrolling, multiline `NSTextView` with undo and a find bar.
+///
+/// In rich mode it reads and writes [`RichRun`]s and responds to
+/// `zintlApplyParagraphStyle:`, whose sender's tag is a [`RichParagraph`].
 pub struct TextEditor {
     view: ViewActor,
 }
 
 impl TextEditor {
+    fn text_view_class() -> zpd_objc::Class {
+        static CLASS: OnceLock<usize> = OnceLock::new();
+        *CLASS.get_or_init(|| {
+            zpd_objc::decl!(ZpdTextView: [zpd_objc::class!("NSTextView")] {
+                methods {
+                    "zintlApplyParagraphStyle:": "v@:@" => apply_paragraph_style,
+                    "validateMenuItem:": "B@:@" => validate_menu_item,
+                }
+            }) as usize
+        }) as zpd_objc::Class
+    }
+
     pub fn new(application: &Application) -> Result<Self, UiError> {
-        // SAFETY: scrollableTextView returns an autoreleased NSScrollView whose
-        // document view is an NSTextView; both are configured on the main thread.
-        let scroll = unsafe {
-            let scroll = Strong::retain(zpd_objc::msg_send!(zpd_objc::class!("NSTextView"), zpd_objc::sel!("scrollableTextView"), () => Id))
-                .ok_or(UiError::NativeCreationFailed)?;
+        // SAFETY: The scroll view and text view are created and configured on the main thread.
+        let (scroll, text) = unsafe {
+            let scroll = native::alloc_init(zpd_objc::class!("NSScrollView"));
             zpd_objc::msg_send!(scroll.as_ptr(), zpd_objc::sel!("setDrawsBackground:"), ((false): bool) => ());
+            zpd_objc::msg_send!(scroll.as_ptr(), zpd_objc::sel!("setHasVerticalScroller:"), ((true): bool) => ());
             zpd_objc::msg_send!(scroll.as_ptr(), zpd_objc::sel!("setAutohidesScrollers:"), ((true): bool) => ());
-            let text =
-                zpd_objc::msg_send!(scroll.as_ptr(), zpd_objc::sel!("documentView"), () => Id);
-            zpd_objc::msg_send!(text, zpd_objc::sel!("setRichText:"), ((false): bool) => ());
-            zpd_objc::msg_send!(text, zpd_objc::sel!("setAllowsUndo:"), ((true): bool) => ());
-            zpd_objc::msg_send!(text, zpd_objc::sel!("setUsesFindBar:"), ((true): bool) => ());
-            zpd_objc::msg_send!(text, zpd_objc::sel!("setIncrementalSearchingEnabled:"), ((true): bool) => ());
-            zpd_objc::msg_send!(text, zpd_objc::sel!("setDrawsBackground:"), ((false): bool) => ());
-            zpd_objc::msg_send!(text, zpd_objc::sel!("setTextContainerInset:"), ((native::Size { width: 12.0, height: 12.0 }): native::Size) => ());
-            scroll
+            let allocated =
+                zpd_objc::msg_send!(Self::text_view_class(), zpd_objc::sel!("alloc"), () => Id);
+            let frame = native::Rect::default();
+            let text = Strong::from_retained(zpd_objc::msg_send!(allocated, zpd_objc::sel!("initWithFrame:"), ((frame): native::Rect) => Id))
+                .ok_or(UiError::NativeCreationFailed)?;
+            let text_view = text.as_ptr();
+            let unbounded = native::Size {
+                width: f64::from(f32::MAX),
+                height: f64::from(f32::MAX),
+            };
+            zpd_objc::msg_send!(text_view, zpd_objc::sel!("setMinSize:"), ((native::Size::default()): native::Size) => ());
+            zpd_objc::msg_send!(text_view, zpd_objc::sel!("setMaxSize:"), ((unbounded): native::Size) => ());
+            zpd_objc::msg_send!(text_view, zpd_objc::sel!("setVerticallyResizable:"), ((true): bool) => ());
+            zpd_objc::msg_send!(text_view, zpd_objc::sel!("setHorizontallyResizable:"), ((false): bool) => ());
+            // NSViewWidthSizable keeps the text view as wide as the clip view.
+            zpd_objc::msg_send!(text_view, zpd_objc::sel!("setAutoresizingMask:"), ((2_u64): u64) => ());
+            let container =
+                zpd_objc::msg_send!(text_view, zpd_objc::sel!("textContainer"), () => Id);
+            zpd_objc::msg_send!(container, zpd_objc::sel!("setWidthTracksTextView:"), ((true): bool) => ());
+            zpd_objc::msg_send!(text_view, zpd_objc::sel!("setRichText:"), ((false): bool) => ());
+            zpd_objc::msg_send!(text_view, zpd_objc::sel!("setAllowsUndo:"), ((true): bool) => ());
+            zpd_objc::msg_send!(text_view, zpd_objc::sel!("setUsesFindBar:"), ((true): bool) => ());
+            zpd_objc::msg_send!(text_view, zpd_objc::sel!("setIncrementalSearchingEnabled:"), ((true): bool) => ());
+            zpd_objc::msg_send!(text_view, zpd_objc::sel!("setDrawsBackground:"), ((false): bool) => ());
+            zpd_objc::msg_send!(text_view, zpd_objc::sel!("setTextContainerInset:"), ((native::Size { width: 12.0, height: 12.0 }): native::Size) => ());
+            zpd_objc::msg_send!(scroll.as_ptr(), zpd_objc::sel!("setDocumentView:"), ((text_view): Id) => ());
+            (scroll, text)
         };
-        let text = Self::text_view_of(scroll.as_ptr());
         let view = ViewActor::new(application, scroll);
         let emit = callback::emitter(view.actor());
         callback::install_observer(
             view.actor(),
             "NSTextDidChangeNotification",
-            text,
+            text.as_ptr(),
             move |notification| {
                 // SAFETY: Text notifications carry the live NSTextView as their object.
-                let value = unsafe {
+                let kind = unsafe {
                     let text =
                         zpd_objc::msg_send!(notification, zpd_objc::sel!("object"), () => Id);
-                    native::rust_string(
-                        zpd_objc::msg_send!(text, zpd_objc::sel!("string"), () => Id),
-                    )
+                    if zpd_objc::msg_send!(text, zpd_objc::sel!("isRichText"), () => bool) {
+                        let storage =
+                            zpd_objc::msg_send!(text, zpd_objc::sel!("textStorage"), () => Id);
+                        WindowEventKind::RichTextChanged {
+                            runs: RichText::runs(storage),
+                        }
+                    } else {
+                        WindowEventKind::TextChanged {
+                            value: native::rust_string(
+                                zpd_objc::msg_send!(text, zpd_objc::sel!("string"), () => Id),
+                            ),
+                        }
+                    }
                 };
-                emit(WindowEventKind::TextChanged { value });
+                emit(kind);
             },
         )?;
         let editor = Self { view };
         editor.set_font(None)?;
         Ok(editor)
+    }
+
+    /// Returns the paragraph style at the start of the selection.
+    ///
+    /// # Safety
+    /// `text` must be a live text view created by [`TextEditor::new`].
+    unsafe fn paragraph_at_selection(text: Id) -> RichParagraph {
+        // SAFETY: Guaranteed by the caller; indexes are checked against the length.
+        unsafe {
+            let storage = zpd_objc::msg_send!(text, zpd_objc::sel!("textStorage"), () => Id);
+            let length = zpd_objc::msg_send!(storage, zpd_objc::sel!("length"), () => u64);
+            let selection =
+                zpd_objc::msg_send!(text, zpd_objc::sel!("selectedRange"), () => native::Range);
+            let attributes = if selection.location < length {
+                let mut range = native::Range::default();
+                zpd_objc::msg_send!(storage, zpd_objc::sel!("attributesAtIndex:effectiveRange:"), ((selection.location): u64, (&mut range): *mut native::Range) => Id)
+            } else {
+                zpd_objc::msg_send!(text, zpd_objc::sel!("typingAttributes"), () => Id)
+            };
+            RichText::style(attributes).paragraph
+        }
+    }
+
+    /// Sets the paragraph style of every paragraph the selection touches.
+    ///
+    /// # Safety
+    /// `text` must be a live rich text view created by [`TextEditor::new`].
+    unsafe fn restyle_selection(text: Id, paragraph: RichParagraph) {
+        // SAFETY: Guaranteed by the caller; ranges come from the text view's own string.
+        unsafe {
+            let storage = zpd_objc::msg_send!(text, zpd_objc::sel!("textStorage"), () => Id);
+            let string = zpd_objc::msg_send!(text, zpd_objc::sel!("string"), () => Id);
+            let selection =
+                zpd_objc::msg_send!(text, zpd_objc::sel!("selectedRange"), () => native::Range);
+            let paragraphs = zpd_objc::msg_send!(string, zpd_objc::sel!("paragraphRangeForRange:"), ((selection): native::Range) => native::Range);
+            if paragraphs.length > 0 {
+                let existing = zpd_objc::msg_send!(storage, zpd_objc::sel!("attributedSubstringFromRange:"), ((paragraphs): native::Range) => Id);
+                let runs = RichText::runs(existing)
+                    .into_iter()
+                    .map(|run| RichRun {
+                        style: RichStyle {
+                            paragraph,
+                            ..run.style
+                        },
+                        ..run
+                    })
+                    .collect::<Vec<_>>();
+                let restyled = RichText::attributed_string(&runs);
+                if zpd_objc::msg_send!(text, zpd_objc::sel!("shouldChangeTextInRange:replacementString:"), ((paragraphs): native::Range, (zpd_objc::NIL): Id) => bool)
+                {
+                    zpd_objc::msg_send!(storage, zpd_objc::sel!("replaceCharactersInRange:withAttributedString:"), ((paragraphs): native::Range, (restyled.as_ptr()): Id) => ());
+                    zpd_objc::msg_send!(text, zpd_objc::sel!("didChangeText"), () => ());
+                    zpd_objc::msg_send!(text, zpd_objc::sel!("setSelectedRange:"), ((selection): native::Range) => ());
+                }
+            }
+            // Typing continues in the new style, including on an empty line.
+            let typing = RichText::attributes(&RichStyle {
+                paragraph,
+                ..RichStyle::default()
+            });
+            zpd_objc::msg_send!(text, zpd_objc::sel!("setTypingAttributes:"), ((typing.as_ptr()): Id) => ());
+        }
     }
 
     /// Returns the text view inside `scroll`, which the scroll view retains.
@@ -66,6 +215,20 @@ impl TextEditor {
         self.view
             .as_view()
             .with(|scroll| operation(Self::text_view_of(scroll)))
+    }
+
+    /// Clears undo history after the content was replaced from code.
+    ///
+    /// # Safety
+    /// `text` must be a live text view.
+    unsafe fn forget_undo(text: Id) {
+        // SAFETY: Guaranteed by the caller; the undo manager may be nil.
+        unsafe {
+            let undo = zpd_objc::msg_send!(text, zpd_objc::sel!("undoManager"), () => Id);
+            if !undo.is_null() {
+                zpd_objc::msg_send!(undo, zpd_objc::sel!("removeAllActions"), () => ());
+            }
+        }
     }
 
     pub fn string_value(&self) -> Result<String, UiError> {
@@ -83,25 +246,71 @@ impl TextEditor {
     pub fn set_string_value(&self, value: &str) -> Result<(), UiError> {
         let value = native::nsstring(value);
         self.with_text(|text| {
-            // SAFETY: The live NSTextView accepts an NSString; its undo manager may be nil.
+            // SAFETY: The live NSTextView accepts an NSString.
             unsafe {
                 zpd_objc::msg_send!(text, zpd_objc::sel!("setString:"), ((value.as_ptr()): Id) => ());
-                let undo = zpd_objc::msg_send!(text, zpd_objc::sel!("undoManager"), () => Id);
-                if !undo.is_null() {
-                    zpd_objc::msg_send!(undo, zpd_objc::sel!("removeAllActions"), () => ());
+                Self::forget_undo(text);
+            }
+        })
+    }
+
+    /// Switches between plain text and styled runs.
+    pub fn set_rich(&self, rich: bool) -> Result<(), UiError> {
+        self.with_text(|text| {
+            // SAFETY: The live NSTextView accepts the flag and typing attributes.
+            unsafe {
+                zpd_objc::msg_send!(text, zpd_objc::sel!("setRichText:"), ((rich): bool) => ());
+                if rich {
+                    let typing = RichText::attributes(&RichStyle::default());
+                    zpd_objc::msg_send!(text, zpd_objc::sel!("setTypingAttributes:"), ((typing.as_ptr()): Id) => ());
                 }
             }
         })
     }
 
-    /// Sets the font; `None` uses the 14-point system font.
+    pub fn rich_text(&self) -> Result<Vec<RichRun>, UiError> {
+        self.with_text(|text| {
+            // SAFETY: The live NSTextView owns its text storage.
+            unsafe {
+                RichText::runs(zpd_objc::msg_send!(text, zpd_objc::sel!("textStorage"), () => Id))
+            }
+        })
+    }
+
+    /// Replaces the content with `runs` without reporting a change.
+    ///
+    /// Like [`TextEditor::set_string_value`], the insertion point moves to the
+    /// end and undo history is cleared.
+    pub fn set_rich_text(&self, runs: &[RichRun]) -> Result<(), UiError> {
+        let attributed = RichText::attributed_string(runs);
+        let typing = RichText::attributes(
+            &runs
+                .last()
+                .map_or_else(RichStyle::default, |run| run.style.clone()),
+        );
+        self.with_text(|text| {
+            // SAFETY: The live NSTextView owns its text storage; the strings are live.
+            unsafe {
+                let storage = zpd_objc::msg_send!(text, zpd_objc::sel!("textStorage"), () => Id);
+                zpd_objc::msg_send!(storage, zpd_objc::sel!("setAttributedString:"), ((attributed.as_ptr()): Id) => ());
+                let end = zpd_objc::msg_send!(storage, zpd_objc::sel!("length"), () => u64);
+                zpd_objc::msg_send!(text, zpd_objc::sel!("setSelectedRange:"), ((native::Range { location: end, length: 0 }): native::Range) => ());
+                zpd_objc::msg_send!(text, zpd_objc::sel!("setTypingAttributes:"), ((typing.as_ptr()): Id) => ());
+                Self::forget_undo(text);
+            }
+        })
+    }
+
+    /// Sets the plain-text font; `None` uses the 14-point system font.
     pub fn set_font(&self, font: Option<&Font>) -> Result<(), UiError> {
         self.with_text(|text| {
             // SAFETY: The live NSTextView accepts an NSFont that `font` keeps alive.
             unsafe {
                 let font = match font {
                     Some(font) => font.as_ptr(),
-                    None => zpd_objc::msg_send!(zpd_objc::class!("NSFont"), zpd_objc::sel!("systemFontOfSize:"), ((14.0): f64) => Id),
+                    None => {
+                        zpd_objc::msg_send!(zpd_objc::class!("NSFont"), zpd_objc::sel!("systemFontOfSize:"), ((14.0): f64) => Id)
+                    }
                 };
                 zpd_objc::msg_send!(text, zpd_objc::sel!("setFont:"), ((font): Id) => ());
             }
