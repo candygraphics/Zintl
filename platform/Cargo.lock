@@ -11,13 +11,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zpd-appkit-example"
-version = "0.1.0"
-dependencies = [
- "zpd-appkit",
-]
-
-[[package]]
 name = "zpd-corefoundation"
 version = "0.1.0"
 
