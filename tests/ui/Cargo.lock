@@ -28,6 +28,14 @@ name = "messageloop-core"
 version = "0.1.0"
 
 [[package]]
+name = "messageloop-dispatcherqueue"
+version = "0.1.0"
+dependencies = [
+ "messageloop-core",
+ "zpd-winui3",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -124,22 +132,23 @@ name = "zintl-ui"
 version = "0.0.0"
 
 [[package]]
-name = "zintl-ui-appkit"
-version = "0.0.0"
-dependencies = [
- "zintl-ui",
- "zintl-ui-appkit-backend",
- "zintl-ui-layout",
-]
-
-[[package]]
 name = "zintl-ui-appkit-backend"
 version = "0.0.0"
 dependencies = [
  "messageloop-appkit",
  "zintl-ui",
+ "zintl-ui-backend-core",
  "zintl-ui-layout",
  "zpd-appkit",
+]
+
+[[package]]
+name = "zintl-ui-backend-core"
+version = "0.0.0"
+dependencies = [
+ "zintl-ui",
+ "zintl-ui-graphics",
+ "zintl-ui-layout",
 ]
 
 [[package]]
@@ -147,9 +156,16 @@ name = "zintl-ui-desktop"
 version = "0.0.0"
 dependencies = [
  "zintl-ui",
- "zintl-ui-appkit",
+ "zintl-ui-appkit-backend",
+ "zintl-ui-backend-core",
  "zintl-ui-layout",
+ "zintl-ui-native",
+ "zintl-ui-winui3-backend",
 ]
+
+[[package]]
+name = "zintl-ui-graphics"
+version = "0.0.0"
 
 [[package]]
 name = "zintl-ui-layout"
@@ -159,10 +175,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "zintl-ui-native"
+version = "0.0.0"
+dependencies = [
+ "zintl-ui",
+ "zintl-ui-backend-core",
+ "zintl-ui-layout",
+]
+
+[[package]]
 name = "zintl-ui-test-app"
 version = "0.0.0"
 dependencies = [
  "zintl-ui-desktop",
+]
+
+[[package]]
+name = "zintl-ui-winui3-backend"
+version = "0.0.0"
+dependencies = [
+ "messageloop-dispatcherqueue",
+ "zintl-ui",
+ "zintl-ui-backend-core",
+ "zintl-ui-layout",
+ "zpd-winui3",
 ]
 
 [[package]]
@@ -179,4 +215,8 @@ version = "0.1.0"
 
 [[package]]
 name = "zpd-objc"
+version = "0.1.0"
+
+[[package]]
+name = "zpd-winui3"
 version = "0.1.0"
