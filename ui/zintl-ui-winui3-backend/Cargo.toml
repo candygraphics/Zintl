@@ -10,3 +10,7 @@ zintl-ui-backend-core = { path = "../zintl-ui-backend-core" }
 [target.'cfg(target_os = "windows")'.dependencies]
 messageloop-dispatcherqueue = { path = "../../common/messageloop/messageloop-dispatcherqueue" }
 zpd-winui3 = { path = "../../platform/zpd-winui3" }
+
+[features]
+# Accepts wgpu canvases; they stay blank until WinUI renders them.
+wgpu = ["zintl-ui-backend-core/wgpu"]

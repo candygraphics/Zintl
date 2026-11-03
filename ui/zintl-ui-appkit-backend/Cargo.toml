@@ -10,3 +10,7 @@ zintl-ui-backend-core = { path = "../zintl-ui-backend-core" }
 [target.'cfg(target_os = "macos")'.dependencies]
 messageloop-appkit = { path = "../../common/messageloop/messageloop-appkit" }
 zpd-appkit = { path = "../../platform/zpd-appkit" }
+
+[features]
+# Renders wgpu canvases into Metal-layer views.
+wgpu = ["zintl-ui-backend-core/wgpu", "zpd-appkit/metal"]

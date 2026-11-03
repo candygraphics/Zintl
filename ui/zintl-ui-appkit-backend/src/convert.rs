@@ -259,6 +259,20 @@ impl Shared for ui::CanvasInput {
     }
 }
 
+impl Shared for ui::CanvasFrame {
+    type Output = core::Frame;
+
+    fn shared(self) -> core::Frame {
+        core::Frame {
+            bounds: self.bounds.shared(),
+            safe_area: self.safe_area.shared(),
+            scale: self.scale,
+            time: self.time,
+            delta: self.delta,
+        }
+    }
+}
+
 impl Shared for geometry::Rect {
     type Output = core::Rect;
 

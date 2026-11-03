@@ -114,6 +114,9 @@ impl NativeNode {
             ViewKind::TabView { .. } => ControlKind::TabView,
             // TODO: Draw with Direct2D on a SwapChainPanel; see TODO.md.
             ViewKind::Canvas2D { .. } => ControlKind::Canvas,
+            // TODO: Render through a wgpu surface on a SwapChainPanel; see TODO.md.
+            #[cfg(feature = "wgpu")]
+            ViewKind::WgpuCanvas { .. } => ControlKind::Canvas,
         }
     }
 

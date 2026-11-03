@@ -7,6 +7,8 @@ mod canvas;
 mod context;
 mod event;
 mod model;
+#[cfg(feature = "wgpu")]
+mod wgpu_canvas;
 
 pub mod headless;
 pub mod layout;
@@ -27,6 +29,10 @@ pub use model::{
     SidebarSearch, SidebarSection, TextAlignment, TextColor, TextStyle, TitleBar, Toolbar,
     ToolbarItem, WindowAppMenu, WindowStyle,
 };
+#[cfg(feature = "wgpu")]
+pub use wgpu;
+#[cfg(feature = "wgpu")]
+pub use wgpu_canvas::{WgpuCanvasHandler, WgpuContext, WgpuError, WgpuSetup, WgpuTarget};
 pub use zintl_ui_graphics as graphics;
 pub use zintl_ui_graphics::{Color, Rect};
 use zintl_ui_layout::{LayoutStyle, Size};
@@ -126,6 +132,35 @@ pub enum ViewKind {
         /// Whether a click or the handler can give the canvas keyboard focus.
         focusable: bool,
     },
+    /// A view rendered by its wgpu canvas handler.
+    #[cfg(feature = "wgpu")]
+    WgpuCanvas {
+        canvas: CanvasNode,
+        redraw: RedrawPolicy,
+        /// Whether a click or the handler can give the canvas keyboard focus.
+        focusable: bool,
+    },
+}
+
+impl ViewKind {
+    /// Returns the handler of a canvas view of any kind.
+    pub fn canvas(&self) -> Option<&CanvasNode> {
+        match self {
+            Self::Canvas2D { canvas, .. } => Some(canvas),
+            #[cfg(feature = "wgpu")]
+            Self::WgpuCanvas { canvas, .. } => Some(canvas),
+            _ => None,
+        }
+    }
+
+    fn canvas_mut(&mut self) -> Option<&mut CanvasNode> {
+        match self {
+            Self::Canvas2D { canvas, .. } => Some(canvas),
+            #[cfg(feature = "wgpu")]
+            Self::WgpuCanvas { canvas, .. } => Some(canvas),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -198,18 +233,9 @@ impl RenderNode {
     /// Backends call this before storing an updated node so the native view
     /// keeps drawing with the handler that owns its state.
     pub fn adopt_canvas(&mut self, mounted: &RenderNode) {
-        if let (
-            Self::View {
-                kind: ViewKind::Canvas2D { canvas, .. },
-                ..
-            },
-            Self::View {
-                kind: ViewKind::Canvas2D {
-                    canvas: mounted, ..
-                },
-                ..
-            },
-        ) = (self, mounted)
+        if let (Self::View { kind, .. }, Self::View { kind: old, .. }) = (self, mounted)
+            && std::mem::discriminant(kind) == std::mem::discriminant(old)
+            && let (Some(canvas), Some(mounted)) = (kind.canvas_mut(), old.canvas())
             && canvas.handler_type() == mounted.handler_type()
         {
             mounted.adopt(canvas);
@@ -225,18 +251,14 @@ impl zintl_ui::renderer::RenderNode for RenderNode {
     /// Views keep their native object while only properties change.
     fn same_kind(&self, other: &Self) -> bool {
         match (self, other) {
-            (
-                Self::View {
-                    kind: ViewKind::Canvas2D { canvas: first, .. },
-                    ..
-                },
-                Self::View {
-                    kind: ViewKind::Canvas2D { canvas: second, .. },
-                    ..
-                },
-            ) => first.handler_type() == second.handler_type(),
             (Self::View { kind: first, .. }, Self::View { kind: second, .. }) => {
                 std::mem::discriminant(first) == std::mem::discriminant(second)
+                    && match (first.canvas(), second.canvas()) {
+                        (Some(first), Some(second)) => {
+                            first.handler_type() == second.handler_type()
+                        }
+                        _ => true,
+                    }
             }
             _ => std::mem::discriminant(self) == std::mem::discriminant(other),
         }

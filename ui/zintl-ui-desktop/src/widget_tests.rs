@@ -895,6 +895,120 @@ fn canvas_keeps_handler_state_across_store_updates() {
     );
 }
 
+/// Consumes input; `color` comes from a Store.
+#[cfg(feature = "wgpu")]
+#[derive(Clone)]
+struct Scene {
+    color: f64,
+}
+
+#[cfg(feature = "wgpu")]
+impl WgpuCanvasHandler for Scene {
+    fn render(&mut self, _target: &mut WgpuTarget<'_>, _frame: &Frame) {}
+
+    fn event(&mut self, _event: &CanvasEvent, _cx: &mut CanvasEventContext) -> bool {
+        true
+    }
+
+    fn reconcile(&mut self, next: Self) -> Redraw {
+        self.color = next.color;
+        Redraw::Yes
+    }
+}
+
+/// Renders a wgpu canvas whose color comes from a Store it publishes to the test.
+#[cfg(feature = "wgpu")]
+struct SceneView {
+    color: Store<f64>,
+    entered: Rc<Cell<u32>>,
+    published: Rc<Cell<Option<Store<f64>>>>,
+}
+
+#[cfg(feature = "wgpu")]
+impl View for SceneView {
+    type Output = RenderNode;
+
+    fn init(&mut self, cx: &mut Context<'_>) {
+        self.color = cx.store(0.0);
+        self.published.set(Some(self.color));
+    }
+
+    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
+        let entered = self.entered.clone();
+        cx.watch(self.color, move |color| {
+            let entered = entered.clone();
+            WgpuCanvas::new(Scene { color: *color })
+                .redraw(RedrawPolicy::Continuous {
+                    preferred_fps: None,
+                })
+                .focusable(true)
+                .grow()
+                .on_event(move |_, _| entered.set(entered.get() + 1))
+        })
+    }
+}
+
+#[cfg(feature = "wgpu")]
+#[test]
+fn wgpu_canvas_declares_redraw_focus_and_layout() {
+    // Verifies the wgpu builder records its redraw policy, focusability, and layout like Canvas2D.
+    let published = Rc::new(Cell::new(None));
+    let app = App::new(SceneView {
+        color: Store::default(),
+        entered: Rc::default(),
+        published,
+    });
+    assert!(matches!(
+        app.render(),
+        RenderNode::View {
+            kind: ViewKind::WgpuCanvas {
+                redraw: RedrawPolicy::Continuous {
+                    preferred_fps: None
+                },
+                focusable: true,
+                ..
+            },
+            layout: LayoutStyle { grow: 1.0, .. },
+            ..
+        }
+    ));
+}
+
+#[cfg(feature = "wgpu")]
+#[test]
+fn wgpu_canvas_keeps_its_handler_and_routes_events() {
+    // Verifies a Store-driven re-render keeps the mounted wgpu handler and on_event sees its input.
+    let published = Rc::new(Cell::new(None));
+    let entered = Rc::new(Cell::new(0));
+    let mut app = App::new(SceneView {
+        color: Store::default(),
+        entered: entered.clone(),
+        published: published.clone(),
+    });
+    let color = published.get().expect("mounting runs init");
+    let node = |app: &App| match app.render() {
+        RenderNode::View {
+            kind: ViewKind::WgpuCanvas { canvas, .. },
+            ..
+        } => canvas,
+        _ => panic!("expected a wgpu canvas"),
+    };
+    let mounted = node(&app);
+    let pointer = CanvasEvent::Pointer(PointerEvent {
+        phase: PointerPhase::Entered,
+        button: None,
+        location: Point::new(1.0, 1.0),
+        modifiers: Modifiers::default(),
+        click_count: 0,
+    });
+    assert!(mounted.event(&pointer));
+    app.dispatch_root_event(Event::Canvas(pointer));
+    assert_eq!(entered.get(), 1);
+
+    app.set(color, 0.5);
+    assert_eq!(node(&app), mounted);
+}
+
 #[test]
 fn split_view_divider_drag_resizes_the_first_pane_within_its_range() {
     // Verifies dragging the divider moves it by the pointer's distance from the grab point and clamps it.

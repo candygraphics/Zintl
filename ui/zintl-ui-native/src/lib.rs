@@ -18,6 +18,8 @@ mod window;
 pub use attach::{Attach, Attachments, NativeView};
 pub use button::Button;
 pub use canvas::Canvas2D;
+#[cfg(feature = "wgpu")]
+pub use canvas::WgpuCanvas;
 pub use containers::{ScrollView, TabView, TabViewItem};
 pub use controls::{
     ColorWell, ComboBox, NumberField, PopUpButton, SearchField, SegmentedControl, Slider, Switch,
@@ -44,6 +46,10 @@ pub use zintl_ui_backend_core::{
     ListStyle, Modifiers, NamedKey, NodeId, PointerButton, PointerEvent, PointerPhase, PopoverEdge,
     Rect, Redraw, RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, TextAlignment, TextColor,
     TextStyle, TitleBar, ViewKind, WindowStyle, graphics,
+};
+#[cfg(feature = "wgpu")]
+pub use zintl_ui_backend_core::{
+    WgpuCanvasHandler, WgpuContext, WgpuError, WgpuSetup, WgpuTarget, wgpu,
 };
 pub use zintl_ui_layout::{LayoutStyle, Size};
 
