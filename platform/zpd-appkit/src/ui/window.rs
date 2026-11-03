@@ -4,8 +4,6 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 
 use crate::actor::{ActorRef, ActorRollback, EventRouteToken, WindowEventKind};
-#[cfg(feature = "wgpu")]
-use crate::geometry::PhysicalSize;
 use crate::geometry::Rect;
 use crate::native;
 use crate::runloop::Application;
@@ -13,8 +11,6 @@ use zpd_objc::{Id, RcIvar, Strong};
 
 use super::UiError;
 use super::sidebar::{self, Sidebar, SidebarNative};
-#[cfg(feature = "wgpu")]
-use super::view::AsView;
 use super::view::{self, ViewRef};
 
 struct WindowState {
@@ -497,11 +493,6 @@ impl<'application> Window<'application> {
         )?);
         Ok(())
     }
-    #[cfg(feature = "wgpu")]
-    pub fn create_wgpu_surface(&self, rect: Rect) -> Result<WgpuSurface<'application>, UiError> {
-        self.ensure_open()?;
-        WgpuSurface::new(&self.content, rect)
-    }
 }
 impl Drop for Window<'_> {
     fn drop(&mut self) {
@@ -512,119 +503,5 @@ impl Drop for Window<'_> {
             });
         }
         self.actor.remove();
-    }
-}
-
-#[cfg(feature = "wgpu")]
-#[derive(Clone, Copy)]
-pub struct MetalLayer<'surface> {
-    actor: &'surface ActorRef,
-}
-#[cfg(feature = "wgpu")]
-impl MetalLayer<'_> {
-    pub fn as_ptr(self) -> Result<*mut std::ffi::c_void, UiError> {
-        self.actor.with(|id| id).map_err(UiError::from)
-    }
-}
-
-#[cfg(feature = "wgpu")]
-pub struct WgpuSurface<'application> {
-    view: super::view::ViewActor,
-    layer: ActorRef,
-    _application: PhantomData<&'application Application>,
-}
-#[cfg(feature = "wgpu")]
-impl<'application> WgpuSurface<'application> {
-    fn new(content: &ActorRef, rect: Rect) -> Result<Self, UiError> {
-        let native_view = unsafe {
-            Strong::from_retained(zpd_objc::msg_send!(zpd_objc::msg_send!(zpd_objc::class!("NSView"), zpd_objc::sel!("alloc"), () => zpd_objc::Id), zpd_objc::sel!("initWithFrame:"), ((native::Rect::from(rect)): native::Rect) => zpd_objc::Id))
-        }
-        .ok_or(UiError::NativeCreationFailed)?;
-        let tree = content.tree_handle().ok_or(UiError::Closed)?;
-        let view_actor = tree.insert_child(content, native_view)?;
-        let layer_native = unsafe {
-            Strong::retain(zpd_objc::msg_send!(zpd_objc::class!("CAMetalLayer"), zpd_objc::sel!("layer"), () => zpd_objc::Id))
-        }
-        .ok_or(UiError::NativeCreationFailed)?;
-        let layer = tree
-            .insert_child(&view_actor, layer_native)
-            .map_err(UiError::from)?;
-        view_actor
-            .with(|view| {
-                layer.with(|layer| unsafe {
-                    zpd_objc::msg_send!(view, zpd_objc::sel!("setWantsLayer:"), ((true): bool) => ());
-                    zpd_objc::msg_send!(view, zpd_objc::sel!("setLayer:"), ((layer): zpd_objc::Id) => ());
-                })
-            })
-            .map_err(UiError::from)?
-            .map_err(UiError::from)?;
-        content
-            .with(|parent| {
-                view_actor.with(|view| unsafe {
-                    zpd_objc::msg_send!(parent, zpd_objc::sel!("addSubview:"), ((view): zpd_objc::Id) => ())
-                })
-            })
-            .map_err(UiError::from)?
-            .map_err(UiError::from)?;
-        let surface = Self {
-            view: super::view::ViewActor::from_actor(view_actor),
-            layer,
-            _application: PhantomData,
-        };
-        surface.update_drawable_size()?;
-        Ok(surface)
-    }
-    pub fn set_rect(&self, rect: Rect) -> Result<(), UiError> {
-        self.view.as_view().set_frame(rect)?;
-        self.update_drawable_size()
-    }
-    pub fn drawable_size(&self) -> Result<PhysicalSize, UiError> {
-        self.update_drawable_size()?;
-        let size = self
-            .layer
-            .with(|layer| unsafe {
-                zpd_objc::msg_send!(layer, zpd_objc::sel!("drawableSize"), () => native::Size)
-            })
-            .map_err(UiError::from)?;
-        Ok(PhysicalSize::new(
-            size.width.max(0.0).round() as u32,
-            size.height.max(0.0).round() as u32,
-        ))
-    }
-    fn update_drawable_size(&self) -> Result<(), UiError> {
-        let bounds = self
-            .view
-            .actor()
-            .with(|view| unsafe {
-                zpd_objc::msg_send!(view, zpd_objc::sel!("bounds"), () => native::Rect)
-            })
-            .map_err(UiError::from)?;
-        let screen = unsafe {
-            zpd_objc::msg_send!(zpd_objc::class!("NSScreen"), zpd_objc::sel!("mainScreen"), () => zpd_objc::Id)
-        };
-        let scale = if screen.is_null() {
-            1.0
-        } else {
-            unsafe { zpd_objc::msg_send!(screen, zpd_objc::sel!("backingScaleFactor"), () => f64) }
-        };
-        self.layer
-            .with(|layer| unsafe {
-                zpd_objc::msg_send!(layer, zpd_objc::sel!("setContentsScale:"), ((scale): f64) => ());
-                zpd_objc::msg_send!(layer, zpd_objc::sel!("setDrawableSize:"), ((native::Size {
-                        width: bounds.size.width * scale,
-                        height: bounds.size.height * scale,
-                    }): native::Size) => ());
-            })
-            .map_err(Into::into)
-    }
-    pub fn metal_layer(&self) -> Result<MetalLayer<'_>, UiError> {
-        self.layer.with(|_| ()).map_err(UiError::from)?;
-        Ok(MetalLayer { actor: &self.layer })
-    }
-}
-#[cfg(feature = "wgpu")]
-impl AsView for WgpuSurface<'_> {
-    fn as_view(&self) -> ViewRef<'_> {
-        self.view.as_view()
     }
 }

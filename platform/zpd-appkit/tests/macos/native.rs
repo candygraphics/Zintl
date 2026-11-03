@@ -184,15 +184,6 @@ fn main() {
     assert!(content.actor_ref().is_alive());
     content.set_needs_layout(true).unwrap();
     content.layout_subtree_if_needed().unwrap();
-    #[cfg(feature = "wgpu")]
-    {
-        // Verifies CAMetalLayer ownership follows its surface actor.
-        let surface = window
-            .create_wgpu_surface(Rect::new(0.0, 0.0, 64.0, 64.0))
-            .unwrap();
-        assert!(!surface.metal_layer().unwrap().as_ptr().unwrap().is_null());
-        assert!(surface.drawable_size().unwrap().width >= 64);
-    }
     drop(constraints);
     drop(window);
     // Verifies destroying the content view releases its installed Rust layout callback once.

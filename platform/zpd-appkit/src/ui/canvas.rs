@@ -1,4 +1,4 @@
-//! An `NSView` that a delegate draws with Core Graphics and that reports raw input.
+//! `NSView`s that a delegate draws with Core Graphics or Metal and that report raw input.
 
 use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
@@ -191,10 +191,8 @@ pub enum CanvasInput {
     Focus(bool),
 }
 
-/// Draws a canvas view and receives its input on the main thread.
-pub trait CanvasDelegate {
-    fn draw(&self, context: &mut GraphicsContext<'_>, frame: CanvasFrame);
-
+/// Receives a canvas view's input on the main thread.
+pub trait CanvasInputDelegate {
     /// Returns whether the input was consumed; unconsumed input goes to the next responder.
     fn input(&self, input: &CanvasInput) -> bool;
 
@@ -203,6 +201,55 @@ pub trait CanvasDelegate {
     fn title_bar_hit(&self, location: Point) -> bool {
         let _ = location;
         false
+    }
+}
+
+/// Draws a [`CanvasView`] with Core Graphics.
+pub trait CanvasDelegate: CanvasInputDelegate {
+    fn draw(&self, context: &mut GraphicsContext<'_>, frame: CanvasFrame);
+}
+
+/// Renders a [`MetalCanvasView`] into its `CAMetalLayer`.
+#[cfg(feature = "metal")]
+pub trait MetalCanvasDelegate: CanvasInputDelegate {
+    /// Renders one frame; `layer` has the frame's `contentsScale`.
+    ///
+    /// Renders run on the run loop after an invalidation, a resize, or a
+    /// display-link tick, never inside the call that requested them.
+    fn render(&self, layer: MetalLayer<'_>, frame: CanvasFrame);
+}
+
+/// The `CAMetalLayer` backing a [`MetalCanvasView`] during a render.
+#[cfg(feature = "metal")]
+#[derive(Clone, Copy)]
+pub struct MetalLayer<'a> {
+    layer: Id,
+    _view: std::marker::PhantomData<&'a ()>,
+}
+
+#[cfg(feature = "metal")]
+impl MetalLayer<'_> {
+    /// Returns the `CAMetalLayer *`; retain it to use it beyond this render.
+    pub fn as_ptr(self) -> *mut std::ffi::c_void {
+        self.layer.cast()
+    }
+}
+
+/// How a canvas view draws.
+#[derive(Clone)]
+enum Delegate {
+    Graphics(Rc<dyn CanvasDelegate>),
+    #[cfg(feature = "metal")]
+    Metal(Rc<dyn MetalCanvasDelegate>),
+}
+
+impl Delegate {
+    fn input(&self) -> Rc<dyn CanvasInputDelegate> {
+        match self {
+            Self::Graphics(delegate) => delegate.clone(),
+            #[cfg(feature = "metal")]
+            Self::Metal(delegate) => delegate.clone(),
+        }
     }
 }
 
@@ -217,7 +264,7 @@ pub enum CanvasRedraw {
 
 struct CanvasState {
     actor: ActorRef,
-    delegate: RefCell<Option<Rc<dyn CanvasDelegate>>>,
+    delegate: RefCell<Option<Delegate>>,
     focusable: Cell<bool>,
     display_link: RefCell<Option<Strong>>,
     /// The display link's target time for the next draw.
@@ -225,6 +272,9 @@ struct CanvasState {
     last_time: Cell<Option<f64>>,
     /// Whether the pointer hovers over the part of the canvas under the title bar.
     under_title_bar: Cell<bool>,
+    /// Whether a Metal render is queued on the run loop.
+    #[cfg(feature = "metal")]
+    render_pending: Cell<bool>,
 }
 
 impl CanvasState {
@@ -270,7 +320,7 @@ impl CanvasState {
 
     /// Sends input to the delegate, then to the event route if one is attached.
     fn deliver(&self, input: CanvasInput) -> bool {
-        let delegate = self.delegate.borrow().clone();
+        let delegate = self.delegate.borrow().as_ref().map(Delegate::input);
         let handled = delegate.is_some_and(|delegate| delegate.input(&input));
         // Unrouted canvases skip the message loop, which matters for mouse moves.
         if self.actor.has_event_route()
@@ -306,63 +356,152 @@ unsafe fn state(object: Id) -> Option<Rc<CanvasState>> {
     unsafe { STATE.get(object) }
 }
 
+impl CanvasState {
+    /// Returns the geometry and timing of the frame `view` draws next.
+    ///
+    /// # Safety
+    /// `view` must be the live canvas view that owns this state.
+    unsafe fn frame(&self, view: Id) -> CanvasFrame {
+        // SAFETY: Guaranteed by the caller; the window is checked for nil.
+        let (bounds, scale, inset) = unsafe {
+            let bounds = zpd_objc::msg_send!(view, zpd_objc::sel!("bounds"), () => native::Rect);
+            let window = zpd_objc::msg_send!(view, zpd_objc::sel!("window"), () => Id);
+            let scale = if window.is_null() {
+                1.0
+            } else {
+                zpd_objc::msg_send!(window, zpd_objc::sel!("backingScaleFactor"), () => f64)
+            };
+            (Rect::from(bounds), scale, TitleBarHit::top_inset(view))
+        };
+        let safe_area = Rect::new(
+            bounds.x,
+            bounds.y + inset,
+            bounds.width,
+            bounds.height - inset,
+        );
+        // SAFETY: CACurrentMediaTime has no preconditions.
+        let time = self
+            .target_time
+            .take()
+            .unwrap_or_else(|| unsafe { CACurrentMediaTime() });
+        let delta = self
+            .last_time
+            .replace(Some(time))
+            .map_or(0.0, |last| (time - last).max(0.0));
+        CanvasFrame {
+            bounds,
+            safe_area,
+            scale,
+            time,
+            delta,
+        }
+    }
+}
+
 unsafe extern "C" fn draw_rect(object: Id, _: zpd_objc::Sel, _dirty: native::Rect) {
     // SAFETY: This method is installed only on the canvas view class.
     let Some(state) = (unsafe { state(object) }) else {
         return;
     };
-    let Some(delegate) = state.delegate.borrow().clone() else {
+    let Some(Delegate::Graphics(delegate)) = state.delegate.borrow().clone() else {
         return;
     };
     // SAFETY: The receiver is a live NSView drawing inside AppKit's current graphics context.
-    let (bounds, scale, context) = unsafe {
-        let bounds = zpd_objc::msg_send!(object, zpd_objc::sel!("bounds"), () => native::Rect);
-        let window = zpd_objc::msg_send!(object, zpd_objc::sel!("window"), () => Id);
-        let scale = if window.is_null() {
-            1.0
-        } else {
-            zpd_objc::msg_send!(window, zpd_objc::sel!("backingScaleFactor"), () => f64)
-        };
+    let context = unsafe {
         let current = zpd_objc::msg_send!(zpd_objc::class!("NSGraphicsContext"), zpd_objc::sel!("currentContext"), () => Id);
         if current.is_null() {
             return;
         }
-        let context =
-            zpd_objc::msg_send!(current, zpd_objc::sel!("CGContext"), () => *mut std::ffi::c_void);
-        (Rect::from(bounds), scale, context)
+        zpd_objc::msg_send!(current, zpd_objc::sel!("CGContext"), () => *mut std::ffi::c_void)
     };
     if context.is_null() {
         return;
     }
-    // SAFETY: The receiver is a live canvas view.
-    let inset = unsafe { TitleBarHit::top_inset(object) };
-    let safe_area = Rect::new(
-        bounds.x,
-        bounds.y + inset,
-        bounds.width,
-        bounds.height - inset,
-    );
-    // SAFETY: CACurrentMediaTime has no preconditions.
-    let time = state
-        .target_time
-        .take()
-        .unwrap_or_else(|| unsafe { CACurrentMediaTime() });
-    let delta = state
-        .last_time
-        .replace(Some(time))
-        .map_or(0.0, |last| (time - last).max(0.0));
+    // SAFETY: The receiver is the live canvas view that owns `state`.
+    let frame = unsafe { state.frame(object) };
     zpd_objc::abort_on_unwind(|| {
         // SAFETY: The context belongs to this drawRect: call and outlives the borrow.
         let mut graphics = unsafe { GraphicsContext::new(context) };
-        delegate.draw(
-            &mut graphics,
-            CanvasFrame {
-                bounds,
-                safe_area,
-                scale,
-                time,
-                delta,
+        delegate.draw(&mut graphics, frame);
+    });
+}
+
+#[cfg(feature = "metal")]
+unsafe extern "C" fn make_backing_layer(_: Id, _: zpd_objc::Sel) -> Id {
+    // SAFETY: CAMetalLayer implements the autoreleased `layer` factory; AppKit retains the result.
+    unsafe {
+        zpd_objc::msg_send!(zpd_objc::class!("CAMetalLayer"), zpd_objc::sel!("layer"), () => Id)
+    }
+}
+
+/// Queues one render of a Metal canvas view; AppKit does not display `CAMetalLayer`s.
+#[cfg(feature = "metal")]
+unsafe extern "C" fn metal_set_needs_display(object: Id, selector: zpd_objc::Sel, flag: bool) {
+    // SAFETY: NSView implements the overridden method; the receiver is a live Metal canvas view.
+    unsafe {
+        zpd_objc::msg_send_super!(object, zpd_objc::class!("NSView"), selector, ((flag): bool) => ());
+        let Some(state) = state(object) else {
+            return;
+        };
+        if !flag || state.render_pending.replace(true) {
+            return;
+        }
+        // Common modes keep rendering during live resize and menu tracking.
+        let modes = zpd_objc::msg_send!(zpd_objc::class!("NSArray"), zpd_objc::sel!("arrayWithObject:"), ((NSRunLoopCommonModes): Id) => Id);
+        zpd_objc::msg_send!(object, zpd_objc::sel!("performSelector:withObject:afterDelay:inModes:"), ((zpd_objc::sel!("zpdRenderMetal")): zpd_objc::Sel, (zpd_objc::NIL): Id, (0.0): f64, (modes): Id) => ());
+    }
+}
+
+/// Renders after a size change.
+#[cfg(feature = "metal")]
+unsafe extern "C" fn metal_set_frame_size(object: Id, selector: zpd_objc::Sel, size: native::Size) {
+    // SAFETY: NSView implements the overridden method; the receiver is a live view.
+    unsafe {
+        zpd_objc::msg_send_super!(object, zpd_objc::class!("NSView"), selector, ((size): native::Size) => ());
+        zpd_objc::msg_send!(object, zpd_objc::sel!("setNeedsDisplay:"), ((true): bool) => ());
+    }
+}
+
+/// Renders once the view joins a window, which provides its scale.
+#[cfg(feature = "metal")]
+unsafe extern "C" fn metal_did_move_to_window(object: Id, selector: zpd_objc::Sel) {
+    // SAFETY: NSView implements the overridden method; the receiver is a live view.
+    unsafe {
+        zpd_objc::msg_send_super!(object, zpd_objc::class!("NSView"), selector, () => ());
+        if !zpd_objc::msg_send!(object, zpd_objc::sel!("window"), () => Id).is_null() {
+            zpd_objc::msg_send!(object, zpd_objc::sel!("setNeedsDisplay:"), ((true): bool) => ());
+        }
+    }
+}
+
+#[cfg(feature = "metal")]
+unsafe extern "C" fn metal_render(object: Id, _: zpd_objc::Sel) {
+    // SAFETY: This method is installed only on the Metal canvas view class.
+    let Some(state) = (unsafe { state(object) }) else {
+        return;
+    };
+    state.render_pending.set(false);
+    let Some(Delegate::Metal(delegate)) = state.delegate.borrow().clone() else {
+        return;
+    };
+    // SAFETY: The receiver is the live canvas view that owns `state`.
+    let frame = unsafe { state.frame(object) };
+    // SAFETY: The view's backing layer is the CAMetalLayer made by `makeBackingLayer`.
+    let layer = unsafe {
+        let layer = zpd_objc::msg_send!(object, zpd_objc::sel!("layer"), () => Id);
+        if layer.is_null() {
+            return;
+        }
+        zpd_objc::msg_send!(layer, zpd_objc::sel!("setContentsScale:"), ((frame.scale): f64) => ());
+        layer
+    };
+    zpd_objc::abort_on_unwind(|| {
+        delegate.render(
+            MetalLayer {
+                layer,
+                _view: std::marker::PhantomData,
             },
+            frame,
         );
     });
 }
@@ -607,9 +746,14 @@ impl CanvasView {
     }
 
     pub fn new(application: &Application) -> Result<Self, UiError> {
+        Self::with_class(application, Self::class())
+    }
+
+    /// Creates a canvas view of `class`, which must be the canvas class or a subclass.
+    fn with_class(application: &Application, class: zpd_objc::Class) -> Result<Self, UiError> {
         // SAFETY: The registered NSView subclass uses NSView's designated frame initializer.
         let native = unsafe {
-            let object = zpd_objc::msg_send!(Self::class(), zpd_objc::sel!("alloc"), () => Id);
+            let object = zpd_objc::msg_send!(class, zpd_objc::sel!("alloc"), () => Id);
             Strong::from_retained(zpd_objc::msg_send!(object, zpd_objc::sel!("initWithFrame:"), ((native::Rect::default()): native::Rect) => Id))
         }
         .ok_or(UiError::NativeCreationFailed)?;
@@ -622,6 +766,8 @@ impl CanvasView {
             target_time: Cell::new(None),
             last_time: Cell::new(None),
             under_title_bar: Cell::new(false),
+            #[cfg(feature = "metal")]
+            render_pending: Cell::new(false),
         });
         view.as_view().with(|object| {
             // SAFETY: The view is a live canvas view with the state ivar; AppKit retains the tracking area.
@@ -644,7 +790,7 @@ impl CanvasView {
     }
 
     pub fn set_delegate(&self, delegate: Rc<dyn CanvasDelegate>) {
-        *self.state.delegate.borrow_mut() = Some(delegate);
+        *self.state.delegate.borrow_mut() = Some(Delegate::Graphics(delegate));
     }
 
     /// Returns a handle that does not keep the view alive.
@@ -728,7 +874,7 @@ impl CanvasView {
             let Some(state) = state(view) else {
                 return false;
             };
-            let Some(delegate) = state.delegate.borrow().clone() else {
+            let Some(delegate) = state.delegate.borrow().as_ref().map(Delegate::input) else {
                 return false;
             };
             let location = zpd_objc::msg_send!(view, zpd_objc::sel!("convertPoint:fromView:"), ((point): native::Point, (zpd_objc::NIL): Id) => native::Point);
@@ -813,5 +959,59 @@ impl CanvasHandle {
 impl AsView for CanvasView {
     fn as_view(&self) -> ViewRef<'_> {
         self.view.as_view()
+    }
+}
+
+/// A flipped `NSView` backed by a `CAMetalLayer` that a [`MetalCanvasDelegate`] renders.
+///
+/// It redraws, takes focus, and reports input like [`CanvasView`].
+#[cfg(feature = "metal")]
+pub struct MetalCanvasView(CanvasView);
+
+#[cfg(feature = "metal")]
+impl MetalCanvasView {
+    fn class() -> zpd_objc::Class {
+        static CLASS: OnceLock<usize> = OnceLock::new();
+        *CLASS.get_or_init(|| {
+            zpd_objc::decl!(ZpdRustMetalCanvasView: [CanvasView::class()] {
+                fields {}
+                methods {
+                    "makeBackingLayer": "@@:" => make_backing_layer,
+                    "setNeedsDisplay:": "v@:B" => metal_set_needs_display,
+                    "setFrameSize:": "v@:{CGSize=dd}" => metal_set_frame_size,
+                    "viewDidMoveToWindow": "v@:" => metal_did_move_to_window,
+                    "zpdRenderMetal": "v@:" => metal_render,
+                }
+            }) as usize
+        }) as zpd_objc::Class
+    }
+
+    pub fn new(application: &Application) -> Result<Self, UiError> {
+        CanvasView::with_class(application, Self::class()).map(Self)
+    }
+
+    pub fn set_delegate(&self, delegate: Rc<dyn MetalCanvasDelegate>) {
+        *self.0.state.delegate.borrow_mut() = Some(Delegate::Metal(delegate));
+    }
+
+    /// Returns a handle that does not keep the view alive.
+    pub fn handle(&self) -> CanvasHandle {
+        self.0.handle()
+    }
+
+    pub fn set_redraw(&self, redraw: CanvasRedraw) -> Result<(), UiError> {
+        self.0.set_redraw(redraw)
+    }
+
+    /// Lets clicks and [`CanvasHandle::focus`] make the view the first responder.
+    pub fn set_focusable(&self, focusable: bool) {
+        self.0.set_focusable(focusable);
+    }
+}
+
+#[cfg(feature = "metal")]
+impl AsView for MetalCanvasView {
+    fn as_view(&self) -> ViewRef<'_> {
+        self.0.as_view()
     }
 }

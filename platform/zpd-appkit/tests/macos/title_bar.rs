@@ -9,14 +9,18 @@ use std::rc::Rc;
 
 use zpd_appkit::geometry::Point;
 use zpd_appkit::graphics::GraphicsContext;
-use zpd_appkit::ui::{AsView, CanvasDelegate, CanvasFrame, CanvasInput, CanvasView, TitleBar};
+use zpd_appkit::ui::{
+    AsView, CanvasDelegate, CanvasFrame, CanvasInput, CanvasInputDelegate, CanvasView, TitleBar,
+};
 
 /// Claims title bar clicks left of x = 100, like tabs drawn by the canvas.
 struct Tabs;
 
 impl CanvasDelegate for Tabs {
     fn draw(&self, _context: &mut GraphicsContext<'_>, _frame: CanvasFrame) {}
+}
 
+impl CanvasInputDelegate for Tabs {
     fn input(&self, _input: &CanvasInput) -> bool {
         false
     }
