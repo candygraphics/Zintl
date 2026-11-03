@@ -120,3 +120,12 @@ item as an `AutoSuggestBox`, and save the window placement in app settings.
 `SidebarItem::badge` and `SidebarItem::context_menu` are ignored by the WinUI 3
 navigation view. Use `NavigationViewItem.InfoBadge` and a `ContextFlyout` per
 item that reports `Event::MenuItemSelected` on the window route.
+
+## Text commits and formatted number fields on Windows
+
+The WinUI 3 backend never reports `Event::TextCommitted`, so `TextField::on_commit`
+does not run, and it ignores `ViewKind::NumberField::text`. Report a commit from
+`TextBox.LostFocus` and Enter in `KeyDown`. For a formatted number field, show
+`text` in a `TextBox` next to the `NumberBox` spin buttons (or set
+`NumberBox.NumberFormatter` to an `INumberFormatter2` that calls back into Rust)
+and report the typed text as `Event::TextCommitted`.

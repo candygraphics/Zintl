@@ -359,10 +359,20 @@ impl NativeNode {
                     combo.set_string_value(value)?;
                 }
             }
-            (Self::NumberField(field), ViewKind::NumberField { value, format }) => {
+            (
+                Self::NumberField(field),
+                ViewKind::NumberField {
+                    value,
+                    format,
+                    text,
+                },
+            ) => {
                 if !matches!(old, Some(ViewKind::NumberField { format: old, .. }) if old == format)
                 {
                     field.set_format(format.native())?;
+                }
+                if !matches!(old, Some(ViewKind::NumberField { text: old, .. }) if old == text) {
+                    field.set_text(text.as_deref())?;
                 }
                 if field.value()? != *value || old.is_none() {
                     field.set_value(*value)?;

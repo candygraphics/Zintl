@@ -497,7 +497,15 @@ impl NativeView for ComboBox {
     }
 }
 
+type FormatValue = dyn Fn(f64) -> String;
+type ParseValue = dyn Fn(&str) -> Option<f64>;
+
 /// A number-only text field with a stepper.
+///
+/// By default the platform formats and parses the number. With
+/// [`NumberField::formatter`] or [`NumberField::parser`] the field shows the
+/// formatted text and parses it once editing ends; text that does not parse
+/// restores the current value.
 #[derive(Clone)]
 pub struct NumberField {
     value: f64,
@@ -505,6 +513,9 @@ pub struct NumberField {
     maximum: f64,
     step: f64,
     fraction_digits: usize,
+    formatter: Option<Rc<FormatValue>>,
+    parser: Option<Rc<ParseValue>>,
+    suffix: String,
     store: Option<Store<f64>>,
     action: Option<Rc<Change<f64>>>,
     enabled: bool,
@@ -521,6 +532,9 @@ impl NumberField {
             maximum: f64::MAX,
             step: 1.0,
             fraction_digits: 0,
+            formatter: None,
+            parser: None,
+            suffix: String::new(),
             store: None,
             action: None,
             enabled: true,
@@ -554,6 +568,26 @@ impl NumberField {
         self
     }
 
+    /// Shows values as `format` returns them, such as `12k345.67`.
+    pub fn formatter(mut self, format: impl Fn(f64) -> String + 'static) -> Self {
+        self.formatter = Some(Rc::new(format));
+        self
+    }
+
+    /// Reads typed text; `None` rejects it and restores the current value.
+    ///
+    /// The default parser accepts plain decimal numbers.
+    pub fn parser(mut self, parse: impl Fn(&str) -> Option<f64> + 'static) -> Self {
+        self.parser = Some(Rc::new(parse));
+        self
+    }
+
+    /// Appends `suffix`, such as `" m"`, to the shown text; typed text may omit it.
+    pub fn suffix(mut self, suffix: impl Into<String>) -> Self {
+        self.suffix = suffix.into();
+        self
+    }
+
     pub fn bind(mut self, store: Store<f64>) -> Self {
         self.store = Some(store);
         self
@@ -562,6 +596,32 @@ impl NumberField {
     pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, f64) + 'static) -> Self {
         self.action = Some(Rc::new(action));
         self
+    }
+
+    /// Whether this field formats its text itself instead of the platform.
+    fn formats_text(&self) -> bool {
+        self.formatter.is_some() || self.parser.is_some() || !self.suffix.is_empty()
+    }
+
+    fn format(&self, value: f64) -> String {
+        let text = match &self.formatter {
+            Some(format) => format(value),
+            None => format!("{value:.*}", self.fraction_digits),
+        };
+        format!("{text}{}", self.suffix)
+    }
+
+    /// Parses `text` without the suffix and limits it to the range.
+    fn parse(&self, text: &str) -> Option<f64> {
+        let text = text.trim();
+        let text = text.strip_suffix(self.suffix.trim()).unwrap_or(text).trim();
+        let value = match &self.parser {
+            Some(parse) => parse(text),
+            None => text.parse().ok(),
+        }?;
+        value
+            .is_finite()
+            .then(|| value.clamp(self.minimum, self.maximum))
     }
 }
 
@@ -575,30 +635,47 @@ impl NativeView for NumberField {
     attachments!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        let value = self.store.map_or(self.value, |store| *cx.get(store));
         let element = Element::node(RenderNode::View {
             kind: ViewKind::NumberField {
-                value: self.store.map_or(self.value, |store| *cx.get(store)),
+                value,
                 format: zintl_ui_backend_core::NumberFormat {
                     minimum: self.minimum,
                     maximum: self.maximum,
                     step: self.step,
                     fraction_digits: self.fraction_digits,
                 },
+                text: self.formats_text().then(|| self.format(value)),
             },
             layout: self.layout,
             id: self.id.clone(),
             enabled: self.enabled,
             title_bar_interactive: false,
         });
-        let (minimum, maximum) = (self.minimum, self.maximum);
-        Binding {
+        let binding = || Binding {
             store: self.store,
             action: self.action.clone(),
-        }
-        .route(element, EventKind::ValueChanged, move |event| match event {
+        };
+        let (minimum, maximum) = (self.minimum, self.maximum);
+        let element = binding().route(element, EventKind::ValueChanged, move |event| match event {
             Event::ValueChanged { value } => Some(value.clamp(minimum, maximum)),
             _ => None,
-        })
+        });
+        if !self.formats_text() {
+            return element;
+        }
+        let field = self.clone();
+        binding().route(
+            element,
+            EventKind::TextCommitted,
+            move |event| match event {
+                // Unchanged values are not reported again.
+                Event::TextCommitted { value: text } => {
+                    field.parse(&text).filter(|parsed| *parsed != value)
+                }
+                _ => None,
+            },
+        )
     }
 }
 

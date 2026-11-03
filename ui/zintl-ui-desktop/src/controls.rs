@@ -465,6 +465,24 @@ impl NumberField {
         self
     }
 
+    /// Shows values as `format` returns them; the field then parses text itself.
+    pub fn formatter(mut self, format: impl Fn(f64) -> String + 'static) -> Self {
+        self.inner = self.inner.formatter(format);
+        self
+    }
+
+    /// Reads typed text; `None` rejects it and restores the current value.
+    pub fn parser(mut self, parse: impl Fn(&str) -> Option<f64> + 'static) -> Self {
+        self.inner = self.inner.parser(parse);
+        self
+    }
+
+    /// Appends `suffix`, such as `" m"`, to the shown text; typed text may omit it.
+    pub fn suffix(mut self, suffix: impl Into<String>) -> Self {
+        self.inner = self.inner.suffix(suffix);
+        self
+    }
+
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.inner = self.inner.enabled(enabled);
         self

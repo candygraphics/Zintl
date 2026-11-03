@@ -101,6 +101,9 @@ pub enum ViewKind {
     NumberField {
         value: f64,
         format: NumberFormat,
+        /// Text shown instead of the formatted value; edits then arrive as
+        /// [`Event::TextCommitted`] for the view to parse.
+        text: Option<String>,
     },
     SearchField {
         value: String,

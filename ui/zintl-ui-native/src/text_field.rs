@@ -17,6 +17,7 @@ pub struct TextField {
     value: String,
     binding: Option<Store<String>>,
     action: Option<Rc<ChangeAction>>,
+    commit: Option<Rc<ChangeAction>>,
     placeholder: Option<String>,
     editable: bool,
     selectable: bool,
@@ -39,6 +40,7 @@ impl TextField {
             value: value.into(),
             binding: None,
             action: None,
+            commit: None,
             placeholder: None,
             editable: true,
             selectable: true,
@@ -126,6 +128,15 @@ impl TextField {
         self
     }
 
+    /// Runs when editing ends with Return, Tab, or a focus change.
+    ///
+    /// Use it for work that should not follow each keystroke, such as renaming
+    /// references or recording an undo step.
+    pub fn on_commit(mut self, action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static) -> Self {
+        self.commit = Some(Rc::new(action));
+        self
+    }
+
     pub fn multiline(mut self) -> Self {
         self.multiline = true;
         self
@@ -181,7 +192,15 @@ impl NativeView for TextField {
             enabled: true,
             title_bar_interactive: false,
         });
-        TextChange::route(element, self.binding, self.action.clone())
+        let element = TextChange::route(element, self.binding, self.action.clone());
+        let Some(commit) = self.commit.clone() else {
+            return element;
+        };
+        element.on_event(EventKind::TextCommitted, move |cx, event| {
+            if let Event::TextCommitted { value } = event {
+                commit(cx, &value);
+            }
+        })
     }
 }
 

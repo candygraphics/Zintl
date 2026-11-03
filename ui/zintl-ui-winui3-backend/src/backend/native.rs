@@ -353,7 +353,7 @@ impl NativeNode {
                 )?;
                 control.set_text(TextProperty::Text, value)?;
             }
-            ViewKind::NumberField { value, format } => {
+            ViewKind::NumberField { value, format, .. } => {
                 if !matches!(old, Some(ViewKind::NumberField { format: old, .. }) if old == format)
                 {
                     control.set_number(NumberProperty::Minimum, format.minimum)?;

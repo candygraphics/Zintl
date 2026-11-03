@@ -205,6 +205,96 @@ fn menu_and_segmented_pickers_render_bound_selection() {
     ));
 }
 
+/// Formats kilometres as `12k345.67`.
+fn format_km(value: f64) -> String {
+    let km = (value / 1000.0).floor();
+    format!("{km}k{:06.2}", value - km * 1000.0)
+}
+
+/// Reads `12k345.67` and plain `12345.67`.
+fn parse_km(text: &str) -> Option<f64> {
+    match text.split_once('k') {
+        Some((km, m)) => Some(km.parse::<f64>().ok()? * 1000.0 + m.parse::<f64>().ok()?),
+        None => text.parse().ok(),
+    }
+}
+
+#[test]
+fn number_field_shows_text_from_its_formatter_and_suffix() {
+    // Verifies a custom formatter replaces platform formatting and the suffix follows the text.
+    let (app, _) = Harness::mount(
+        |cx| cx.store(12345.67_f64),
+        |value| {
+            NumberField::new()
+                .formatter(format_km)
+                .suffix(" m")
+                .bind(value)
+        },
+    );
+    assert!(matches!(
+        app.render(),
+        RenderNode::View {
+            kind: ViewKind::NumberField { text: Some(text), .. },
+            ..
+        } if text == "12k345.67 m"
+    ));
+}
+
+#[test]
+fn number_field_parses_committed_text_and_ignores_invalid_text() {
+    // Verifies committed text goes through the parser, with or without the suffix, and bad text keeps the value.
+    let (mut app, value) = Harness::mount(
+        |cx| cx.store(0.0_f64),
+        |value| {
+            NumberField::new()
+                .formatter(format_km)
+                .parser(parse_km)
+                .suffix(" m")
+                .range(0.0..=50_000.0)
+                .bind(value)
+        },
+    );
+    let commit = |text: &str| Event::TextCommitted { value: text.into() };
+
+    app.dispatch_at(&[0], commit("1k250.5 m"));
+    assert_eq!(app.get(value), 1250.5);
+    app.dispatch_at(&[0], commit("2000"));
+    assert_eq!(app.get(value), 2000.0);
+    app.dispatch_at(&[0], commit("not a number"));
+    assert_eq!(app.get(value), 2000.0);
+    app.dispatch_at(&[0], commit("90k0"));
+    assert_eq!(app.get(value), 50_000.0);
+}
+
+#[test]
+fn text_field_commit_runs_only_when_editing_ends() {
+    // Verifies on_commit ignores keystrokes and runs with the final text when editing ends.
+    let (mut app, committed) = Harness::mount(
+        |cx| cx.store(Vec::<String>::new()),
+        |committed| {
+            TextField::new().on_commit(move |cx, text| {
+                let text = text.to_owned();
+                cx.update(committed, |committed| committed.push(text));
+            })
+        },
+    );
+
+    app.dispatch_at(
+        &[0],
+        Event::TextChanged {
+            value: "Sec".into(),
+        },
+    );
+    assert!(app.get(committed).is_empty());
+    app.dispatch_at(
+        &[0],
+        Event::TextCommitted {
+            value: "Section A".into(),
+        },
+    );
+    assert_eq!(app.get(committed), ["Section A"]);
+}
+
 #[test]
 fn number_field_clamps_entered_values() {
     // Verifies values outside the declared range are clamped before reaching the Store.
@@ -226,6 +316,7 @@ fn number_field_clamps_entered_values() {
                     maximum: 10.0,
                     ..
                 },
+                text: None,
             },
             ..
         }

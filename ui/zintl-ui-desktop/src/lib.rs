@@ -341,6 +341,12 @@ impl TextField {
         self
     }
 
+    /// Runs when editing ends with Return, Tab, or a focus change.
+    pub fn on_commit(mut self, action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static) -> Self {
+        self.inner = self.inner.on_commit(action);
+        self
+    }
+
     pub fn multiline(mut self) -> Self {
         self.inner = self.inner.multiline();
         self

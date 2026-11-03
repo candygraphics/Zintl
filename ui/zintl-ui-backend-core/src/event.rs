@@ -10,6 +10,7 @@ use crate::{CanvasEvent, CanvasId, Color};
 pub enum EventKind {
     Activated,
     TextChanged,
+    TextCommitted,
     RichTextChanged,
     StateChanged,
     ValueChanged,
@@ -39,6 +40,10 @@ pub enum EventKind {
 pub enum Event {
     Activated,
     TextChanged {
+        value: String,
+    },
+    /// Editing ended with Return, Tab, or a focus change; `value` is the final text.
+    TextCommitted {
         value: String,
     },
     /// A rich text editor's content changed.
@@ -115,6 +120,7 @@ impl EventTrait for Event {
         match self {
             Self::Activated => EventKind::Activated,
             Self::TextChanged { .. } => EventKind::TextChanged,
+            Self::TextCommitted { .. } => EventKind::TextCommitted,
             Self::RichTextChanged { .. } => EventKind::RichTextChanged,
             Self::StateChanged { .. } => EventKind::StateChanged,
             Self::ValueChanged { .. } => EventKind::ValueChanged,

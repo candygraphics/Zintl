@@ -63,6 +63,10 @@ pub enum WindowEventKind {
     TextChanged {
         value: String,
     },
+    /// Editing ended with Return, Tab, or a focus change; `value` is the final text.
+    TextCommitted {
+        value: String,
+    },
     /// A rich text view's content changed; the runs cover the whole text.
     RichTextChanged {
         runs: Vec<crate::ui::RichRun>,

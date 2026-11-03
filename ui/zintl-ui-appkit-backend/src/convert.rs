@@ -619,6 +619,7 @@ impl Shared for zpd_appkit::actor::WindowEventKind {
             Native::DidClose => Shared::WindowDidClose,
             Native::ButtonClicked => Shared::Activated,
             Native::TextChanged { value } => Shared::TextChanged { value },
+            Native::TextCommitted { value } => Shared::TextCommitted { value },
             Native::RichTextChanged { runs } => Shared::RichTextChanged {
                 text: runs.shared(),
             },
