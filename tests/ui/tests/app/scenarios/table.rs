@@ -53,8 +53,7 @@ impl View for MainView {
                     Table::new(columns, rows).bind(selected).id("sections"),
                 ])
                 .spacing(8.0)
-                .fill_width()
-                .grow(),
+                .fill_width(),
             )
     }
 }

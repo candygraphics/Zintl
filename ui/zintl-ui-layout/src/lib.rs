@@ -3,6 +3,8 @@
 use std::error::Error;
 use std::fmt;
 
+use std::collections::HashMap;
+
 use taffy::geometry::{Line, Size as TaffySize};
 use taffy::style::{
     AlignItems, Dimension as TaffyDimension, Display, FlexDirection, GridPlacement, JustifyContent,
@@ -99,6 +101,9 @@ pub struct LayoutStyle {
     pub width: LayoutDimension,
     pub height: LayoutDimension,
     /// Share of the parent's remaining main-axis space taken by this node.
+    ///
+    /// Auto-sized ancestors of a growing node take free space too, so it
+    /// has room to grow without marking every stack around it.
     pub grow: f32,
     /// Inset applied to all four edges of a container.
     pub padding: f32,
@@ -186,6 +191,38 @@ impl From<taffy::TaffyError> for LayoutError {
 
 pub struct LayoutTree {
     tree: TaffyTree,
+    /// The axes along which each container has a child that takes free space.
+    expansions: HashMap<TaffyNodeId, Expansion>,
+}
+
+/// Axes along which a node wants the free space of its parent.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Expansion {
+    horizontal: bool,
+    vertical: bool,
+}
+
+impl Expansion {
+    fn along(self, axis: Axis) -> bool {
+        match axis {
+            Axis::Horizontal => self.horizontal,
+            Axis::Vertical => self.vertical,
+        }
+    }
+
+    fn set(&mut self, axis: Axis, expands: bool) {
+        match axis {
+            Axis::Horizontal => self.horizontal |= expands,
+            Axis::Vertical => self.vertical |= expands,
+        }
+    }
+
+    fn union(self, other: Self) -> Self {
+        Self {
+            horizontal: self.horizontal || other.horizontal,
+            vertical: self.vertical || other.vertical,
+        }
+    }
 }
 
 impl Default for LayoutTree {
@@ -198,6 +235,7 @@ impl LayoutTree {
     pub fn new() -> Self {
         Self {
             tree: TaffyTree::new(),
+            expansions: HashMap::new(),
         }
     }
 
@@ -207,10 +245,17 @@ impl LayoutTree {
         children: &[NodeId],
     ) -> Result<NodeId, LayoutError> {
         let children: Vec<_> = children.iter().map(|child| child.0).collect();
+        let mut expansion = Expansion::default();
         match style.arrangement {
-            Arrangement::Flex => {}
+            Arrangement::Flex => {
+                let axis = style.axis.unwrap_or(Axis::Horizontal);
+                for child in &children {
+                    expansion = expansion.union(self.expand_child(*child, axis)?);
+                }
+            }
             Arrangement::Overlay => {
                 for child in &children {
+                    expansion = expansion.union(self.expansion(*child));
                     let mut child_style = self.tree.style(*child)?.clone();
                     child_style.grid_row = Self::cell_line(0, 1);
                     child_style.grid_column = Self::cell_line(0, 1);
@@ -221,6 +266,7 @@ impl LayoutTree {
                 let columns = columns.max(1);
                 let mut next = 0_u16;
                 for child in &children {
+                    expansion = expansion.union(self.expansion(*child));
                     let mut child_style = self.tree.style(*child)?.clone();
                     // Declared cells come from `to_taffy_style`; the rest follow in order.
                     if child_style.grid_row.start == GridPlacement::Auto {
@@ -240,10 +286,48 @@ impl LayoutTree {
                 self.tree.set_style(*child, child_style)?;
             }
         }
-        Ok(NodeId(
-            self.tree
-                .new_with_children(to_taffy_style(style), &children)?,
-        ))
+        // A declared size along an axis absorbs the children's demand for space there.
+        expansion.horizontal &= style.width == LayoutDimension::Auto;
+        expansion.vertical &= style.height == LayoutDimension::Auto;
+        let node = self
+            .tree
+            .new_with_children(to_taffy_style(style), &children)?;
+        self.expansions.insert(node, expansion);
+        Ok(NodeId(node))
+    }
+
+    fn expansion(&self, node: TaffyNodeId) -> Expansion {
+        self.expansions.get(&node).copied().unwrap_or_default()
+    }
+
+    /// Lets `child` of a flex container along `axis` take the free space its own children want.
+    ///
+    /// A container whose child grows grows too, along the same axis, and
+    /// stretches across its parent when that is the child's cross axis. Returns
+    /// the axes along which the container wants space because of `child`.
+    fn expand_child(&mut self, child: TaffyNodeId, axis: Axis) -> Result<Expansion, LayoutError> {
+        let cross = match axis {
+            Axis::Horizontal => Axis::Vertical,
+            Axis::Vertical => Axis::Horizontal,
+        };
+        let inner = self.expansion(child);
+        let mut style = self.tree.style(child)?.clone();
+        let size_along = |style: &TaffyStyle, axis: Axis| match axis {
+            Axis::Horizontal => style.size.width,
+            Axis::Vertical => style.size.height,
+        };
+        let declared_grow = style.flex_grow > 0.0;
+        if inner.along(axis) && !declared_grow && size_along(&style, axis).is_auto() {
+            style.flex_grow = 1.0;
+        }
+        if inner.along(cross) && size_along(&style, cross).is_auto() {
+            style.align_self = Some(AlignItems::STRETCH);
+        }
+        self.tree.set_style(child, style)?;
+        let mut expansion = Expansion::default();
+        expansion.set(axis, declared_grow || inner.along(axis));
+        expansion.set(cross, inner.along(cross));
+        Ok(expansion)
     }
 
     /// Returns the grid lines covering `span` tracks from track `index`.
@@ -612,5 +696,60 @@ mod tests {
         assert_eq!(frame(root).width, 104.0);
         let stripe = frame(stripe);
         assert_eq!((stripe.x, stripe.y, stripe.width), (0.0, 24.0, 104.0));
+    }
+
+    #[test]
+    fn stacks_grow_with_their_growing_children() {
+        // Verifies a growing child makes its auto-sized ancestors take free space too, along and across axes.
+        let mut tree = LayoutTree::new();
+        let header = tree
+            .create_node(LayoutStyle::leaf(Size::new(80.0, 20.0)), &[])
+            .unwrap();
+        let table = tree
+            .create_node(LayoutStyle::fill(Size::new(0.0, 0.0)), &[])
+            .unwrap();
+        let column = tree
+            .create_node(LayoutStyle::stack(Axis::Vertical, 0.0), &[header, table])
+            .unwrap();
+        let spacer = {
+            let mut style = LayoutStyle::leaf(Size::new(0.0, 0.0));
+            style.grow = 1.0;
+            tree.create_node(style, &[]).unwrap()
+        };
+        let toolbar = tree
+            .create_node(LayoutStyle::stack(Axis::Horizontal, 0.0), &[spacer])
+            .unwrap();
+        // Like a window's content root: a definite size with children at the start.
+        let mut root_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        root_style.width = LayoutDimension::Points(300.0);
+        root_style.height = LayoutDimension::Points(200.0);
+        root_style.cross_axis_alignment = CrossAxisAlignment::Start;
+        let root = tree.create_node(root_style, &[toolbar, column]).unwrap();
+
+        tree.compute(root, Size::new(300.0, 200.0)).unwrap();
+
+        assert_eq!(tree.layout(column).unwrap().height, 200.0);
+        assert_eq!(tree.layout(table).unwrap().height, 180.0);
+        assert_eq!(tree.layout(toolbar).unwrap().width, 300.0);
+    }
+
+    #[test]
+    fn fixed_sizes_stop_growth_from_spreading() {
+        // Verifies a stack with a declared height keeps it although a child grows.
+        let mut tree = LayoutTree::new();
+        let table = tree
+            .create_node(LayoutStyle::fill(Size::new(0.0, 0.0)), &[])
+            .unwrap();
+        let mut column_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        column_style.height = LayoutDimension::Points(50.0);
+        let column = tree.create_node(column_style, &[table]).unwrap();
+        let mut root_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        root_style.height = LayoutDimension::Points(200.0);
+        let root = tree.create_node(root_style, &[column]).unwrap();
+
+        tree.compute(root, Size::new(300.0, 200.0)).unwrap();
+
+        assert_eq!(tree.layout(column).unwrap().height, 50.0);
+        assert_eq!(tree.layout(table).unwrap().height, 50.0);
     }
 }
