@@ -28,6 +28,7 @@ fn main() -> Result<(), AppError> {
         "perform-main" => App::new(scenarios::perform_main::MainView::new()).run()?,
         "scroll-status" => App::new(scenarios::scroll_status::MainView::default()).run()?,
         "window-close" => App::new(scenarios::window_close::MainView).run()?,
+        "wgpu-first-frame" => App::new(scenarios::wgpu_first_frame::MainView::new()).run()?,
         unknown => {
             eprintln!("unknown UI test scenario: {unknown}");
             std::process::exit(2);
