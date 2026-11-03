@@ -398,6 +398,29 @@ fn color_well_shows_its_declared_color_and_reports_changes() {
 }
 
 #[test]
+fn button_title_color_reaches_the_render_node() {
+    // Verifies a title color is declared on the button, and plain buttons leave it to the platform.
+    let red = Color::rgba(0.9, 0.1, 0.1, 1.0);
+    let tree = App::new(VStack::new(list![
+        Button::new("Problem").title_color(red),
+        Button::new("Plain"),
+    ]))
+    .render_tree();
+    let colors: Vec<_> = tree
+        .children
+        .iter()
+        .map(|child| match &child.value {
+            RenderNode::View {
+                kind: ViewKind::Button(button),
+                ..
+            } => button.title_color,
+            other => panic!("expected a button, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(colors, vec![Some(red), None]);
+}
+
+#[test]
 fn button_roles_and_styles_configure_nsbutton() {
     // Verifies roles become key equivalents or destructive styling and styles pick a bezel.
     let render = |button: Button| App::new(button).render();

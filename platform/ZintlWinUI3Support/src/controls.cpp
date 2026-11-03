@@ -716,6 +716,16 @@ int32_t zpd_winui3_control_set_color(zpd_winui3_element* target, zpd_winui3_colo
   });
 }
 
+int32_t zpd_winui3_control_set_foreground(zpd_winui3_element* target, const zpd_winui3_color* value) {
+  return status([&] {
+    auto element = control(target);
+    if (auto control = element->value.try_as<Control>()) {
+      if (value) control.Foreground(brush_from(*value));
+      else control.ClearValue(Control::ForegroundProperty());
+    }
+  });
+}
+
 int32_t zpd_winui3_control_get_color(const zpd_winui3_element* target, zpd_winui3_color* value) {
   return status([&] { *value = control(target)->state->color; });
 }

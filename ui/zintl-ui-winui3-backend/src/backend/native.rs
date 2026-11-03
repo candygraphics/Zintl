@@ -268,6 +268,23 @@ impl NativeNode {
                 if changed(|button| button.destructive) {
                     control.set_bool(BoolProperty::Destructive, button.destructive)?;
                 }
+                // The title color and the destructive red share the foreground; the color wins.
+                let recolor = old.is_none_or(|old| {
+                    old.title_color != button.title_color || old.destructive != button.destructive
+                });
+                match button.title_color {
+                    Some(color) if recolor => control.set_foreground(Some(zpd_winui3::Color {
+                        red: color.red,
+                        green: color.green,
+                        blue: color.blue,
+                        alpha: color.alpha,
+                    }))?,
+                    None if old.is_some_and(|old| old.title_color.is_some()) => {
+                        control.set_foreground(None)?;
+                        control.set_bool(BoolProperty::Destructive, button.destructive)?;
+                    }
+                    _ => {}
+                }
                 if button.button_type != ButtonType::MomentaryPushIn
                     && control.bool(BoolProperty::Checked)? != button.on
                 {

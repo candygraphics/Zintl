@@ -317,6 +317,7 @@ unsafe extern "C" {
     ) -> i32;
     pub fn zpd_winui3_control_set_color(control: *mut Element, value: Color) -> i32;
     pub fn zpd_winui3_control_get_color(control: *const Element, value: *mut Color) -> i32;
+    pub fn zpd_winui3_control_set_foreground(control: *mut Element, value: *const Color) -> i32;
     pub fn zpd_winui3_control_set_items(
         control: *mut Element,
         items: *const StringRef,

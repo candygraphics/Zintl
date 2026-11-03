@@ -6,9 +6,9 @@ use crate::native;
 use crate::runloop::Application;
 use zpd_objc::Strong;
 
-use super::UiError;
 use super::callback;
 use super::view::{AsView, ViewActor, ViewRef};
+use super::{Color, UiError};
 
 /// Mirrors `NSButtonType` values used by declarative buttons.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -50,6 +50,8 @@ pub struct Button {
     stateful: Rc<Cell<bool>>,
     shows_menu: Rc<Cell<bool>>,
     keeps_state: Rc<Cell<bool>>,
+    /// Kept so that a new title gets the same color.
+    title_color: Cell<Option<Color>>,
 }
 impl Button {
     pub fn with_title(application: &Application, title: &str) -> Result<Self, UiError> {
@@ -107,6 +109,7 @@ impl Button {
             stateful,
             shows_menu,
             keeps_state,
+            title_color: Cell::new(None),
         })
     }
     /// Undoes the toggle of each click, leaving the state to [`Button::set_on`].
@@ -146,6 +149,46 @@ impl Button {
         let title = native::nsstring(title);
         self.view.as_view().with(|button| unsafe {
             zpd_objc::msg_send!(button, zpd_objc::sel!("setTitle:"), ((title.as_ptr()): zpd_objc::Id) => ())
+        })?;
+        self.apply_title_color()
+    }
+
+    /// Draws the title in `color`, or in the system's color for `None`.
+    pub fn set_title_color(&self, color: Option<Color>) -> Result<(), UiError> {
+        self.title_color.set(color);
+        if color.is_some() {
+            return self.apply_title_color();
+        }
+        // A plain title replaces the colored attributed one.
+        self.view.as_view().with(|button| {
+            // SAFETY: The live view is an NSButton; its title is a live NSString.
+            unsafe {
+                let title = zpd_objc::msg_send!(button, zpd_objc::sel!("title"), () => zpd_objc::Id);
+                zpd_objc::msg_send!(button, zpd_objc::sel!("setTitle:"), ((title): zpd_objc::Id) => ());
+            }
+        })
+    }
+
+    /// Colors the current title, keeping the font and alignment AppKit chose for it.
+    fn apply_title_color(&self) -> Result<(), UiError> {
+        let Some(color) = self.title_color.get() else {
+            return Ok(());
+        };
+        let key = native::nsstring("NSColor");
+        self.view.as_view().with(|button| {
+            // SAFETY: The live view is an NSButton; the mutable copy is owned and released here.
+            unsafe {
+                let title = zpd_objc::msg_send!(button, zpd_objc::sel!("attributedTitle"), () => zpd_objc::Id);
+                let colored = zpd_objc::msg_send!(title, zpd_objc::sel!("mutableCopy"), () => zpd_objc::Id);
+                let length = zpd_objc::msg_send!(colored, zpd_objc::sel!("length"), () => u64);
+                let range = native::Range {
+                    location: 0,
+                    length,
+                };
+                zpd_objc::msg_send!(colored, zpd_objc::sel!("addAttribute:value:range:"), ((key.as_ptr()): zpd_objc::Id, (color.native()): zpd_objc::Id, (range): native::Range) => ());
+                zpd_objc::msg_send!(button, zpd_objc::sel!("setAttributedTitle:"), ((colored): zpd_objc::Id) => ());
+                zpd_objc::msg_send!(colored, zpd_objc::sel!("release"), () => ());
+            }
         })
     }
     /// Selects momentary, toggle, checkbox, or radio behavior.

@@ -30,6 +30,25 @@ impl Checks {
     }
 
     /// Resolves a view's native object through a temporary accessibility identifier.
+    /// Returns the foreground color of a button title's last character, if the title has one.
+    fn title_color(button: Id) -> Option<Color> {
+        // SAFETY: The button is live; the attributed title and its attributes are autoreleased.
+        unsafe {
+            let title = zpd_objc::msg_send!(button, zpd_objc::sel!("attributedTitle"), () => Id);
+            let length = zpd_objc::msg_send!(title, zpd_objc::sel!("length"), () => u64);
+            let key = zpd_objc::msg_send!(zpd_objc::class!("NSString"), zpd_objc::sel!("stringWithUTF8String:"), ((c"NSColor".as_ptr()): *const std::ffi::c_char) => Id);
+            let color = zpd_objc::msg_send!(title, zpd_objc::sel!("attribute:atIndex:effectiveRange:"), ((key): Id, (length - 1): u64, (std::ptr::null_mut::<u8>()): *mut u8) => Id);
+            if color.is_null() {
+                return None;
+            }
+            let space = zpd_objc::msg_send!(zpd_objc::class!("NSColorSpace"), zpd_objc::sel!("sRGBColorSpace"), () => Id);
+            let color = zpd_objc::msg_send!(color, zpd_objc::sel!("colorUsingColorSpace:"), ((space): Id) => Id);
+            let mut value = Color::new(0.0, 0.0, 0.0, 0.0);
+            zpd_objc::msg_send!(color, zpd_objc::sel!("getRed:green:blue:alpha:"), ((&mut value.red): *mut f64, (&mut value.green): *mut f64, (&mut value.blue): *mut f64, (&mut value.alpha): *mut f64) => ());
+            Some(value)
+        }
+    }
+
     fn native(view: &impl AsView) -> Id {
         const IDENTIFIER: &str = "zpd-controls-check";
         view.as_view().set_identifier(Some(IDENTIFIER)).unwrap();
@@ -160,6 +179,18 @@ fn main() {
             WindowEventKind::StateChanged { on: true }
         ]
     );
+
+    // Verifies a title color colors the whole title, survives a new title, and can be removed.
+    let colored = Button::with_title(&application, "Problem").unwrap();
+    content.add_subview(&colored).unwrap();
+    let red = Color::new(1.0, 0.0, 0.0, 1.0);
+    colored.set_title_color(Some(red)).unwrap();
+    assert_eq!(Checks::title_color(Checks::native(&colored)), Some(red));
+    colored.set_title("Problem 2").unwrap();
+    assert_eq!(Checks::title_color(Checks::native(&colored)), Some(red));
+    // Without a color, AppKit draws the title in its own label color.
+    colored.set_title_color(None).unwrap();
+    assert_ne!(Checks::title_color(Checks::native(&colored)), Some(red));
 
     // Verifies sliders clamp to their range and report the value they send.
     let slider = Slider::new(&application).unwrap();

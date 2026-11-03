@@ -283,6 +283,10 @@ impl NativeNode {
                 if old.is_none_or(|old| old.destructive != button.destructive) {
                     native.set_destructive(button.destructive)?;
                 }
+                // A new title is colored again by `set_title`, so only a changed color is applied.
+                if old.is_none_or(|old| old.title_color != button.title_color) {
+                    native.set_title_color(button.title_color.map(|color| color.native()))?;
+                }
                 native.set_shows_menu(button.shows_menu);
                 native.set_keeps_state(button.keeps_state);
             }

@@ -293,6 +293,12 @@ impl Button {
         self
     }
 
+    /// Draws the title in `color` instead of the platform's color.
+    pub fn title_color(mut self, color: Color) -> Self {
+        self.inner = self.inner.title_color(color);
+        self
+    }
+
     /// Shows an SF Symbol; an empty title shows the symbol alone.
     pub fn system_image(mut self, name: impl Into<String>) -> Self {
         self.inner = self.inner.system_image(name);
