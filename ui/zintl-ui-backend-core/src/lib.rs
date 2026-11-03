@@ -15,9 +15,10 @@ pub mod layout;
 pub mod tree;
 
 pub use canvas::{
-    Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasHost, CanvasNode, CanvasSetup, Frame,
-    Invalidator, Key, KeyEvent, KeyPhase, Modifiers, NamedKey, PointerButton, PointerEvent,
-    PointerPhase, Redraw, RedrawPolicy, ScrollEvent,
+    Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasHost, CanvasId, CanvasNode,
+    CanvasSetup, Cursor, Frame, GesturePhase, Invalidator, Key, KeyEvent, KeyPhase, MagnifyEvent,
+    Modifiers, NamedKey, PointerButton, PointerEvent, PointerPhase, Redraw, RedrawPolicy,
+    ScrollEvent,
 };
 pub use context::Context;
 pub use event::{Event, EventKind};
@@ -131,6 +132,8 @@ pub enum ViewKind {
         redraw: RedrawPolicy,
         /// Whether a click or the handler can give the canvas keyboard focus.
         focusable: bool,
+        /// Whether input is reported as [`Event::Canvas`] after the handler saw it.
+        reports_input: bool,
     },
     /// A view rendered by its wgpu canvas handler.
     #[cfg(feature = "wgpu")]
@@ -139,6 +142,8 @@ pub enum ViewKind {
         redraw: RedrawPolicy,
         /// Whether a click or the handler can give the canvas keyboard focus.
         focusable: bool,
+        /// Whether input is reported as [`Event::Canvas`] after the handler saw it.
+        reports_input: bool,
     },
 }
 

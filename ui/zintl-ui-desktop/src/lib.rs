@@ -35,14 +35,14 @@ pub use zintl_ui_native::graphics::{
 };
 pub use zintl_ui_native::{
     Alert, AlertButton, AlertStyle, Attach, Attachments, ButtonRole, Canvas2D, Canvas2DHandler,
-    CanvasEvent, CanvasEventContext, CanvasSetup, Color, ColorPanel, Context, EnglishMenuLocalizer,
-    Event, EventKind, FileDialog, Frame, Invalidator, JapaneseMenuLocalizer, Key, KeyEvent,
-    KeyPhase, List, ListFactory, ListRow, ListSection, ListStyle, MainMenu, Menu, MenuItem,
-    MenuLocalizer, Modifier, Modifiers, NamedKey, NativeView, PointerButton, PointerEvent,
-    PointerPhase, Popover, PopoverEdge, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAxes,
-    ScrollEvent, ScrollStatus, Shortcut, Sidebar, SidebarItem, SidebarSection, StandardAction,
-    StandardMenu, StandardText, TextAlignment, TextColor, TextEditor, TitleBar, Toolbar,
-    ToolbarItem, ViewKind, graphics, list,
+    CanvasEvent, CanvasEventContext, CanvasId, CanvasSetup, Color, ColorPanel, Context, Cursor,
+    EnglishMenuLocalizer, Event, EventKind, FileDialog, Frame, GesturePhase, Invalidator,
+    JapaneseMenuLocalizer, Key, KeyEvent, KeyPhase, List, ListFactory, ListRow, ListSection,
+    ListStyle, MagnifyEvent, MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, Modifiers,
+    NamedKey, NativeView, PointerButton, PointerEvent, PointerPhase, Popover, PopoverEdge, Rect,
+    Redraw, RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, ScrollStatus, Shortcut, Sidebar,
+    SidebarItem, SidebarSection, StandardAction, StandardMenu, StandardText, TextAlignment,
+    TextColor, TextEditor, TitleBar, Toolbar, ToolbarItem, ViewKind, graphics, list,
 };
 #[cfg(feature = "wgpu")]
 pub use zintl_ui_native::{

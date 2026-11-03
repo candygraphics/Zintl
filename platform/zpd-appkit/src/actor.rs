@@ -120,6 +120,10 @@ pub enum WindowEventKind {
     ColorPanelClosed,
     /// Input a canvas view received, after its delegate saw it.
     CanvasInput(crate::ui::CanvasInput),
+    /// A canvas view's owner asked to notify its route, carrying an owner-defined token.
+    CanvasNotified {
+        token: u64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

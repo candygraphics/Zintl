@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use zintl_ui::event::Event as EventTrait;
 
 use crate::graphics::AttributedText;
-use crate::{CanvasEvent, Color};
+use crate::{CanvasEvent, CanvasId, Color};
 
 /// Selects the event an element route handles.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -17,6 +17,7 @@ pub enum EventKind {
     ColorChanged,
     Scrolled,
     Canvas,
+    CanvasActions,
     SidebarSelectionChanged,
     ListSelectionChanged,
     ToolbarItemClicked,
@@ -66,6 +67,10 @@ pub enum Event {
     },
     /// Input a canvas received, after its handler saw it.
     Canvas(CanvasEvent),
+    /// A canvas handler emitted actions; take them with [`CanvasId::take_actions`].
+    CanvasActions {
+        canvas: CanvasId,
+    },
     SidebarSelectionChanged {
         id: String,
     },
@@ -117,6 +122,7 @@ impl EventTrait for Event {
             Self::ColorChanged { .. } => EventKind::ColorChanged,
             Self::Scrolled { .. } => EventKind::Scrolled,
             Self::Canvas(_) => EventKind::Canvas,
+            Self::CanvasActions { .. } => EventKind::CanvasActions,
             Self::SidebarSelectionChanged { .. } => EventKind::SidebarSelectionChanged,
             Self::ListSelectionChanged { .. } => EventKind::ListSelectionChanged,
             Self::ToolbarItemClicked { .. } => EventKind::ToolbarItemClicked,

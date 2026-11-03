@@ -66,8 +66,6 @@ inset are ignored by the WinUI 3 backend (it passes an inset of 0). With
 ## Canvas2D: follow-ups
 
 - IME and marked text (`NSTextInputClient`) for canvases that accept text.
-- Cursor shape control from the handler. `SplitView`'s divider needs a resize
-  cursor (`NSCursor.resizeLeftRight`).
 - An opt-in render thread (`Canvas2D::threaded`) for heavy drawing.
 
 ## Text styling on Windows

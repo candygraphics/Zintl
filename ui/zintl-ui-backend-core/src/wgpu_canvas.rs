@@ -337,6 +337,10 @@ mod tests {
         }
 
         fn set_focus(&self, _focused: bool) {}
+
+        fn set_cursor(&self, _cursor: crate::Cursor) {}
+
+        fn actions_emitted(&self, _canvas: crate::CanvasId) {}
     }
 
     fn frame() -> Frame {

@@ -1,5 +1,6 @@
 //! Views drawn by a [`Canvas2DHandler`] or, with the `wgpu` feature, a `WgpuCanvasHandler`.
 
+use std::any::Any;
 use std::rc::Rc;
 
 use zintl_ui::element::IntoElement;
@@ -11,6 +12,8 @@ use crate::attach::attachments;
 use crate::{Attachments, Context, Element, Event, EventKind, NativeView, RenderNode};
 
 type CanvasAction = dyn for<'a> Fn(&mut Context<'a>, &CanvasEvent);
+/// Receives every emitted action and ignores those of other types.
+type ActionHandler = dyn for<'a> Fn(&mut Context<'a>, &dyn Any);
 
 /// Declares a canvas view over a handler trait; the views differ only in how they draw.
 macro_rules! canvas_view {
@@ -25,6 +28,7 @@ macro_rules! canvas_view {
             redraw: RedrawPolicy,
             focusable: bool,
             action: Option<Rc<CanvasAction>>,
+            action_handlers: Vec<Rc<ActionHandler>>,
             layout: LayoutStyle,
             id: Option<String>,
             attachments: Attachments,
@@ -37,6 +41,7 @@ macro_rules! canvas_view {
                     redraw: RedrawPolicy::OnDemand,
                     focusable: false,
                     action: None,
+                    action_handlers: Vec::new(),
                     layout: LayoutStyle::leaf(Size::new(0.0, 0.0)),
                     id: None,
                     attachments: Attachments::default(),
@@ -63,6 +68,23 @@ macro_rules! canvas_view {
                 action: impl for<'a> Fn(&mut Context<'a>, &CanvasEvent) + 'static,
             ) -> Self {
                 self.action = Some(Rc::new(action));
+                self
+            }
+
+            /// Runs for each action of type `A` that the handler emits with
+            /// [`CanvasEventContext::emit`](crate::CanvasEventContext::emit).
+            ///
+            /// Actions of other types are ignored, so several handlers can
+            /// each take one type.
+            pub fn on_action<A: 'static>(
+                mut self,
+                action: impl for<'a> Fn(&mut Context<'a>, &A) + 'static,
+            ) -> Self {
+                self.action_handlers.push(Rc::new(move |cx, emitted: &dyn Any| {
+                    if let Some(emitted) = emitted.downcast_ref::<A>() {
+                        action(cx, emitted);
+                    }
+                }));
                 self
             }
 
@@ -107,25 +129,39 @@ macro_rules! canvas_view {
             attachments!();
 
             fn base_element(&self, _cx: &mut Context<'_>) -> Element<RenderNode> {
-                let element = Element::node(RenderNode::View {
+                let mut element = Element::node(RenderNode::View {
                     kind: ViewKind::$kind {
                         canvas: $node(self.handler.clone()),
                         redraw: self.redraw,
                         focusable: self.focusable,
+                        reports_input: self.action.is_some(),
                     },
                     layout: self.layout,
                     id: self.id.clone(),
                     enabled: true,
                     title_bar_interactive: false,
                 });
-                let Some(action) = self.action.clone() else {
-                    return element;
-                };
-                element.on_event(EventKind::Canvas, move |cx, event| {
-                    if let Event::Canvas(event) = event {
-                        action(cx, &event);
-                    }
-                })
+                if let Some(action) = self.action.clone() {
+                    element = element.on_event(EventKind::Canvas, move |cx, event| {
+                        if let Event::Canvas(event) = event {
+                            action(cx, &event);
+                        }
+                    });
+                }
+                if !self.action_handlers.is_empty() {
+                    let handlers = self.action_handlers.clone();
+                    element = element.on_event(EventKind::CanvasActions, move |cx, event| {
+                        let Event::CanvasActions { canvas } = event else {
+                            return;
+                        };
+                        for action in canvas.take_actions() {
+                            for handler in &handlers {
+                                handler(cx, action.as_ref());
+                            }
+                        }
+                    });
+                }
+                element
             }
         }
 

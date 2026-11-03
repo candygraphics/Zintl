@@ -395,9 +395,13 @@ impl NativeNode {
             (
                 Self::Canvas(view),
                 ViewKind::Canvas2D {
-                    redraw, focusable, ..
+                    redraw,
+                    focusable,
+                    reports_input,
+                    ..
                 },
             ) => {
+                view.set_reports_input(*reports_input);
                 let (old_redraw, old_focusable) = match old {
                     Some(ViewKind::Canvas2D {
                         redraw, focusable, ..
@@ -415,9 +419,13 @@ impl NativeNode {
             (
                 Self::WgpuCanvas(view),
                 ViewKind::WgpuCanvas {
-                    redraw, focusable, ..
+                    redraw,
+                    focusable,
+                    reports_input,
+                    ..
                 },
             ) => {
+                view.set_reports_input(*reports_input);
                 let (old_redraw, old_focusable) = match old {
                     Some(ViewKind::WgpuCanvas {
                         redraw, focusable, ..

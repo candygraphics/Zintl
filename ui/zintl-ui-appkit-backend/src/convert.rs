@@ -209,6 +209,24 @@ impl Shared for ui::NamedKey {
     }
 }
 
+impl Native for core::Cursor {
+    type Output = ui::Cursor;
+
+    fn native(&self) -> ui::Cursor {
+        match self {
+            Self::Arrow => ui::Cursor::Arrow,
+            Self::PointingHand => ui::Cursor::PointingHand,
+            Self::IBeam => ui::Cursor::IBeam,
+            Self::Crosshair => ui::Cursor::Crosshair,
+            Self::OpenHand => ui::Cursor::OpenHand,
+            Self::ClosedHand => ui::Cursor::ClosedHand,
+            Self::ResizeLeftRight => ui::Cursor::ResizeLeftRight,
+            Self::ResizeUpDown => ui::Cursor::ResizeUpDown,
+            Self::NotAllowed => ui::Cursor::OperationNotAllowed,
+        }
+    }
+}
+
 impl Shared for ui::CanvasInput {
     type Output = core::CanvasEvent;
 
@@ -250,6 +268,17 @@ impl Shared for ui::CanvasInput {
                 modifiers: key.modifiers.shared(),
                 repeat: key.repeat,
                 code: u32::from(key.key_code),
+            }),
+            Self::Magnify(magnify) => core::CanvasEvent::Magnify(core::MagnifyEvent {
+                location: point(magnify.location),
+                delta: magnify.magnification,
+                phase: match magnify.phase {
+                    ui::GesturePhase::Began => core::GesturePhase::Began,
+                    ui::GesturePhase::Changed => core::GesturePhase::Changed,
+                    ui::GesturePhase::Ended => core::GesturePhase::Ended,
+                    ui::GesturePhase::Cancelled => core::GesturePhase::Cancelled,
+                },
+                modifiers: magnify.modifiers.shared(),
             }),
             Self::ModifiersChanged(modifiers) => {
                 core::CanvasEvent::ModifiersChanged(modifiers.shared())
@@ -613,6 +642,9 @@ impl Shared for zpd_appkit::actor::WindowEventKind {
             },
             Native::ColorPanelClosed => Shared::ColorPanelClosed,
             Native::CanvasInput(input) => Shared::Canvas(input.shared()),
+            Native::CanvasNotified { token } => Shared::CanvasActions {
+                canvas: core::CanvasId::from_raw(token),
+            },
         }
     }
 }
@@ -620,6 +652,26 @@ impl Shared for zpd_appkit::actor::WindowEventKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn magnify_input_keeps_location_scale_and_phase() {
+        // Verifies a native pinch becomes a canvas Magnify event with the same values.
+        let input = ui::CanvasInput::Magnify(ui::MagnifyInput {
+            location: geometry::Point::new(4.0, 2.0),
+            magnification: 0.25,
+            phase: ui::GesturePhase::Ended,
+            modifiers: ui::Modifiers::default(),
+        });
+        assert_eq!(
+            input.shared(),
+            core::CanvasEvent::Magnify(core::MagnifyEvent {
+                location: shared::Point::new(4.0, 2.0),
+                delta: 0.25,
+                phase: core::GesturePhase::Ended,
+                modifiers: core::Modifiers::default(),
+            })
+        );
+    }
 
     // Rich text survives a trip through native runs, including paragraph styles per line.
     #[test]
