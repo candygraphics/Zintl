@@ -37,6 +37,19 @@ Plan:
 The WinUI changes for `Canvas2D` were made on macOS and have not been compiled
 for Windows yet.
 
+## WgpuCanvas on WinUI 3
+
+`ViewKind::WgpuCanvas` renders as an empty `Canvas` panel in
+`zintl-ui-winui3-backend`. The AppKit reference is
+`zintl-ui-appkit-backend/src/backend/wgpu.rs` over `MetalCanvasView`.
+
+- Host a `SwapChainPanel` and create the surface with
+  `wgpu::SurfaceTargetUnsafe::SwapChainPanel`; share the redraw, input, and
+  focus plumbing planned for the Direct2D `Canvas2D` above.
+- Configure the surface from `SizeChanged` and `CompositionScaleChanged`.
+
+The `wgpu` feature of the WinUI backend has not been compiled for Windows yet.
+
 ## Title bar interactive views on Windows
 
 `title_bar_interactive`, `Canvas2DHandler::title_bar_hit`, and the title bar

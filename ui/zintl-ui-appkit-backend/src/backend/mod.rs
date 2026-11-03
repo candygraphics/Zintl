@@ -20,6 +20,8 @@ mod attachment;
 mod canvas;
 mod layout;
 mod native;
+#[cfg(feature = "wgpu")]
+mod wgpu;
 
 use app::Message;
 pub use app::run_composer;
@@ -44,6 +46,9 @@ pub enum AppError {
     Ui(UiError),
     Layout(LayoutError),
     MessageLoop(MessageLoopError),
+    /// A wgpu canvas could not reach the GPU; it stays blank.
+    #[cfg(feature = "wgpu")]
+    Wgpu(crate::WgpuError),
     NoWindow,
     InvalidTree,
 }
@@ -55,6 +60,8 @@ impl fmt::Display for AppError {
             Self::Ui(error) => error.fmt(formatter),
             Self::Layout(error) => error.fmt(formatter),
             Self::MessageLoop(error) => error.fmt(formatter),
+            #[cfg(feature = "wgpu")]
+            Self::Wgpu(error) => error.fmt(formatter),
             Self::NoWindow => formatter.write_str("the rendered tree does not contain a window"),
             Self::InvalidTree => formatter.write_str("a window cannot be nested in a view"),
         }
@@ -68,6 +75,8 @@ impl Error for AppError {
             Self::Ui(error) => Some(error),
             Self::Layout(error) => Some(error),
             Self::MessageLoop(error) => Some(error),
+            #[cfg(feature = "wgpu")]
+            Self::Wgpu(error) => Some(error),
             Self::NoWindow | Self::InvalidTree => None,
         }
     }

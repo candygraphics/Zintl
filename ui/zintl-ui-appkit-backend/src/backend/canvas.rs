@@ -8,14 +8,16 @@ use std::sync::Arc;
 
 use zpd_appkit::geometry;
 use zpd_appkit::graphics::{self as native, GraphicsContext};
-use zpd_appkit::ui::{CanvasDelegate, CanvasFrame, CanvasHandle, CanvasInput, CanvasView};
+use zpd_appkit::ui::{
+    CanvasDelegate, CanvasFrame, CanvasHandle, CanvasInput, CanvasInputDelegate, CanvasView,
+};
 
 use crate::convert::{Native, Shared};
 use crate::graphics::{
     Color, FillRule, Font, Graphics2D, GraphicsBackend, Image, Paint, Path, PathElement, Point,
     Rect, StrokeStyle, TextMetrics, Transform,
 };
-use crate::{CanvasHost, CanvasNode, Frame, MainTaskSender};
+use crate::{CanvasHost, CanvasNode, MainTaskSender};
 
 /// Native resources a canvas reuses across frames.
 #[derive(Default)]
@@ -67,19 +69,12 @@ impl CanvasDelegate for CanvasBridge {
             resources: &mut resources,
         };
         let mut graphics = Graphics2D::new(&mut backend, bounds, frame.scale);
-        self.canvas.draw(
-            &mut graphics,
-            &Frame {
-                bounds,
-                safe_area: frame.safe_area.shared(),
-                scale: frame.scale,
-                time: frame.time,
-                delta: frame.delta,
-            },
-        );
+        self.canvas.draw(&mut graphics, &frame.shared());
         resources.end_frame();
     }
+}
 
+impl CanvasInputDelegate for CanvasBridge {
     fn input(&self, input: &CanvasInput) -> bool {
         self.canvas.event(&input.clone().shared())
     }
@@ -91,7 +86,7 @@ impl CanvasDelegate for CanvasBridge {
 }
 
 /// Performs a canvas's native requests through its view.
-struct Host(CanvasHandle);
+pub(super) struct Host(pub(super) CanvasHandle);
 
 impl CanvasHost for Host {
     fn invalidate(&self) {

@@ -13,3 +13,15 @@ zintl-ui-appkit-backend = { path = "../zintl-ui-appkit-backend" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 zintl-ui-winui3-backend = { path = "../zintl-ui-winui3-backend" }
+
+[features]
+# Adds `WgpuCanvas`, a view rendered with wgpu.
+wgpu = [
+    "zintl-ui-native/wgpu",
+    "zintl-ui-appkit-backend/wgpu",
+    "zintl-ui-winui3-backend/wgpu",
+]
+
+[[example]]
+name = "wgpu_triangle"
+required-features = ["wgpu"]

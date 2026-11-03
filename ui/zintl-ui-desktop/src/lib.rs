@@ -44,6 +44,10 @@ pub use zintl_ui_native::{
     StandardMenu, StandardText, TextAlignment, TextColor, TextEditor, TitleBar, Toolbar,
     ToolbarItem, ViewKind, graphics, list,
 };
+#[cfg(feature = "wgpu")]
+pub use zintl_ui_native::{
+    WgpuCanvas, WgpuCanvasHandler, WgpuContext, WgpuError, WgpuSetup, WgpuTarget, wgpu,
+};
 
 native_view!(Text, Button, TextField, HStack, VStack, Spacer);
 

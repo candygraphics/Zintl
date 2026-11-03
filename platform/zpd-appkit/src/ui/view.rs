@@ -261,20 +261,6 @@ impl ViewActor {
             _main_thread: PhantomData,
         }
     }
-    #[cfg(feature = "wgpu")]
-    pub(crate) fn from_actor(actor: ActorRef) -> Self {
-        actor
-            .tree_handle()
-            .expect("a newly inserted view actor must have a tree")
-            .add_teardown(&actor, |view| unsafe {
-                zpd_objc::msg_send!(view, zpd_objc::sel!("removeFromSuperview"), () => ())
-            })
-            .expect("a newly inserted view actor must be live");
-        Self {
-            actor,
-            _main_thread: PhantomData,
-        }
-    }
     pub(crate) fn as_view(&self) -> ViewRef<'_> {
         ViewRef { actor: &self.actor }
     }

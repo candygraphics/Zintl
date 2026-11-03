@@ -17,6 +17,8 @@ use zintl_ui_backend_core::tree::ErrorSlot;
 
 use super::AppError;
 use super::canvas::CanvasBridge;
+#[cfg(feature = "wgpu")]
+use super::wgpu::WgpuBridge;
 use crate::convert::{Native, Shared};
 use crate::{ButtonType, MainTaskSender, ViewKind};
 
@@ -38,6 +40,8 @@ pub(super) enum NativeNode {
     ScrollView(ScrollView, Cell<Option<(f64, f64)>>),
     TabView(TabView),
     Canvas(CanvasView),
+    #[cfg(feature = "wgpu")]
+    WgpuCanvas(zpd_appkit::ui::MetalCanvasView),
     List(ListView, ListRows),
 }
 
@@ -66,6 +70,8 @@ impl NativeNode {
             Self::ScrollView(view, _) => view.as_view(),
             Self::TabView(view) => view.as_view(),
             Self::Canvas(view) => view.as_view(),
+            #[cfg(feature = "wgpu")]
+            Self::WgpuCanvas(view) => view.as_view(),
             Self::List(view, _) => view.as_view(),
         }
     }
@@ -116,6 +122,12 @@ impl NativeNode {
                 let view = CanvasView::new(application)?;
                 CanvasBridge::install(&view, canvas, main_tasks);
                 Self::Canvas(view)
+            }
+            #[cfg(feature = "wgpu")]
+            ViewKind::WgpuCanvas { canvas, .. } => {
+                let view = zpd_appkit::ui::MetalCanvasView::new(application)?;
+                WgpuBridge::install(&view, canvas, main_tasks, errors);
+                Self::WgpuCanvas(view)
             }
         };
         native.apply(None, kind)?;
@@ -388,6 +400,26 @@ impl NativeNode {
             ) => {
                 let (old_redraw, old_focusable) = match old {
                     Some(ViewKind::Canvas2D {
+                        redraw, focusable, ..
+                    }) => (Some(redraw), Some(focusable)),
+                    _ => (None, None),
+                };
+                if old_redraw != Some(redraw) {
+                    view.set_redraw(redraw.native())?;
+                }
+                if old_focusable != Some(focusable) {
+                    view.set_focusable(*focusable);
+                }
+            }
+            #[cfg(feature = "wgpu")]
+            (
+                Self::WgpuCanvas(view),
+                ViewKind::WgpuCanvas {
+                    redraw, focusable, ..
+                },
+            ) => {
+                let (old_redraw, old_focusable) = match old {
+                    Some(ViewKind::WgpuCanvas {
                         redraw, focusable, ..
                     }) => (Some(redraw), Some(focusable)),
                     _ => (None, None),

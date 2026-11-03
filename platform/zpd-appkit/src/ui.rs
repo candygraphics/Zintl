@@ -25,9 +25,11 @@ mod window;
 
 pub use button::{BezelStyle, Button, ButtonType};
 pub use canvas::{
-    CanvasDelegate, CanvasFrame, CanvasHandle, CanvasInput, CanvasRedraw, CanvasView, KeyInput,
-    Modifiers, MouseButton, MouseInput, MousePhase, NamedKey, ScrollInput,
+    CanvasDelegate, CanvasFrame, CanvasHandle, CanvasInput, CanvasInputDelegate, CanvasRedraw,
+    CanvasView, KeyInput, Modifiers, MouseButton, MouseInput, MousePhase, NamedKey, ScrollInput,
 };
+#[cfg(feature = "metal")]
+pub use canvas::{MetalCanvasDelegate, MetalCanvasView, MetalLayer};
 pub use color::Color;
 pub use commands::{
     CommandItem, CommandMenu, CommandModifier, CommandRole, CommandSet, MenuRole, WindowAppMenu,
@@ -53,6 +55,4 @@ pub use text_editor::TextEditor;
 pub use text_field::{TextAlignment, TextColor, TextField};
 pub use toolbar::{Toolbar, ToolbarItem};
 pub use view::{AsView, View, ViewRef};
-#[cfg(feature = "wgpu")]
-pub use window::{MetalLayer, WgpuSurface};
 pub use window::{TitleBar, Window, WindowStyle};

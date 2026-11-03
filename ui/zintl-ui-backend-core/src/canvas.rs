@@ -179,10 +179,28 @@ pub trait CanvasHost {
     fn set_focus(&self, focused: bool);
 }
 
-/// The handler methods without the `Sized` parts of [`Canvas2DHandler`].
-trait ErasedHandler {
-    fn setup(&mut self, cx: &mut CanvasSetup);
-    fn draw(&mut self, g: &mut Graphics2D<'_>, frame: &Frame);
+/// What a handler receives when it is set up.
+pub(crate) struct SetupInputs<'a> {
+    pub(crate) invalidator: Invalidator,
+    #[cfg(feature = "wgpu")]
+    pub(crate) gpu: Option<&'a crate::wgpu_canvas::GpuBinding>,
+    #[cfg(not(feature = "wgpu"))]
+    pub(crate) _gpu: std::marker::PhantomData<&'a ()>,
+}
+
+/// The methods of every canvas handler kind without their `Sized` parts.
+pub(crate) trait ErasedHandler {
+    /// Returns `false` when the handler cannot be set up yet, such as before its GPU is attached.
+    fn setup(&mut self, inputs: SetupInputs<'_>) -> bool;
+    /// Draws a [`Canvas2DHandler`]; other handlers ignore it.
+    fn draw(&mut self, g: &mut Graphics2D<'_>, frame: &Frame) {
+        let _ = (g, frame);
+    }
+    /// Renders a [`WgpuCanvasHandler`](crate::WgpuCanvasHandler); other handlers ignore it.
+    #[cfg(feature = "wgpu")]
+    fn render(&mut self, target: &mut crate::WgpuTarget<'_>, frame: &Frame) {
+        let _ = (target, frame);
+    }
     fn event(&mut self, event: &CanvasEvent, cx: &mut CanvasEventContext) -> bool;
     fn title_bar_hit(&self, point: Point) -> bool;
     /// `next` is a `Box<Self>` produced by [`ErasedHandler::into_any`].
@@ -191,8 +209,14 @@ trait ErasedHandler {
 }
 
 impl<H: Canvas2DHandler> ErasedHandler for H {
-    fn setup(&mut self, cx: &mut CanvasSetup) {
-        Canvas2DHandler::setup(self, cx);
+    fn setup(&mut self, inputs: SetupInputs<'_>) -> bool {
+        Canvas2DHandler::setup(
+            self,
+            &mut CanvasSetup {
+                invalidator: inputs.invalidator,
+            },
+        );
+        true
     }
 
     fn draw(&mut self, g: &mut Graphics2D<'_>, frame: &Frame) {
@@ -227,6 +251,9 @@ struct CanvasCell {
     handler: RefCell<Option<Box<dyn ErasedHandler>>>,
     host: RefCell<Option<Rc<dyn CanvasHost>>>,
     sender: RefCell<Option<Arc<MainTaskSender>>>,
+    /// The GPU a wgpu canvas renders with, once its backend attached one.
+    #[cfg(feature = "wgpu")]
+    gpu: RefCell<Option<crate::wgpu_canvas::GpuBinding>>,
     set_up: Cell<bool>,
 }
 
@@ -244,15 +271,22 @@ pub struct CanvasNode(Rc<CanvasCell>);
 
 impl CanvasNode {
     pub fn new<H: Canvas2DHandler>(handler: H) -> Self {
+        Self::with_handler_box::<H>(Box::new(handler))
+    }
+
+    /// Wraps a handler of the concrete type `H`.
+    pub(crate) fn with_handler_box<H: 'static>(handler: Box<dyn ErasedHandler>) -> Self {
         static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
         Self(Rc::new(CanvasCell {
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             handler_type: TypeId::of::<H>(),
             handler_name: type_name::<H>(),
-            handler: RefCell::new(Some(Box::new(handler))),
+            handler: RefCell::new(Some(handler)),
             host: RefCell::new(None),
             sender: RefCell::new(None),
+            #[cfg(feature = "wgpu")]
+            gpu: RefCell::new(None),
             set_up: Cell::new(false),
         }))
     }
@@ -302,6 +336,18 @@ impl CanvasNode {
         if redraw == Redraw::Yes {
             self.invalidate();
         }
+    }
+
+    /// Connects a wgpu canvas to the GPU it renders with; set up waits for it.
+    #[cfg(feature = "wgpu")]
+    pub fn attach_gpu(&self, context: crate::WgpuContext, format: wgpu::TextureFormat) {
+        *self.0.gpu.borrow_mut() = Some(crate::wgpu_canvas::GpuBinding { context, format });
+    }
+
+    /// Renders one frame of a wgpu canvas into `target`.
+    #[cfg(feature = "wgpu")]
+    pub fn render(&self, target: &mut crate::WgpuTarget<'_>, frame: &Frame) {
+        self.with_handler(|handler| handler.render(target, frame));
     }
 
     /// Draws one frame with the handler.
@@ -366,14 +412,20 @@ impl CanvasNode {
             .try_borrow_mut()
             .expect("canvas handlers must not re-enter themselves");
         let handler = handler.as_mut()?;
-        if !self.0.set_up.replace(true) {
-            let mut cx = CanvasSetup {
+        if !self.0.set_up.get() {
+            #[cfg(feature = "wgpu")]
+            let gpu = self.0.gpu.borrow();
+            let inputs = SetupInputs {
                 invalidator: Invalidator {
                     canvas: self.0.id,
                     sender: self.0.sender.borrow().clone(),
                 },
+                #[cfg(feature = "wgpu")]
+                gpu: gpu.as_ref(),
+                #[cfg(not(feature = "wgpu"))]
+                _gpu: std::marker::PhantomData,
             };
-            handler.setup(&mut cx);
+            self.0.set_up.set(handler.setup(inputs));
         }
         Some(operation(handler.as_mut()))
     }

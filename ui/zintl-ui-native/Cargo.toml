@@ -6,3 +6,7 @@ edition = "2024"
 zintl-ui = { path = "../zintl-ui" }
 zintl-ui-layout = { path = "../zintl-ui-layout" }
 zintl-ui-backend-core = { path = "../zintl-ui-backend-core" }
+
+[features]
+# Adds `WgpuCanvas`, a view rendered with wgpu.
+wgpu = ["zintl-ui-backend-core/wgpu"]
