@@ -15,10 +15,10 @@ use zpd_appkit::geometry::Rect;
 use zintl_ui_backend_core::layout::HostLayout;
 use zintl_ui_backend_core::tree::ErrorSlot;
 
-use super::AppError;
 use super::canvas::CanvasBridge;
 #[cfg(feature = "wgpu")]
 use super::wgpu::WgpuBridge;
+use super::{AppError, GpuSlot};
 use crate::convert::{Native, Shared};
 use crate::{ButtonType, MainTaskSender, ViewKind};
 
@@ -29,6 +29,8 @@ pub(super) struct ScrollState {
     pub(super) restore: Cell<Option<(f64, f64)>>,
     /// The descendant to scroll into view.
     pub(super) reveal: RefCell<Option<crate::ScrollTarget>>,
+    /// Whether the content scrolls sideways, so it keeps its own width.
+    pub(super) horizontal: Cell<bool>,
 }
 
 /// A native view created for a [`ViewKind`].
@@ -97,8 +99,11 @@ impl NativeNode {
         application: &Application,
         kind: &ViewKind,
         main_tasks: Arc<MainTaskSender>,
+        gpu: &GpuSlot,
         errors: &ErrorSlot<AppError>,
     ) -> Result<Self, UiError> {
+        #[cfg(not(feature = "wgpu"))]
+        let _ = gpu;
         let native = match kind {
             ViewKind::Container => {
                 Self::Container(View::new(application, Rect::new(0.0, 0.0, 0.0, 0.0))?)
@@ -143,7 +148,7 @@ impl NativeNode {
             #[cfg(feature = "wgpu")]
             ViewKind::WgpuCanvas { canvas, .. } => {
                 let view = zpd_appkit::ui::MetalCanvasView::new(application)?;
-                WgpuBridge::install(&view, canvas, main_tasks, errors);
+                WgpuBridge::install(&view, canvas, main_tasks, gpu, errors);
                 Self::WgpuCanvas(view)
             }
         };
@@ -182,6 +187,37 @@ impl NativeNode {
             raise(declared.width, measure_width, width),
             raise(declared.height, measure_height, height),
         ))
+    }
+
+    /// Replaces a line-limited label's estimated content size with its text's measured size.
+    ///
+    /// Such labels may shrink below it and truncate, so it is their preferred
+    /// size rather than a minimum.
+    pub(super) fn content_size(
+        &self,
+        kind: &ViewKind,
+        declared: Option<Size>,
+    ) -> Result<Option<Size>, UiError> {
+        let (
+            ViewKind::TextField {
+                editable: false,
+                multiline: false,
+                style,
+                ..
+            },
+            Some(declared),
+        ) = (kind, declared)
+        else {
+            return Ok(declared);
+        };
+        if style.line_limit.is_none() {
+            return Ok(Some(declared));
+        }
+        let (width, _) = self.as_view().intrinsic_content_size()?;
+        Ok(Some(Size::new(
+            width.map_or(declared.width, |width| width.ceil() as f32),
+            declared.height,
+        )))
     }
 
     /// Sets the tooltip on the view the pointer rests on.
@@ -246,6 +282,10 @@ impl NativeNode {
                 }
                 if old.is_none_or(|old| old.destructive != button.destructive) {
                     native.set_destructive(button.destructive)?;
+                }
+                // A new title is colored again by `set_title`, so only a changed color is applied.
+                if old.is_none_or(|old| old.title_color != button.title_color) {
+                    native.set_title_color(button.title_color.map(|color| color.native()))?;
                 }
                 native.set_shows_menu(button.shows_menu);
                 native.set_keeps_state(button.keeps_state);
@@ -470,6 +510,7 @@ impl NativeNode {
             ) => {
                 if !matches!(old, Some(ViewKind::ScrollView { axes: old, .. }) if old == axes) {
                     scroll.set_axes(axes.native())?;
+                    state.horizontal.set(axes.horizontal);
                 }
                 // Later offsets echo the user's scrolling, so only a new view restores one.
                 if old.is_none() {

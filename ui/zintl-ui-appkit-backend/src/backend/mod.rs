@@ -127,6 +127,24 @@ impl NodeState {
     }
 }
 
+/// GPU objects every wgpu canvas of the app shares.
+///
+/// The app owns them instead of a thread-local, so they are released while the
+/// app exits; Metal cleanup fails once thread-locals are being destroyed.
+#[derive(Clone, Default)]
+pub(super) struct GpuSlot {
+    #[cfg(feature = "wgpu")]
+    context: Rc<RefCell<Option<crate::WgpuContext>>>,
+}
+
+impl GpuSlot {
+    /// Drops the app's reference; canvases that are still mounted keep theirs.
+    pub(super) fn release(&self) {
+        #[cfg(feature = "wgpu")]
+        drop(self.context.borrow_mut().take());
+    }
+}
+
 pub struct AppKitBackend {
     tree: NodeTree<NodeState>,
     retired_windows: Vec<ActorId>,
@@ -138,6 +156,7 @@ pub struct AppKitBackend {
     /// Installed while the tree declares no main menu.
     default_main_menu: Option<CommandSet>,
     opened_window: bool,
+    gpu: GpuSlot,
 }
 
 impl Default for AppKitBackend {
@@ -158,6 +177,7 @@ impl AppKitBackend {
             main_menu: None,
             default_main_menu: None,
             opened_window: false,
+            gpu: GpuSlot::default(),
         }
     }
 
@@ -477,6 +497,7 @@ impl AppKitBackend {
                     application,
                     &kind,
                     self.main_tasks.shared_sender(),
+                    &self.gpu,
                     &self.pending_error,
                 )?;
                 native.as_view().set_identifier(id.as_deref())?;
@@ -635,8 +656,14 @@ impl AppKitBackend {
             .as_ref()
             .expect("materialized view nodes have native views")
             .clone();
-        style.minimum_size = native
-            .minimum_size(&kind, style.minimum_size)
+        // Containers without a declared minimum follow their content instead.
+        style.minimum_size = style
+            .minimum_size
+            .map(|declared| native.minimum_size(&kind, declared))
+            .transpose()
+            .map_err(AppError::Ui)?;
+        style.content_size = native
+            .content_size(&kind, style.content_size)
             .map_err(AppError::Ui)?;
         let content = self.content_snapshots(id)?;
         let (children, hosted) = match kind {

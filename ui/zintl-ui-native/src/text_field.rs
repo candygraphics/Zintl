@@ -62,30 +62,34 @@ impl TextField {
             draws_background: false,
             ..Self::with_string(value)
         };
-        label.layout = LayoutStyle::leaf(label.label_size());
+        label.layout = LayoutStyle::leaf(Size::default());
+        label.resize_label();
         label
     }
 
     /// Estimates a label's size from its text and style.
     ///
-    /// Labels with a line limit can shrink to any width and truncate.
-    fn label_size(&self) -> Size {
+    /// Labels with a line limit prefer this size but can shrink to any width
+    /// and truncate; other labels need it.
+    fn resize_label(&mut self) {
         const STANDARD_SIZE: f64 = 13.0;
         let font_size = self.style.font.as_ref().map_or(STANDARD_SIZE, Font::size) as f32;
         let lines = self.style.line_limit.unwrap_or(1).max(1) as f32;
         let height = (font_size * 1.25 * lines + 4.0).ceil().max(20.0);
-        let width = match self.style.line_limit {
-            Some(_) => 0.0,
-            None => self.value.chars().count() as f32 * font_size * 0.54,
+        let width = self.value.chars().count() as f32 * font_size * 0.54;
+        let (minimum, content) = match self.style.line_limit {
+            Some(_) => (Size::new(0.0, height), Some(Size::new(width, height))),
+            None => (Size::new(width, height), None),
         };
-        Size::new(width, height)
+        self.layout.minimum_size = Some(minimum);
+        self.layout.content_size = content;
     }
 
     /// Re-estimates a label's size after its style changes.
     fn restyle(mut self, update: impl FnOnce(&mut TextStyle)) -> Self {
         update(&mut self.style);
         if !self.editable {
-            self.layout.minimum_size = self.label_size();
+            self.resize_label();
         }
         self
     }
@@ -157,7 +161,7 @@ impl TextField {
     }
 
     pub fn minimum_size(mut self, size: Size) -> Self {
-        self.layout.minimum_size = size;
+        self.layout.minimum_size = Some(size);
         self
     }
 }

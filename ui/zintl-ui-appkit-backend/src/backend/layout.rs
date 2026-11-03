@@ -24,10 +24,12 @@ impl LayoutNative for NativeNode {
             Self::ScrollView(scroll, state) => {
                 let (width, height) = scroll.content_size().map_err(AppError::Ui)?;
                 let (width, height) = (width as f32, height as f32);
+                // Content that scrolls sideways takes its own width, at least the visible one.
+                let fixed_width = (!state.horizontal.get()).then_some(width);
                 let size = HostLayout::place(
                     hosted,
                     0.0,
-                    Some(width),
+                    fixed_width,
                     None,
                     Size::new(width, height),
                     None,

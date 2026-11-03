@@ -49,6 +49,13 @@ impl View for MainView {
                         .menu(Menu::items([sample("A"), sample("B")])),
                     Separator::vertical(),
                     ProgressIndicator::spinning().id("spinner"),
+                    Button::new("Problem")
+                        .title_color(Color::rgba(0.9, 0.1, 0.1, 1.0))
+                        .id("colored-button"),
+                    Button::new("Plain").id("plain-button"),
+                    ColorWell::new()
+                        .color(Color::rgba(1.0, 0.0, 0.0, 1.0))
+                        .id("declared-color"),
                 ])
                 .spacing(8.0),
                 cx.watch(loaded, |loaded| Text::new(loaded.clone()).id("loaded")),

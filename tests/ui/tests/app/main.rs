@@ -8,6 +8,14 @@ use zintl_ui_desktop::{App, AppError};
 
 fn main() -> Result<(), AppError> {
     let options = LaunchOptions::read();
+    // Records panics, including those during process teardown that abort.
+    if let Some(path) = options.variable("ZINTL_UI_TEST_PANIC_MARKER") {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let _ = std::fs::write(&path, info.to_string());
+            previous(info);
+        }));
+    }
     let scenario = options
         .scenario
         .clone()
@@ -20,14 +28,17 @@ fn main() -> Result<(), AppError> {
         "document" => App::new(scenarios::document::MainView::new()).run()?,
         "store-sender" => App::new(scenarios::store_sender::MainView::new()).run()?,
         "table" => App::new(scenarios::table::MainView::new()).run()?,
+        "truncation" => App::new(scenarios::truncation::MainView).run()?,
         "text-commit" => App::new(scenarios::text_commit::MainView::new()).run()?,
         "text-field" => App::new(scenarios::text_field::MainView::new()).run()?,
         "hstack" => App::new(scenarios::hstack::MainView).run()?,
         "full-width-stack" => App::new(scenarios::full_width_stack::MainView).run()?,
         "full-size-sidebar" => App::new(scenarios::full_size_sidebar::MainView::default()).run()?,
+        "overflow" => App::new(scenarios::overflow::MainView).run()?,
         "perform-main" => App::new(scenarios::perform_main::MainView::new()).run()?,
         "scroll-status" => App::new(scenarios::scroll_status::MainView::default()).run()?,
         "window-close" => App::new(scenarios::window_close::MainView).run()?,
+        "wgpu-first-frame" => App::new(scenarios::wgpu_first_frame::MainView::new()).run()?,
         unknown => {
             eprintln!("unknown UI test scenario: {unknown}");
             std::process::exit(2);

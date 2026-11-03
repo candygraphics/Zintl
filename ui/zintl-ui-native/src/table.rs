@@ -115,7 +115,7 @@ impl Table {
     }
 
     pub fn minimum_size(mut self, size: Size) -> Self {
-        self.layout.minimum_size = size;
+        self.layout.minimum_size = Some(size);
         self
     }
 

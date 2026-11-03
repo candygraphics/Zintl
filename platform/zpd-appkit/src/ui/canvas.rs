@@ -545,13 +545,68 @@ unsafe extern "C" fn metal_set_frame_size(object: Id, selector: zpd_objc::Sel, s
     }
 }
 
+/// Posted when a window's occlusion state changes; the constant's value is its name.
+#[cfg(feature = "metal")]
+const OCCLUSION_CHANGED: &str = "NSWindowDidChangeOcclusionStateNotification";
+
+/// `NSWindowOcclusionStateVisible`.
+#[cfg(feature = "metal")]
+const OCCLUSION_VISIBLE: u64 = 1 << 1;
+
+/// Stops observing the window the view leaves.
+#[cfg(feature = "metal")]
+unsafe extern "C" fn metal_will_move_to_window(object: Id, selector: zpd_objc::Sel, window: Id) {
+    // SAFETY: NSView implements the overridden method; the receiver is a live view.
+    unsafe {
+        let old = zpd_objc::msg_send!(object, zpd_objc::sel!("window"), () => Id);
+        if !old.is_null() && old != window {
+            let name = native::nsstring(OCCLUSION_CHANGED);
+            let center = zpd_objc::msg_send!(zpd_objc::class!("NSNotificationCenter"), zpd_objc::sel!("defaultCenter"), () => Id);
+            zpd_objc::msg_send!(center, zpd_objc::sel!("removeObserver:name:object:"), ((object): Id, (name.as_ptr()): Id, (old): Id) => ());
+        }
+        zpd_objc::msg_send_super!(object, zpd_objc::class!("NSView"), selector, ((window): Id) => ());
+    }
+}
+
 /// Renders once the view joins a window, which provides its scale.
+///
+/// Metal skips frames while the window is not visible, as before it is first
+/// shown, so the view also renders whenever the window becomes visible.
 #[cfg(feature = "metal")]
 unsafe extern "C" fn metal_did_move_to_window(object: Id, selector: zpd_objc::Sel) {
     // SAFETY: NSView implements the overridden method; the receiver is a live view.
+    // The center does not retain the observer; the view stops observing before it
+    // leaves the window, and macOS drops deallocated observers.
     unsafe {
         zpd_objc::msg_send_super!(object, zpd_objc::class!("NSView"), selector, () => ());
-        if !zpd_objc::msg_send!(object, zpd_objc::sel!("window"), () => Id).is_null() {
+        let window = zpd_objc::msg_send!(object, zpd_objc::sel!("window"), () => Id);
+        if window.is_null() {
+            return;
+        }
+        let name = native::nsstring(OCCLUSION_CHANGED);
+        let center = zpd_objc::msg_send!(zpd_objc::class!("NSNotificationCenter"), zpd_objc::sel!("defaultCenter"), () => Id);
+        // Removing first keeps one registration when the view moves within the window.
+        zpd_objc::msg_send!(center, zpd_objc::sel!("removeObserver:name:object:"), ((object): Id, (name.as_ptr()): Id, (window): Id) => ());
+        zpd_objc::msg_send!(center, zpd_objc::sel!("addObserver:selector:name:object:"), ((object): Id, (zpd_objc::sel!("zpdWindowOcclusionChanged:")): zpd_objc::Sel, (name.as_ptr()): Id, (window): Id) => ());
+        zpd_objc::msg_send!(object, zpd_objc::sel!("setNeedsDisplay:"), ((true): bool) => ());
+    }
+}
+
+/// Renders again when the window becomes visible, replacing frames skipped while hidden.
+#[cfg(feature = "metal")]
+unsafe extern "C" fn metal_window_occlusion_changed(
+    object: Id,
+    _: zpd_objc::Sel,
+    _notification: Id,
+) {
+    // SAFETY: The receiver is a live Metal canvas view observing its own window.
+    unsafe {
+        let window = zpd_objc::msg_send!(object, zpd_objc::sel!("window"), () => Id);
+        if window.is_null() {
+            return;
+        }
+        let state = zpd_objc::msg_send!(window, zpd_objc::sel!("occlusionState"), () => u64);
+        if state & OCCLUSION_VISIBLE != 0 {
             zpd_objc::msg_send!(object, zpd_objc::sel!("setNeedsDisplay:"), ((true): bool) => ());
         }
     }
@@ -1110,7 +1165,9 @@ impl MetalCanvasView {
                     "makeBackingLayer": "@@:" => make_backing_layer,
                     "setNeedsDisplay:": "v@:B" => metal_set_needs_display,
                     "setFrameSize:": "v@:{CGSize=dd}" => metal_set_frame_size,
+                    "viewWillMoveToWindow:": "v@:@" => metal_will_move_to_window,
                     "viewDidMoveToWindow": "v@:" => metal_did_move_to_window,
+                    "zpdWindowOcclusionChanged:": "v@:@" => metal_window_occlusion_changed,
                     "zpdRenderMetal": "v@:" => metal_render,
                 }
             }) as usize

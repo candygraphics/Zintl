@@ -3,7 +3,7 @@ use std::rc::Rc;
 use zintl_ui::element::IntoElement;
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
-use zintl_ui_backend_core::ViewKind;
+use zintl_ui_backend_core::{Color, ViewKind};
 use zintl_ui_layout::{LayoutStyle, Size};
 
 use crate::attach::attachments;
@@ -32,6 +32,7 @@ pub struct Button {
     state_action: Option<Rc<StateAction>>,
     shows_menu: bool,
     keeps_state: bool,
+    title_color: Option<Color>,
 }
 
 impl Button {
@@ -52,6 +53,7 @@ impl Button {
             state_action: None,
             shows_menu: false,
             keeps_state: false,
+            title_color: None,
         }
     }
 
@@ -79,7 +81,7 @@ impl Button {
     }
 
     pub fn minimum_size(mut self, size: Size) -> Self {
-        self.layout.minimum_size = size;
+        self.layout.minimum_size = Some(size);
         self
     }
 
@@ -100,6 +102,12 @@ impl Button {
     }
 
     /// Shows an SF Symbol; an empty title shows the symbol alone.
+    /// Draws the title in `color` instead of the platform's color.
+    pub fn title_color(mut self, color: Color) -> Self {
+        self.title_color = Some(color);
+        self
+    }
+
     pub fn system_image(mut self, name: impl Into<String>) -> Self {
         self.system_image = Some(name.into());
         self
@@ -178,6 +186,7 @@ impl NativeView for Button {
                 destructive: self.role == ButtonRole::Destructive,
                 shows_menu: self.shows_menu,
                 keeps_state: self.keeps_state,
+                title_color: self.title_color,
             }),
             layout: self.layout,
             id: self.id.clone(),

@@ -373,6 +373,8 @@ int32_t zpd_winui3_control_get_bool(
     const zpd_winui3_element* control, int32_t property, bool* value);
 int32_t zpd_winui3_control_set_color(zpd_winui3_element* control, zpd_winui3_color value);
 int32_t zpd_winui3_control_get_color(const zpd_winui3_element* control, zpd_winui3_color* value);
+// Colors a control's text; a null value restores the theme's color.
+int32_t zpd_winui3_control_set_foreground(zpd_winui3_element* control, const zpd_winui3_color* value);
 /* Sets choices, segments, or tab titles. */
 int32_t zpd_winui3_control_set_items(
     zpd_winui3_element* control, const zpd_winui3_string* items, size_t length);

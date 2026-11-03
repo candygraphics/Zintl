@@ -84,6 +84,8 @@ pub(super) struct NativeNode {
     pub(super) host: Option<Rc<CanvasHost>>,
     /// The offset waits until layout has sized the scroll document.
     restore: Cell<Option<(f64, f64)>>,
+    /// Whether scroll content scrolls sideways, so it keeps its own width.
+    horizontal: Cell<bool>,
 }
 
 impl NativeNode {
@@ -185,6 +187,7 @@ impl NativeNode {
             route: route.clone(),
             host: host.clone(),
             restore: Cell::new(None),
+            horizontal: Cell::new(false),
         };
         native.apply(None, kind)?;
         let editor = matches!(kind, ViewKind::TextEditor { .. });
@@ -264,6 +267,23 @@ impl NativeNode {
                 }
                 if changed(|button| button.destructive) {
                     control.set_bool(BoolProperty::Destructive, button.destructive)?;
+                }
+                // The title color and the destructive red share the foreground; the color wins.
+                let recolor = old.is_none_or(|old| {
+                    old.title_color != button.title_color || old.destructive != button.destructive
+                });
+                match button.title_color {
+                    Some(color) if recolor => control.set_foreground(Some(zpd_winui3::Color {
+                        red: color.red,
+                        green: color.green,
+                        blue: color.blue,
+                        alpha: color.alpha,
+                    }))?,
+                    None if old.is_some_and(|old| old.title_color.is_some()) => {
+                        control.set_foreground(None)?;
+                        control.set_bool(BoolProperty::Destructive, button.destructive)?;
+                    }
+                    _ => {}
                 }
                 if button.button_type != ButtonType::MomentaryPushIn
                     && control.bool(BoolProperty::Checked)? != button.on
@@ -401,6 +421,7 @@ impl NativeNode {
             ViewKind::ScrollView { axes, offset, .. } => {
                 if !matches!(old, Some(ViewKind::ScrollView { axes: old, .. }) if old == axes) {
                     control.set_bool(BoolProperty::HorizontalScroll, axes.horizontal)?;
+                    self.horizontal.set(axes.horizontal);
                     control.set_bool(BoolProperty::VerticalScroll, axes.vertical)?;
                 }
                 // Later offsets echo the user's scrolling, so only a new view restores one.
@@ -445,10 +466,12 @@ impl LayoutNative for NativeNode {
         match self.control.kind() {
             ControlKind::ScrollViewer => {
                 let (width, height) = (frame.width, frame.height);
+                // Content that scrolls sideways takes its own width, at least the visible one.
+                let fixed_width = (!self.horizontal.get()).then_some(width);
                 let size = HostLayout::place(
                     hosted,
                     0.0,
-                    Some(width),
+                    fixed_width,
                     None,
                     Size::new(width, height),
                     None,

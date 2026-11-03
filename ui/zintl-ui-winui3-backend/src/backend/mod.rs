@@ -543,7 +543,10 @@ impl WinUI3Backend {
         else {
             return Err(AppError::InvalidTree);
         };
-        style.minimum_size = NativeNode::minimum_size(&kind, style.minimum_size);
+        // Containers without a declared minimum follow their content instead.
+        style.minimum_size = style
+            .minimum_size
+            .map(|declared| NativeNode::minimum_size(&kind, declared));
         let native = self
             .state(id)
             .native

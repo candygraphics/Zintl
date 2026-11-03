@@ -59,6 +59,8 @@ pub struct Button {
     pub shows_menu: bool,
     /// Clicks leave `on` as declared instead of toggling it, as for a selection.
     pub keeps_state: bool,
+    /// The title's color; `None` uses the platform's.
+    pub title_color: Option<Color>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -50,6 +50,31 @@ for Windows yet.
 
 The `wgpu` feature of the WinUI backend has not been compiled for Windows yet.
 
+Lessons from the AppKit backend:
+
+- Keep the shared `WgpuContext` in the backend, not in a thread-local, and
+  release it from the exit path. Dropping the last device while thread-locals
+  are destroyed aborted the AppKit app (`GpuSlot` in `backend/mod.rs`).
+- An `OnDemand` canvas must render its first frame without a resize. Metal
+  skips frames while the window is hidden, so the AppKit view renders again
+  when the window becomes visible; check whether the swap chain needs the same.
+
+## Layout, scrolling, and button colors on Windows
+
+These WinUI 3 changes were made on macOS and have not been compiled for
+Windows yet:
+
+- A `ScrollView` that scrolls horizontally measures its content at the
+  content's own width, at least the visible one (`layout_hosted` for
+  `ControlKind::ScrollViewer` in `backend/native.rs`).
+- `Button::title_color` sets the control's `Foreground` through
+  `zpd_winui3_control_set_foreground`. The color takes precedence over the
+  destructive red, which is restored when the color is removed.
+
+Line-limited labels prefer an estimated text width (`LayoutStyle::content_size`).
+The AppKit backend replaces it with the measured width; measure the
+`TextBlock` (`DesiredSize` after `Measure` with unbounded width) to do the same.
+
 ## Title bar interactive views on Windows
 
 `title_bar_interactive`, `Canvas2DHandler::title_bar_hit`, and the title bar

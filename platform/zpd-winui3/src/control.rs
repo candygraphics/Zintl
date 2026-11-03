@@ -263,6 +263,14 @@ impl Control {
         check(unsafe { ffi::zpd_winui3_control_set_color(self.raw(), color.native()) })
     }
 
+    /// Colors a control's text, or restores the theme's color for `None`.
+    pub fn set_foreground(&self, color: Option<Color>) -> Result<()> {
+        let color = color.map(Color::native);
+        let value = color.as_ref().map_or(std::ptr::null(), std::ptr::from_ref);
+        // SAFETY: The control is live on the UI thread; `value` is null or outlives the call.
+        check(unsafe { ffi::zpd_winui3_control_set_foreground(self.raw(), value) })
+    }
+
     pub fn color(&self) -> Result<Color> {
         let mut value = ffi::Color::default();
         // SAFETY: The control is live and `value` outlives the call.

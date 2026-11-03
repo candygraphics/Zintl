@@ -293,6 +293,12 @@ impl Button {
         self
     }
 
+    /// Draws the title in `color` instead of the platform's color.
+    pub fn title_color(mut self, color: Color) -> Self {
+        self.inner = self.inner.title_color(color);
+        self
+    }
+
     /// Shows an SF Symbol; an empty title shows the symbol alone.
     pub fn system_image(mut self, name: impl Into<String>) -> Self {
         self.inner = self.inner.system_image(name);
@@ -519,7 +525,7 @@ macro_rules! stack {
             }
 
             pub fn minimum_size(mut self, size: Size) -> Self {
-                self.stack.layout.minimum_size = size;
+                self.stack.layout.minimum_size = Some(size);
                 self
             }
 
@@ -835,7 +841,7 @@ mod tests {
             panic!("expected a container, got {spacer:?}");
         };
         assert_eq!(layout.grow, 1.0);
-        assert_eq!(layout.minimum_size, Size::new(0.0, 0.0));
+        assert_eq!(layout.minimum_size, Some(Size::new(0.0, 0.0)));
     }
 
     #[test]
@@ -870,7 +876,8 @@ mod tests {
 
     #[test]
     fn text_style_reaches_the_render_node_and_sizes_the_label() {
-        // Verifies text style is forwarded, and a line limit lets the label shrink to any width.
+        // Verifies text style is forwarded, and a line limit lets the label shrink to any width
+        // while it still prefers its text's width.
         let text = App::new(
             Text::new("Groceries")
                 .font(Font::system(20.0).bold())
@@ -892,8 +899,14 @@ mod tests {
         assert_eq!(style.color, TextColor::Secondary);
         assert_eq!(style.alignment, TextAlignment::Center);
         assert_eq!(style.line_limit, Some(2));
-        assert_eq!(layout.minimum_size.width, 0.0);
-        assert!(layout.minimum_size.height >= 50.0);
+        let minimum = layout.minimum_size.expect("labels declare a minimum");
+        assert_eq!(minimum.width, 0.0);
+        assert!(minimum.height >= 50.0);
+        let content = layout
+            .content_size
+            .expect("line-limited labels prefer their text");
+        assert!(content.width > 50.0);
+        assert_eq!(content.height, minimum.height);
     }
 
     #[test]
@@ -986,10 +999,10 @@ mod tests {
             RenderNode::View {
                 kind: ViewKind::Button(zintl_ui_backend_core::Button { .. }),
                 layout: LayoutStyle {
-                    minimum_size: Size {
+                    minimum_size: Some(Size {
                         width: 80.0,
                         height: 32.0
-                    },
+                    }),
                     ..
                 },
                 ..
@@ -1000,10 +1013,10 @@ mod tests {
             RenderNode::View {
                 kind: ViewKind::TextField { .. },
                 layout: LayoutStyle {
-                    minimum_size: Size {
+                    minimum_size: Some(Size {
                         width: 160.0,
                         height: 28.0
-                    },
+                    }),
                     ..
                 },
                 ..

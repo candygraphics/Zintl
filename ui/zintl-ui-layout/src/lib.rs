@@ -95,7 +95,14 @@ pub struct GridCell {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LayoutStyle {
-    pub minimum_size: Size,
+    /// The smallest size along each axis; `None` keeps containers at least as
+    /// large as their content's minimum, so they do not shrink until it overlaps.
+    pub minimum_size: Option<Size>,
+    /// The size a leaf's content prefers, such as a label's whole text.
+    ///
+    /// Rows and grid columns give the leaf this size when there is room, and
+    /// shrink it toward `minimum_size` when there is not. Containers ignore it.
+    pub content_size: Option<Size>,
     pub axis: Option<Axis>,
     pub gap: f32,
     pub width: LayoutDimension,
@@ -122,7 +129,8 @@ pub struct LayoutStyle {
 impl LayoutStyle {
     pub const fn leaf(minimum_size: Size) -> Self {
         Self {
-            minimum_size,
+            minimum_size: Some(minimum_size),
+            content_size: None,
             axis: None,
             gap: 0.0,
             width: LayoutDimension::Auto,
@@ -148,7 +156,8 @@ impl LayoutStyle {
 
     pub const fn stack(axis: Axis, gap: f32) -> Self {
         Self {
-            minimum_size: Size::new(0.0, 0.0),
+            minimum_size: None,
+            content_size: None,
             axis: Some(axis),
             gap,
             width: LayoutDimension::Auto,
@@ -190,7 +199,8 @@ impl From<taffy::TaffyError> for LayoutError {
 }
 
 pub struct LayoutTree {
-    tree: TaffyTree,
+    /// Leaves with a content size carry it as their context for measuring.
+    tree: TaffyTree<Size>,
     /// The axes along which each container has a child that takes free space.
     expansions: HashMap<TaffyNodeId, Expansion>,
 }
@@ -289,9 +299,14 @@ impl LayoutTree {
         // A declared size along an axis absorbs the children's demand for space there.
         expansion.horizontal &= style.width == LayoutDimension::Auto;
         expansion.vertical &= style.height == LayoutDimension::Auto;
-        let node = self
-            .tree
-            .new_with_children(to_taffy_style(style), &children)?;
+        let node = match style.content_size {
+            Some(content) if children.is_empty() => self
+                .tree
+                .new_leaf_with_context(to_taffy_style(style), content)?,
+            _ => self
+                .tree
+                .new_with_children(to_taffy_style(style), &children)?,
+        };
         self.expansions.insert(node, expansion);
         Ok(NodeId(node))
     }
@@ -323,6 +338,10 @@ impl LayoutTree {
         if inner.along(cross) && size_along(&style, cross).is_auto() {
             style.align_self = Some(AlignItems::STRETCH);
         }
+        // A declared size holds even when siblings need more room than there is.
+        if size_along(&style, axis).into_option().is_some() {
+            style.flex_shrink = 0.0;
+        }
         self.tree.set_style(child, style)?;
         let mut expansion = Expansion::default();
         expansion.set(axis, declared_grow || inner.along(axis));
@@ -339,14 +358,30 @@ impl LayoutTree {
     }
 
     pub fn compute(&mut self, root: NodeId, available: Size) -> Result<(), LayoutError> {
-        self.tree.compute_layout(
+        self.tree.compute_layout_with_measure(
             root.0,
             TaffySize {
                 width: AvailableSpace::Definite(available.width),
                 height: AvailableSpace::Definite(available.height),
             },
+            Self::measure,
         )?;
         Ok(())
+    }
+
+    /// Sizes a leaf to its content size, keeping any size layout already fixed.
+    fn measure(
+        known: TaffySize<Option<f32>>,
+        _available: TaffySize<AvailableSpace>,
+        _node: TaffyNodeId,
+        content: Option<&mut Size>,
+        _style: &TaffyStyle,
+    ) -> TaffySize<f32> {
+        let content = content.map_or(Size::default(), |content| *content);
+        TaffySize {
+            width: known.width.unwrap_or(content.width),
+            height: known.height.unwrap_or(content.height),
+        }
     }
 
     /// Computes a layout whose unspecified axes fit the content.
@@ -360,12 +395,13 @@ impl LayoutTree {
     ) -> Result<(), LayoutError> {
         let space =
             |value: Option<f32>| value.map_or(AvailableSpace::MaxContent, AvailableSpace::Definite);
-        self.tree.compute_layout(
+        self.tree.compute_layout_with_measure(
             root.0,
             TaffySize {
                 width: space(width),
                 height: space(height),
             },
+            Self::measure,
         )?;
         Ok(())
     }
@@ -423,9 +459,12 @@ fn to_taffy_style(style: LayoutStyle) -> TaffyStyle {
         },
         flex_grow: style.grow,
         padding: taffy::geometry::Rect::length(style.padding),
-        min_size: TaffySize {
-            width: TaffyDimension::length(style.minimum_size.width),
-            height: TaffyDimension::length(style.minimum_size.height),
+        min_size: match style.minimum_size {
+            Some(size) => TaffySize {
+                width: TaffyDimension::length(size.width),
+                height: TaffyDimension::length(size.height),
+            },
+            None => TaffySize::auto(),
         },
         flex_direction: match style.axis.unwrap_or(Axis::Horizontal) {
             Axis::Horizontal => FlexDirection::Row,
@@ -751,5 +790,99 @@ mod tests {
 
         assert_eq!(tree.layout(column).unwrap().height, 50.0);
         assert_eq!(tree.layout(table).unwrap().height, 50.0);
+    }
+
+    #[test]
+    fn grid_cell_stacks_keep_their_content_width_when_space_is_short() {
+        // Verifies a stack in a grid cell does not shrink below its children, which would overlap the next column.
+        let mut tree = LayoutTree::new();
+        let first = tree
+            .create_node(LayoutStyle::leaf(Size::new(120.0, 22.0)), &[])
+            .unwrap();
+        let second = tree
+            .create_node(LayoutStyle::leaf(Size::new(120.0, 22.0)), &[])
+            .unwrap();
+        let cell = tree
+            .create_node(LayoutStyle::stack(Axis::Horizontal, 4.0), &[first, second])
+            .unwrap();
+        let after = tree
+            .create_node(LayoutStyle::leaf(Size::new(60.0, 20.0)), &[])
+            .unwrap();
+        let mut grid_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        grid_style.arrangement = Arrangement::Grid { columns: 2 };
+        let grid = tree.create_node(grid_style, &[cell, after]).unwrap();
+        let mut root_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        root_style.width = LayoutDimension::Points(200.0);
+        root_style.cross_axis_alignment = CrossAxisAlignment::Start;
+        let root = tree.create_node(root_style, &[grid]).unwrap();
+
+        tree.compute_fitting(root, Some(200.0), None).unwrap();
+
+        assert_eq!(tree.layout(cell).unwrap().width, 244.0);
+        assert_eq!(tree.layout(after).unwrap().x, 244.0);
+    }
+
+    #[test]
+    fn declared_sizes_do_not_shrink_for_wide_siblings() {
+        // Verifies a child with a declared width keeps it although its siblings overflow the row.
+        let mut tree = LayoutTree::new();
+        let mut pane_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        pane_style.width = LayoutDimension::Points(200.0);
+        let pane = tree.create_node(pane_style, &[]).unwrap();
+        let wide = tree
+            .create_node(LayoutStyle::leaf(Size::new(400.0, 20.0)), &[])
+            .unwrap();
+        let mut row_style = LayoutStyle::stack(Axis::Horizontal, 0.0);
+        row_style.width = LayoutDimension::Points(300.0);
+        let row = tree.create_node(row_style, &[pane, wide]).unwrap();
+
+        tree.compute(row, Size::new(300.0, 100.0)).unwrap();
+
+        assert_eq!(tree.layout(pane).unwrap().width, 200.0);
+    }
+
+    #[test]
+    fn explicit_zero_minimum_lets_stacks_shrink() {
+        // Verifies a stack with a declared zero minimum may still shrink below its content.
+        let mut tree = LayoutTree::new();
+        let content = tree
+            .create_node(LayoutStyle::leaf(Size::new(300.0, 20.0)), &[])
+            .unwrap();
+        let mut stack_style = LayoutStyle::stack(Axis::Horizontal, 0.0);
+        stack_style.minimum_size = Some(Size::new(0.0, 0.0));
+        let stack = tree.create_node(stack_style, &[content]).unwrap();
+        let mut row_style = LayoutStyle::stack(Axis::Horizontal, 0.0);
+        row_style.width = LayoutDimension::Points(100.0);
+        let row = tree.create_node(row_style, &[stack]).unwrap();
+
+        tree.compute(row, Size::new(100.0, 100.0)).unwrap();
+
+        assert_eq!(tree.layout(stack).unwrap().width, 100.0);
+    }
+
+    #[test]
+    fn content_sized_leaves_take_their_content_and_shrink_when_short() {
+        // Verifies a leaf with a content size keeps it when it fits and shrinks toward its minimum when it does not.
+        for (row_width, expected) in [(400.0, 200.0), (150.0, 70.0)] {
+            let mut tree = LayoutTree::new();
+            let mut label_style = LayoutStyle::leaf(Size::new(0.0, 20.0));
+            label_style.content_size = Some(Size::new(200.0, 20.0));
+            let label = tree.create_node(label_style, &[]).unwrap();
+            let button = tree
+                .create_node(LayoutStyle::leaf(Size::new(80.0, 20.0)), &[])
+                .unwrap();
+            let mut row_style = LayoutStyle::stack(Axis::Horizontal, 0.0);
+            row_style.width = LayoutDimension::Points(row_width);
+            let row = tree.create_node(row_style, &[label, button]).unwrap();
+
+            tree.compute(row, Size::new(row_width, 100.0)).unwrap();
+
+            assert_eq!(
+                tree.layout(label).unwrap().width,
+                expected,
+                "row {row_width}"
+            );
+            assert_eq!(tree.layout(button).unwrap().width, 80.0, "row {row_width}");
+        }
     }
 }
