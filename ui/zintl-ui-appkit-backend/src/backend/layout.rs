@@ -2,6 +2,7 @@ use zintl_ui_layout::{LayoutDimension, Rect as LayoutRect, Size};
 
 use super::AppError;
 use super::native::NativeNode;
+use crate::convert::Native;
 use zintl_ui_backend_core::layout::{HostLayout, LayoutNative, LayoutSnapshot};
 use zpd_appkit::geometry::Rect;
 
@@ -20,7 +21,7 @@ impl LayoutNative for NativeNode {
         hosted: &[LayoutSnapshot<Self>],
     ) -> Result<(), AppError> {
         match self {
-            Self::ScrollView(scroll, restore) => {
+            Self::ScrollView(scroll, state) => {
                 let (width, height) = scroll.content_size().map_err(AppError::Ui)?;
                 let (width, height) = (width as f32, height as f32);
                 let size = HostLayout::place(
@@ -34,8 +35,14 @@ impl LayoutNative for NativeNode {
                 scroll
                     .set_document_size(size.width.max(width) as f64, size.height.max(height) as f64)
                     .map_err(AppError::Ui)?;
-                if let Some((x, y)) = restore.take() {
+                if let Some((x, y)) = state.restore.take() {
                     scroll.scroll_to(x, y).map_err(AppError::Ui)?;
+                }
+                // Nested views are placed with the document, so the target can be found now.
+                if let Some(target) = state.reveal.take() {
+                    scroll
+                        .reveal(&target.id, target.alignment.native())
+                        .map_err(AppError::Ui)?;
                 }
             }
             Self::TabView(tabs) => {

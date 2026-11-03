@@ -3,11 +3,12 @@
 use std::error::Error;
 use std::fmt;
 
-use taffy::geometry::Size as TaffySize;
+use taffy::geometry::{Line, Size as TaffySize};
 use taffy::style::{
-    AlignItems, Dimension as TaffyDimension, Display, FlexDirection, JustifyContent,
+    AlignItems, Dimension as TaffyDimension, Display, FlexDirection, GridPlacement, JustifyContent,
     LengthPercentage, Style as TaffyStyle,
 };
+use taffy::style_helpers::{auto, fr, line, repeat, span};
 use taffy::{AvailableSpace, NodeId as TaffyNodeId, TaffyTree};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -67,6 +68,29 @@ pub enum CrossAxisAlignment {
     Stretch,
 }
 
+/// How a container places its children.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Arrangement {
+    /// Along [`LayoutStyle::axis`].
+    #[default]
+    Flex,
+    /// On top of each other, later children above; the largest child sets the size.
+    Overlay,
+    /// Row by row into `columns` columns, each as wide as its widest child.
+    Grid { columns: u16 },
+}
+
+/// A child's cell in a [`Arrangement::Grid`] parent, counted from zero.
+///
+/// Children without one fill the cells in order, skipping none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GridCell {
+    pub row: u16,
+    pub column: u16,
+    /// Columns covered from `column`; `0` covers the rest of the row.
+    pub column_span: u16,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LayoutStyle {
     pub minimum_size: Size,
@@ -85,6 +109,9 @@ pub struct LayoutStyle {
     ///
     /// Only top-level views read this; nested views follow their parent.
     pub ignores_safe_area: bool,
+    pub arrangement: Arrangement,
+    /// This node's cell when its parent is a grid.
+    pub grid_cell: Option<GridCell>,
 }
 
 impl LayoutStyle {
@@ -101,6 +128,8 @@ impl LayoutStyle {
             child_sizing: ChildSizing::Intrinsic,
             cross_axis_alignment: CrossAxisAlignment::Stretch,
             ignores_safe_area: false,
+            arrangement: Arrangement::Flex,
+            grid_cell: None,
         }
     }
 
@@ -125,6 +154,8 @@ impl LayoutStyle {
             child_sizing: ChildSizing::Intrinsic,
             cross_axis_alignment: CrossAxisAlignment::Stretch,
             ignores_safe_area: false,
+            arrangement: Arrangement::Flex,
+            grid_cell: None,
         }
     }
 }
@@ -176,6 +207,31 @@ impl LayoutTree {
         children: &[NodeId],
     ) -> Result<NodeId, LayoutError> {
         let children: Vec<_> = children.iter().map(|child| child.0).collect();
+        match style.arrangement {
+            Arrangement::Flex => {}
+            Arrangement::Overlay => {
+                for child in &children {
+                    let mut child_style = self.tree.style(*child)?.clone();
+                    child_style.grid_row = Self::cell_line(0, 1);
+                    child_style.grid_column = Self::cell_line(0, 1);
+                    self.tree.set_style(*child, child_style)?;
+                }
+            }
+            Arrangement::Grid { columns } => {
+                let columns = columns.max(1);
+                let mut next = 0_u16;
+                for child in &children {
+                    let mut child_style = self.tree.style(*child)?.clone();
+                    // Declared cells come from `to_taffy_style`; the rest follow in order.
+                    if child_style.grid_row.start == GridPlacement::Auto {
+                        child_style.grid_row = Self::cell_line(next / columns, 1);
+                        child_style.grid_column = Self::cell_line(next % columns, 1);
+                        next += 1;
+                    }
+                    self.tree.set_style(*child, child_style)?;
+                }
+            }
+        }
         if style.child_sizing == ChildSizing::Equal {
             for child in &children {
                 let mut child_style = self.tree.style(*child)?.clone();
@@ -188,6 +244,14 @@ impl LayoutTree {
             self.tree
                 .new_with_children(to_taffy_style(style), &children)?,
         ))
+    }
+
+    /// Returns the grid lines covering `span` tracks from track `index`.
+    fn cell_line(index: u16, span_count: u16) -> Line<GridPlacement> {
+        Line {
+            start: line(index as i16 + 1),
+            end: span(span_count),
+        }
     }
 
     pub fn compute(&mut self, root: NodeId, available: Size) -> Result<(), LayoutError> {
@@ -240,8 +304,35 @@ fn to_taffy_style(style: LayoutStyle) -> TaffyStyle {
         LayoutDimension::Points(points) => TaffyDimension::length(points),
         LayoutDimension::Percent(percent) => TaffyDimension::percent(percent),
     };
+    let (display, grid_template_columns, grid_template_rows) = match style.arrangement {
+        Arrangement::Flex => (Display::Flex, Vec::new(), Vec::new()),
+        Arrangement::Overlay => (Display::Grid, vec![fr(1.0_f32)], vec![fr(1.0_f32)]),
+        Arrangement::Grid { columns } => (
+            Display::Grid,
+            vec![repeat(columns.max(1), vec![auto()])],
+            Vec::new(),
+        ),
+    };
+    let (grid_row, grid_column) = match style.grid_cell {
+        Some(cell) => (
+            LayoutTree::cell_line(cell.row, 1),
+            Line {
+                start: line(cell.column as i16 + 1),
+                end: if cell.column_span == 0 {
+                    line(-1)
+                } else {
+                    span(cell.column_span)
+                },
+            },
+        ),
+        None => (Line::default(), Line::default()),
+    };
     TaffyStyle {
-        display: Display::Flex,
+        display,
+        grid_template_columns,
+        grid_template_rows,
+        grid_row,
+        grid_column,
         size: TaffySize {
             width: dimension(style.width),
             height: dimension(style.height),
@@ -460,5 +551,66 @@ mod tests {
 
         assert!(tree.layout(first).unwrap().width >= 80.0);
         assert!(tree.layout(second).unwrap().width >= 160.0);
+    }
+
+    #[test]
+    fn overlay_stacks_children_in_one_cell_sized_by_the_largest() {
+        // Verifies overlay children share the origin and stretch to the largest child's size.
+        let mut tree = LayoutTree::new();
+        let base = tree
+            .create_node(LayoutStyle::leaf(Size::new(120.0, 80.0)), &[])
+            .unwrap();
+        let badge = tree
+            .create_node(LayoutStyle::leaf(Size::new(30.0, 20.0)), &[])
+            .unwrap();
+        let mut style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        style.arrangement = Arrangement::Overlay;
+        let root = tree.create_node(style, &[base, badge]).unwrap();
+
+        tree.compute_fitting(root, None, None).unwrap();
+
+        assert_eq!(tree.layout(root).unwrap().width, 120.0);
+        assert_eq!(tree.layout(root).unwrap().height, 80.0);
+        let badge = tree.layout(badge).unwrap();
+        assert_eq!((badge.x, badge.y, badge.width), (0.0, 0.0, 120.0));
+    }
+
+    #[test]
+    fn grid_columns_fit_their_widest_cell_and_rows_follow_in_order() {
+        // Verifies cells fill rows in order and each column takes its widest cell, with declared cells kept.
+        let mut tree = LayoutTree::new();
+        let cell = |tree: &mut LayoutTree, width| {
+            tree.create_node(LayoutStyle::leaf(Size::new(width, 20.0)), &[])
+                .unwrap()
+        };
+        let cells = [
+            cell(&mut tree, 40.0),
+            cell(&mut tree, 10.0),
+            cell(&mut tree, 15.0),
+            cell(&mut tree, 60.0),
+        ];
+        let mut stripe = LayoutStyle::leaf(Size::new(0.0, 0.0));
+        stripe.grid_cell = Some(GridCell {
+            row: 1,
+            column: 0,
+            column_span: 0,
+        });
+        let stripe = tree.create_node(stripe, &[]).unwrap();
+        let mut style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        style.arrangement = Arrangement::Grid { columns: 2 };
+        style.gap = 4.0;
+        let mut children = vec![stripe];
+        children.extend(cells);
+        let root = tree.create_node(style, &children).unwrap();
+
+        tree.compute_fitting(root, None, None).unwrap();
+
+        let frame = |node| tree.layout(node).unwrap();
+        assert_eq!((frame(cells[1]).x, frame(cells[1]).y), (44.0, 0.0));
+        assert_eq!((frame(cells[2]).x, frame(cells[2]).y), (0.0, 24.0));
+        assert_eq!(frame(cells[3]).x, 44.0);
+        assert_eq!(frame(root).width, 104.0);
+        let stripe = frame(stripe);
+        assert_eq!((stripe.x, stripe.y, stripe.width), (0.0, 24.0, 104.0));
     }
 }

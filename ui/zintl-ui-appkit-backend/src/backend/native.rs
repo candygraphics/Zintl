@@ -22,6 +22,15 @@ use super::wgpu::WgpuBridge;
 use crate::convert::{Native, Shared};
 use crate::{ButtonType, MainTaskSender, ViewKind};
 
+/// Scrolling that waits for a scroll view's next layout.
+#[derive(Default)]
+pub(super) struct ScrollState {
+    /// The document point to restore once, after the view is created.
+    pub(super) restore: Cell<Option<(f64, f64)>>,
+    /// The descendant to scroll into view.
+    pub(super) reveal: RefCell<Option<crate::ScrollTarget>>,
+}
+
 /// A native view created for a [`ViewKind`].
 pub(super) enum NativeNode {
     Container(View),
@@ -39,7 +48,7 @@ pub(super) enum NativeNode {
     SearchField(SearchField),
     ColorWell(ColorWell),
     /// The offset waits until layout has sized the document.
-    ScrollView(ScrollView, Cell<Option<(f64, f64)>>),
+    ScrollView(ScrollView, ScrollState),
     TabView(TabView),
     Canvas(CanvasView),
     #[cfg(feature = "wgpu")]
@@ -116,7 +125,7 @@ impl NativeNode {
             ViewKind::SearchField { .. } => Self::SearchField(SearchField::new(application)?),
             ViewKind::ColorWell { .. } => Self::ColorWell(ColorWell::new(application)?),
             ViewKind::ScrollView { .. } => {
-                Self::ScrollView(ScrollView::new(application)?, Cell::new(None))
+                Self::ScrollView(ScrollView::new(application)?, ScrollState::default())
             }
             ViewKind::TabView { .. } => Self::TabView(TabView::new(application)?),
             ViewKind::List { .. } => Self::List(
@@ -442,13 +451,24 @@ impl NativeNode {
                     well.set_color(color.native())?;
                 }
             }
-            (Self::ScrollView(scroll, restore), ViewKind::ScrollView { axes, offset }) => {
+            (
+                Self::ScrollView(scroll, state),
+                ViewKind::ScrollView {
+                    axes,
+                    offset,
+                    reveal,
+                },
+            ) => {
                 if !matches!(old, Some(ViewKind::ScrollView { axes: old, .. }) if old == axes) {
                     scroll.set_axes(axes.native())?;
                 }
                 // Later offsets echo the user's scrolling, so only a new view restores one.
                 if old.is_none() {
-                    restore.set(*offset);
+                    state.restore.set(*offset);
+                }
+                // The target scrolls into view once layout has placed it.
+                if !matches!(old, Some(ViewKind::ScrollView { reveal: old, .. }) if old == reveal) {
+                    state.reveal.replace(reveal.clone());
                 }
             }
             (Self::TabView(tabs), ViewKind::TabView { selected, .. }) => {

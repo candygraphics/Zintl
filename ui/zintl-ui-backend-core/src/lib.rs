@@ -27,9 +27,9 @@ pub use headless::HeadlessBackend;
 pub use model::{
     AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, CommandItem,
     CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig, FileDialogMode,
-    ListSection, ListStyle, MenuRole, NumberFormat, PopoverEdge, ScrollAxes, Sidebar, SidebarItem,
-    SidebarSearch, SidebarSection, TextAlignment, TextColor, TextStyle, TitleBar, Toolbar,
-    ToolbarItem, WindowAppMenu, WindowStyle,
+    ListSection, ListStyle, MenuRole, NumberFormat, PopoverEdge, ScrollAlignment, ScrollAxes,
+    ScrollTarget, Sidebar, SidebarItem, SidebarSearch, SidebarSection, TextAlignment, TextColor,
+    TextStyle, TitleBar, Toolbar, ToolbarItem, WindowAppMenu, WindowStyle,
 };
 pub use signal::Signal;
 #[cfg(feature = "wgpu")]
@@ -129,6 +129,8 @@ pub enum ViewKind {
         axes: ScrollAxes,
         /// The `(x, y)` document point restored at the top-left once the view is created.
         offset: Option<(f64, f64)>,
+        /// Scrolls to this descendant whenever it changes.
+        reveal: Option<ScrollTarget>,
     },
     /// Each child is the page for the title at the same index.
     TabView {

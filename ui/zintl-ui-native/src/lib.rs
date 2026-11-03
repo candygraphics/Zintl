@@ -47,8 +47,8 @@ pub use zintl_ui_backend_core::{
     CanvasNode, CanvasSetup, Color, Cursor, DocumentState, Event, EventKind, Frame, GesturePhase,
     Invalidator, Key, KeyEvent, KeyPhase, ListStyle, MagnifyEvent, Modifiers, NamedKey, NodeId,
     PointerButton, PointerEvent, PointerPhase, PopoverEdge, Rect, Redraw, RedrawPolicy, RenderNode,
-    ScrollAxes, ScrollEvent, Signal, StoreSender, TextAlignment, TextColor, TextStyle, TitleBar,
-    UndoState, ViewKind, WindowStyle, graphics,
+    ScrollAlignment, ScrollAxes, ScrollEvent, ScrollTarget, Signal, StoreSender, TextAlignment,
+    TextColor, TextStyle, TitleBar, UndoState, ViewKind, WindowStyle, graphics,
 };
 #[cfg(feature = "wgpu")]
 pub use zintl_ui_backend_core::{

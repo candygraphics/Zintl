@@ -291,6 +291,24 @@ pub enum PopoverEdge {
     Bottom,
 }
 
+/// Where a revealed child sits in a scroll view's visible area.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ScrollAlignment {
+    /// Scrolls only as far as needed to show the whole child.
+    #[default]
+    Nearest,
+    Start,
+    Center,
+    End,
+}
+
+/// The child a scroll view keeps in view, by its view ID.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScrollTarget {
+    pub id: String,
+    pub alignment: ScrollAlignment,
+}
+
 /// Directions in which a scroll view scrolls.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScrollAxes {

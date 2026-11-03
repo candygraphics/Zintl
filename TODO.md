@@ -146,3 +146,10 @@ ignores `Button::shows_menu` and `Button::keeps_state`. Set
 `ToolTipService.ToolTip`, use a `ProgressRing` (spinning) or `ProgressBar`, draw
 the separator as a 1-pixel `Rectangle`, attach the context menu as a
 `Button.Flyout`, and restore a kept toggle state after each click.
+
+## Scrolling to a child on Windows
+
+`ViewKind::ScrollView::reveal` is ignored by the WinUI 3 backend. After layout,
+find the descendant whose `AutomationProperties.AutomationId` matches the target
+ID and call `ScrollViewer.ChangeView` (or `UIElement.StartBringIntoView` with
+the alignment as `BringIntoViewOptions`).

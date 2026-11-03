@@ -1524,3 +1524,99 @@ fn indicators_describe_their_kinds() {
         }
     ));
 }
+
+#[test]
+fn zstack_and_grid_declare_their_arrangements() {
+    // Verifies ZStack overlays its children and a striped Grid adds one stripe per shaded row before its cells.
+    let zstack = App::new(ZStack::new(list![
+        Text::new("Scene"),
+        Text::new("Updating")
+    ]));
+    assert!(matches!(
+        zstack.render(),
+        RenderNode::View {
+            layout: LayoutStyle {
+                arrangement: zintl_ui_layout::Arrangement::Overlay,
+                ..
+            },
+            ..
+        }
+    ));
+
+    let cells = (0..6)
+        .map(|index| ElementFactory::new(Text::new(index.to_string())))
+        .collect::<Vec<_>>();
+    // Six cells in two columns make three rows; only the middle one is shaded.
+    let grid = App::new(Grid::new(2, cells).striped(true)).render_tree();
+    assert!(matches!(
+        grid.value,
+        RenderNode::View {
+            layout: LayoutStyle {
+                arrangement: zintl_ui_layout::Arrangement::Grid { columns: 2 },
+                ..
+            },
+            ..
+        }
+    ));
+    assert_eq!(grid.children.len(), 7);
+    assert!(matches!(
+        grid.children[0].value,
+        RenderNode::View {
+            layout: LayoutStyle {
+                grid_cell: Some(zintl_ui_layout::GridCell {
+                    row: 1,
+                    column: 0,
+                    column_span: 0
+                }),
+                ..
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn disclosure_group_shows_content_only_while_expanded() {
+    // Verifies the disclosure button's state writes the bound Store and the content follows it.
+    let (mut app, expanded) = Harness::mount(
+        |cx| cx.store(false),
+        |expanded| DisclosureGroup::new("Line settings", Text::new("Details")).bind(expanded),
+    );
+    assert_eq!(app.render_tree().children.len(), 1);
+
+    // The disclosure button is the first child of the header row.
+    app.dispatch_at(&[0, 0, 0], Event::StateChanged { on: true });
+    assert!(app.get(expanded));
+    assert_eq!(app.render_tree().children.len(), 2);
+}
+
+#[test]
+fn scroll_view_reveals_the_target_row() {
+    // Verifies the target Store becomes the scroll view's reveal request with its alignment.
+    let (mut app, target) = Harness::mount(
+        |cx| cx.store(None::<String>),
+        |target| {
+            ScrollView::new(VStack::new(list![Text::new("Row").id("row-1")]))
+                .scroll_to(target, ScrollAlignment::Center)
+        },
+    );
+    assert!(matches!(
+        app.render(),
+        RenderNode::View {
+            kind: ViewKind::ScrollView { reveal: None, .. },
+            ..
+        }
+    ));
+
+    app.set(target, Some("row-1".to_owned()));
+    assert!(matches!(
+        app.render(),
+        RenderNode::View {
+            kind: ViewKind::ScrollView {
+                reveal: Some(zintl_ui_native::ScrollTarget { id, alignment: ScrollAlignment::Center }),
+                ..
+            },
+            ..
+        } if id == "row-1"
+    ));
+}

@@ -49,7 +49,7 @@ pub use list_view::{ListEntry, ListStyle, ListView};
 pub use menu::ContextMenu;
 pub use popover::{Popover, PopoverEdge};
 pub use rich_text::{RichParagraph, RichRun, RichStyle};
-pub use scroll_view::{ScrollAxes, ScrollView};
+pub use scroll_view::{ScrollAlignment, ScrollAxes, ScrollView};
 pub use sidebar::{Sidebar, SidebarItem, SidebarSearch, SidebarSection};
 pub use tab_view::TabView;
 pub use text_editor::TextEditor;

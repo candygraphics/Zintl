@@ -3,7 +3,7 @@ use std::rc::Rc;
 use zintl_ui::element::{ElementFactory, IntoElement};
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
-use zintl_ui_backend_core::ViewKind;
+use zintl_ui_backend_core::{ScrollAlignment, ScrollTarget, ViewKind};
 use zintl_ui_layout::{Axis, LayoutDimension, LayoutStyle, Size};
 
 use crate::attach::attachments;
@@ -20,6 +20,7 @@ pub struct ScrollView {
     content: ElementFactory<RenderNode>,
     axes: ScrollAxes,
     store: Option<Store<ScrollStatus>>,
+    target: Option<(Store<Option<String>>, ScrollAlignment)>,
     layout: LayoutStyle,
     id: Option<String>,
     attachments: Attachments,
@@ -34,6 +35,7 @@ impl ScrollView {
             content: ElementFactory::new(content),
             axes: ScrollAxes::VERTICAL,
             store: None,
+            target: None,
             layout: LayoutStyle::fill(Size::new(80.0, 80.0)),
             id: None,
             attachments: Attachments::default(),
@@ -48,6 +50,14 @@ impl ScrollView {
     /// Saves the scroll position and restores it when the view is created again.
     pub fn bind(mut self, store: Store<ScrollStatus>) -> Self {
         self.store = Some(store);
+        self
+    }
+
+    /// Scrolls the descendant with the view ID in `target` into view whenever it changes.
+    ///
+    /// Give the rows IDs with their `id` builders, such as the row of a selected item.
+    pub fn scroll_to(mut self, target: Store<Option<String>>, alignment: ScrollAlignment) -> Self {
+        self.target = Some((target, alignment));
         self
     }
 
@@ -79,6 +89,12 @@ impl NativeView for ScrollView {
                 offset: self.store.map(|store| {
                     let status = *cx.get(store);
                     (status.x, status.y)
+                }),
+                reveal: self.target.and_then(|(target, alignment)| {
+                    Some(ScrollTarget {
+                        id: cx.get(target).clone()?,
+                        alignment,
+                    })
                 }),
             },
             layout: self.layout,

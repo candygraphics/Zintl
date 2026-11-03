@@ -14,6 +14,7 @@ fn main() -> Result<(), AppError> {
         .unwrap_or_else(|| "text-field".to_owned());
 
     match scenario.as_str() {
+        "arrangements" => App::new(scenarios::arrangements::MainView::new()).run()?,
         "canvas-action" => App::new(scenarios::canvas_action::MainView::new()).run()?,
         "controls" => App::new(scenarios::controls::MainView::new()).run()?,
         "document" => App::new(scenarios::document::MainView::new()).run()?,

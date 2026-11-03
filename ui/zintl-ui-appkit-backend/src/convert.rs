@@ -209,6 +209,19 @@ impl Shared for ui::NamedKey {
     }
 }
 
+impl Native for core::ScrollAlignment {
+    type Output = ui::ScrollAlignment;
+
+    fn native(&self) -> ui::ScrollAlignment {
+        match self {
+            Self::Nearest => ui::ScrollAlignment::Nearest,
+            Self::Start => ui::ScrollAlignment::Start,
+            Self::Center => ui::ScrollAlignment::Center,
+            Self::End => ui::ScrollAlignment::End,
+        }
+    }
+}
+
 impl Native for core::UndoState {
     type Output = ui::UndoState;
 

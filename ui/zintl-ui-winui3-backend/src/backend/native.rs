@@ -387,7 +387,7 @@ impl NativeNode {
                     })?;
                 }
             }
-            ViewKind::ScrollView { axes, offset } => {
+            ViewKind::ScrollView { axes, offset, .. } => {
                 if !matches!(old, Some(ViewKind::ScrollView { axes: old, .. }) if old == axes) {
                     control.set_bool(BoolProperty::HorizontalScroll, axes.horizontal)?;
                     control.set_bool(BoolProperty::VerticalScroll, axes.vertical)?;

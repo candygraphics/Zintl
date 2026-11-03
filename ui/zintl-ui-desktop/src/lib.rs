@@ -11,9 +11,11 @@ macro_rules! native_view {
     )*};
 }
 
+mod arrangements;
 mod controls;
 mod split_view;
 
+pub use arrangements::{DisclosureGroup, Grid, ZStack};
 pub use controls::{
     ColorWell, ComboBox, NumberField, Picker, PickerStyle, ScrollView, SearchField, Slider, Tab,
     TabView, Toggle, ToggleStyle,
@@ -41,17 +43,19 @@ pub use zintl_ui_native::{
     JapaneseMenuLocalizer, Key, KeyEvent, KeyPhase, List, ListFactory, ListRow, ListSection,
     ListStyle, MagnifyEvent, MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, Modifiers,
     NamedKey, NativeView, PointerButton, PointerEvent, PointerPhase, Popover, PopoverEdge,
-    ProgressIndicator, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent,
-    ScrollStatus, Separator, Shortcut, Sidebar, SidebarItem, SidebarSection, StandardAction,
-    StandardMenu, StandardText, StoreSender, TextAlignment, TextColor, TextEditor, TitleBar,
-    Toolbar, ToolbarItem, UndoHandler, ViewKind, graphics, list,
+    ProgressIndicator, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAlignment, ScrollAxes,
+    ScrollEvent, ScrollStatus, Separator, Shortcut, Sidebar, SidebarItem, SidebarSection,
+    StandardAction, StandardMenu, StandardText, StoreSender, TextAlignment, TextColor, TextEditor,
+    TitleBar, Toolbar, ToolbarItem, UndoHandler, ViewKind, graphics, list,
 };
 #[cfg(feature = "wgpu")]
 pub use zintl_ui_native::{
     WgpuCanvas, WgpuCanvasHandler, WgpuContext, WgpuError, WgpuSetup, WgpuTarget, wgpu,
 };
 
-native_view!(Text, Button, TextField, HStack, VStack, Spacer);
+native_view!(
+    Text, Button, TextField, HStack, VStack, Spacer, ZStack, Grid
+);
 
 #[derive(Clone)]
 pub struct Window {

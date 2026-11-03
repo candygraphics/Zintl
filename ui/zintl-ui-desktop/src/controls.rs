@@ -8,7 +8,9 @@ use zintl_ui::view::View;
 use zintl_ui_layout::{Axis, LayoutStyle, Size};
 use zintl_ui_native::NativeView;
 
-use crate::{Attachments, Color, Context, ListFactory, RenderNode, ScrollAxes, ScrollStatus};
+use crate::{
+    Attachments, Color, Context, ListFactory, RenderNode, ScrollAlignment, ScrollAxes, ScrollStatus,
+};
 
 type Change<T> = dyn for<'a> Fn(&mut Context<'a>, T);
 
@@ -605,6 +607,12 @@ impl ScrollView {
     /// Uses a fixed height instead of filling the remaining space.
     pub fn height(mut self, height: f32) -> Self {
         self.inner = self.inner.height(height);
+        self
+    }
+
+    /// Scrolls the descendant with the view ID in `target` into view whenever it changes.
+    pub fn scroll_to(mut self, target: Store<Option<String>>, alignment: ScrollAlignment) -> Self {
+        self.inner = self.inner.scroll_to(target, alignment);
         self
     }
 }

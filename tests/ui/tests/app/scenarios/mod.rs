@@ -1,3 +1,4 @@
+pub mod arrangements;
 pub mod canvas_action;
 pub mod controls;
 pub mod document;
