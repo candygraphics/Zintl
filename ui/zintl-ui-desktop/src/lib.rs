@@ -870,7 +870,8 @@ mod tests {
 
     #[test]
     fn text_style_reaches_the_render_node_and_sizes_the_label() {
-        // Verifies text style is forwarded, and a line limit lets the label shrink to any width.
+        // Verifies text style is forwarded, and a line limit lets the label shrink to any width
+        // while it still prefers its text's width.
         let text = App::new(
             Text::new("Groceries")
                 .font(Font::system(20.0).bold())
@@ -895,6 +896,11 @@ mod tests {
         let minimum = layout.minimum_size.expect("labels declare a minimum");
         assert_eq!(minimum.width, 0.0);
         assert!(minimum.height >= 50.0);
+        let content = layout
+            .content_size
+            .expect("line-limited labels prefer their text");
+        assert!(content.width > 50.0);
+        assert_eq!(content.height, minimum.height);
     }
 
     #[test]

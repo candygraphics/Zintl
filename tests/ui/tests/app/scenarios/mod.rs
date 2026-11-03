@@ -12,5 +12,6 @@ pub mod store_sender;
 pub mod table;
 pub mod text_commit;
 pub mod text_field;
+pub mod truncation;
 pub mod wgpu_first_frame;
 pub mod window_close;

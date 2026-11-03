@@ -189,6 +189,37 @@ impl NativeNode {
         ))
     }
 
+    /// Replaces a line-limited label's estimated content size with its text's measured size.
+    ///
+    /// Such labels may shrink below it and truncate, so it is their preferred
+    /// size rather than a minimum.
+    pub(super) fn content_size(
+        &self,
+        kind: &ViewKind,
+        declared: Option<Size>,
+    ) -> Result<Option<Size>, UiError> {
+        let (
+            ViewKind::TextField {
+                editable: false,
+                multiline: false,
+                style,
+                ..
+            },
+            Some(declared),
+        ) = (kind, declared)
+        else {
+            return Ok(declared);
+        };
+        if style.line_limit.is_none() {
+            return Ok(Some(declared));
+        }
+        let (width, _) = self.as_view().intrinsic_content_size()?;
+        Ok(Some(Size::new(
+            width.map_or(declared.width, |width| width.ceil() as f32),
+            declared.height,
+        )))
+    }
+
     /// Sets the tooltip on the view the pointer rests on.
     pub(super) fn set_tool_tip(&self, text: Option<&str>) -> Result<(), UiError> {
         match self {

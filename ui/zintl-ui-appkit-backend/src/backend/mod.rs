@@ -662,6 +662,9 @@ impl AppKitBackend {
             .map(|declared| native.minimum_size(&kind, declared))
             .transpose()
             .map_err(AppError::Ui)?;
+        style.content_size = native
+            .content_size(&kind, style.content_size)
+            .map_err(AppError::Ui)?;
         let content = self.content_snapshots(id)?;
         let (children, hosted) = match kind {
             ViewKind::ScrollView { .. }

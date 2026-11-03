@@ -98,6 +98,11 @@ pub struct LayoutStyle {
     /// The smallest size along each axis; `None` keeps containers at least as
     /// large as their content's minimum, so they do not shrink until it overlaps.
     pub minimum_size: Option<Size>,
+    /// The size a leaf's content prefers, such as a label's whole text.
+    ///
+    /// Rows and grid columns give the leaf this size when there is room, and
+    /// shrink it toward `minimum_size` when there is not. Containers ignore it.
+    pub content_size: Option<Size>,
     pub axis: Option<Axis>,
     pub gap: f32,
     pub width: LayoutDimension,
@@ -125,6 +130,7 @@ impl LayoutStyle {
     pub const fn leaf(minimum_size: Size) -> Self {
         Self {
             minimum_size: Some(minimum_size),
+            content_size: None,
             axis: None,
             gap: 0.0,
             width: LayoutDimension::Auto,
@@ -151,6 +157,7 @@ impl LayoutStyle {
     pub const fn stack(axis: Axis, gap: f32) -> Self {
         Self {
             minimum_size: None,
+            content_size: None,
             axis: Some(axis),
             gap,
             width: LayoutDimension::Auto,
@@ -192,7 +199,8 @@ impl From<taffy::TaffyError> for LayoutError {
 }
 
 pub struct LayoutTree {
-    tree: TaffyTree,
+    /// Leaves with a content size carry it as their context for measuring.
+    tree: TaffyTree<Size>,
     /// The axes along which each container has a child that takes free space.
     expansions: HashMap<TaffyNodeId, Expansion>,
 }
@@ -291,9 +299,14 @@ impl LayoutTree {
         // A declared size along an axis absorbs the children's demand for space there.
         expansion.horizontal &= style.width == LayoutDimension::Auto;
         expansion.vertical &= style.height == LayoutDimension::Auto;
-        let node = self
-            .tree
-            .new_with_children(to_taffy_style(style), &children)?;
+        let node = match style.content_size {
+            Some(content) if children.is_empty() => self
+                .tree
+                .new_leaf_with_context(to_taffy_style(style), content)?,
+            _ => self
+                .tree
+                .new_with_children(to_taffy_style(style), &children)?,
+        };
         self.expansions.insert(node, expansion);
         Ok(NodeId(node))
     }
@@ -345,14 +358,30 @@ impl LayoutTree {
     }
 
     pub fn compute(&mut self, root: NodeId, available: Size) -> Result<(), LayoutError> {
-        self.tree.compute_layout(
+        self.tree.compute_layout_with_measure(
             root.0,
             TaffySize {
                 width: AvailableSpace::Definite(available.width),
                 height: AvailableSpace::Definite(available.height),
             },
+            Self::measure,
         )?;
         Ok(())
+    }
+
+    /// Sizes a leaf to its content size, keeping any size layout already fixed.
+    fn measure(
+        known: TaffySize<Option<f32>>,
+        _available: TaffySize<AvailableSpace>,
+        _node: TaffyNodeId,
+        content: Option<&mut Size>,
+        _style: &TaffyStyle,
+    ) -> TaffySize<f32> {
+        let content = content.map_or(Size::default(), |content| *content);
+        TaffySize {
+            width: known.width.unwrap_or(content.width),
+            height: known.height.unwrap_or(content.height),
+        }
     }
 
     /// Computes a layout whose unspecified axes fit the content.
@@ -366,12 +395,13 @@ impl LayoutTree {
     ) -> Result<(), LayoutError> {
         let space =
             |value: Option<f32>| value.map_or(AvailableSpace::MaxContent, AvailableSpace::Definite);
-        self.tree.compute_layout(
+        self.tree.compute_layout_with_measure(
             root.0,
             TaffySize {
                 width: space(width),
                 height: space(height),
             },
+            Self::measure,
         )?;
         Ok(())
     }
@@ -828,5 +858,31 @@ mod tests {
         tree.compute(row, Size::new(100.0, 100.0)).unwrap();
 
         assert_eq!(tree.layout(stack).unwrap().width, 100.0);
+    }
+
+    #[test]
+    fn content_sized_leaves_take_their_content_and_shrink_when_short() {
+        // Verifies a leaf with a content size keeps it when it fits and shrinks toward its minimum when it does not.
+        for (row_width, expected) in [(400.0, 200.0), (150.0, 70.0)] {
+            let mut tree = LayoutTree::new();
+            let mut label_style = LayoutStyle::leaf(Size::new(0.0, 20.0));
+            label_style.content_size = Some(Size::new(200.0, 20.0));
+            let label = tree.create_node(label_style, &[]).unwrap();
+            let button = tree
+                .create_node(LayoutStyle::leaf(Size::new(80.0, 20.0)), &[])
+                .unwrap();
+            let mut row_style = LayoutStyle::stack(Axis::Horizontal, 0.0);
+            row_style.width = LayoutDimension::Points(row_width);
+            let row = tree.create_node(row_style, &[label, button]).unwrap();
+
+            tree.compute(row, Size::new(row_width, 100.0)).unwrap();
+
+            assert_eq!(
+                tree.layout(label).unwrap().width,
+                expected,
+                "row {row_width}"
+            );
+            assert_eq!(tree.layout(button).unwrap().width, 80.0, "row {row_width}");
+        }
     }
 }
