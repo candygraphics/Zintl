@@ -7,7 +7,7 @@ use messageloop_dispatcherqueue::{
 };
 use zintl_ui::composer::Composer;
 use zintl_ui::event::EventRouteId;
-use zintl_ui_backend_core::{Event, MainTask, NodeId, RenderNode};
+use zintl_ui_backend_core::{Event, MainTask, NodeId, RenderNode, StoreUpdates};
 use zpd_winui3::Application;
 
 use super::menu::Menus;
@@ -67,7 +67,19 @@ impl MessageLoopHandler<Message> for AppHandler {
 
     fn on(&mut self, cx: &MessageContext<'_, Message>, message: Message) {
         match message {
-            Message::PerformMain(task) => task(),
+            Message::PerformMain(task) => {
+                task();
+                let updates = StoreUpdates::take();
+                if !updates.is_empty() {
+                    self.composer.context(|cx| {
+                        for update in updates {
+                            update(cx);
+                        }
+                    });
+                    self.composer.flush();
+                    self.synchronize(cx);
+                }
+            }
             Message::Event { route, event } => {
                 self.dispatch(route, event);
                 self.synchronize(cx);

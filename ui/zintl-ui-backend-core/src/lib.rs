@@ -7,6 +7,7 @@ mod canvas;
 mod context;
 mod event;
 mod model;
+mod signal;
 #[cfg(feature = "wgpu")]
 mod wgpu_canvas;
 
@@ -20,7 +21,7 @@ pub use canvas::{
     Modifiers, NamedKey, PointerButton, PointerEvent, PointerPhase, Redraw, RedrawPolicy,
     ScrollEvent,
 };
-pub use context::Context;
+pub use context::{Context, StoreSender, StoreUpdate, StoreUpdates};
 pub use event::{Event, EventKind};
 pub use headless::HeadlessBackend;
 pub use model::{
@@ -30,6 +31,7 @@ pub use model::{
     SidebarSearch, SidebarSection, TextAlignment, TextColor, TextStyle, TitleBar, Toolbar,
     ToolbarItem, WindowAppMenu, WindowStyle,
 };
+pub use signal::Signal;
 #[cfg(feature = "wgpu")]
 pub use wgpu;
 #[cfg(feature = "wgpu")]

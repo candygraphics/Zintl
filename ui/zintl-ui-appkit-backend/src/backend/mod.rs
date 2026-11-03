@@ -855,7 +855,7 @@ impl RenderBackend<RenderNode> for AppKitBackend {
     type NodeId = NodeId;
 
     fn create_context<'a>(&'a self, store_context: StoreContext<'a>) -> Context<'a> {
-        Context::new(store_context, Some(self.main_tasks.sender()))
+        Context::new(store_context, Some(self.main_tasks.shared_sender()))
     }
 
     fn root(&self) -> Self::NodeId {

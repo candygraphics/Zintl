@@ -45,8 +45,8 @@ pub use zintl_ui_backend_core::{
     CanvasNode, CanvasSetup, Color, Cursor, DocumentState, Event, EventKind, Frame, GesturePhase,
     Invalidator, Key, KeyEvent, KeyPhase, ListStyle, MagnifyEvent, Modifiers, NamedKey, NodeId,
     PointerButton, PointerEvent, PointerPhase, PopoverEdge, Rect, Redraw, RedrawPolicy, RenderNode,
-    ScrollAxes, ScrollEvent, TextAlignment, TextColor, TextStyle, TitleBar, UndoState, ViewKind,
-    WindowStyle, graphics,
+    ScrollAxes, ScrollEvent, Signal, StoreSender, TextAlignment, TextColor, TextStyle, TitleBar,
+    UndoState, ViewKind, WindowStyle, graphics,
 };
 #[cfg(feature = "wgpu")]
 pub use zintl_ui_backend_core::{
@@ -427,6 +427,34 @@ mod tests {
             composer.context(|cx| cx.get(seen).clone()),
             ["x=3", "count=2"]
         );
+    }
+
+    #[test]
+    fn store_sender_writes_from_another_thread_on_the_main_thread() {
+        // Verifies a write sent off the main thread waits for the main-thread task and then updates the Store.
+        let mut composer = Composer::new(HeadlessBackend::new());
+        let tasks = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let queue = tasks.clone();
+        composer.backend().connect_main_tasks(move |task| {
+            queue.lock().unwrap().push(task);
+            true
+        });
+        let status = composer.context(|cx: &mut Context<'_>| cx.store("Building".to_owned()));
+        let sender = composer.context(|cx| cx.sender(status));
+
+        std::thread::spawn(move || assert!(sender.set("Done".to_owned())))
+            .join()
+            .unwrap();
+        assert_eq!(composer.context(|cx| cx.get(status).clone()), "Building");
+        for task in tasks.lock().unwrap().drain(..) {
+            task();
+        }
+        composer.context(|cx| {
+            for update in zintl_ui_backend_core::StoreUpdates::take() {
+                update(cx);
+            }
+        });
+        assert_eq!(composer.context(|cx| cx.get(status).clone()), "Done");
     }
 
     #[test]

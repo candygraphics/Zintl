@@ -41,8 +41,9 @@ pub use zintl_ui_native::{
     ListStyle, MagnifyEvent, MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, Modifiers,
     NamedKey, NativeView, PointerButton, PointerEvent, PointerPhase, Popover, PopoverEdge, Rect,
     Redraw, RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, ScrollStatus, Shortcut, Sidebar,
-    SidebarItem, SidebarSection, StandardAction, StandardMenu, StandardText, TextAlignment,
-    TextColor, TextEditor, TitleBar, Toolbar, ToolbarItem, UndoHandler, ViewKind, graphics, list,
+    SidebarItem, SidebarSection, StandardAction, StandardMenu, StandardText, StoreSender,
+    TextAlignment, TextColor, TextEditor, TitleBar, Toolbar, ToolbarItem, UndoHandler, ViewKind,
+    graphics, list,
 };
 #[cfg(feature = "wgpu")]
 pub use zintl_ui_native::{

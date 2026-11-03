@@ -174,7 +174,9 @@ impl Invalidator {
             return false;
         };
         let canvas = self.canvas;
-        sender(Box::new(move || CanvasRegistry::invalidate(canvas)))
+        sender(Box::new(move || {
+            CanvasRegistry::invalidate(canvas);
+        }))
     }
 }
 
@@ -414,11 +416,13 @@ impl CanvasNode {
     /// Renders one frame of a wgpu canvas into `target`.
     #[cfg(feature = "wgpu")]
     pub fn render(&self, target: &mut crate::WgpuTarget<'_>, frame: &Frame) {
+        let _reading = crate::signal::Reading::start(self.0.id);
         self.with_handler(|handler| handler.render(target, frame));
     }
 
     /// Draws one frame with the handler.
     pub fn draw(&self, g: &mut Graphics2D<'_>, frame: &Frame) {
+        let _reading = crate::signal::Reading::start(self.0.id);
         self.with_handler(|handler| handler.draw(g, frame));
     }
 
@@ -527,7 +531,7 @@ impl fmt::Debug for CanvasNode {
 }
 
 /// Mounted canvases of the main thread, addressed by [`Invalidator`]s.
-struct CanvasRegistry;
+pub(crate) struct CanvasRegistry;
 
 thread_local! {
     static CANVASES: RefCell<HashMap<u64, Weak<CanvasCell>>> = RefCell::new(HashMap::new());
@@ -547,10 +551,14 @@ impl CanvasRegistry {
         CANVASES.with(|canvases| canvases.borrow().get(&id).and_then(Weak::upgrade))
     }
 
-    fn invalidate(id: u64) {
-        if let Some(canvas) = Self::get(id) {
+    /// Schedules a draw of canvas `id`; returns whether it is still mounted.
+    pub(crate) fn invalidate(id: u64) -> bool {
+        let canvas = Self::get(id);
+        let mounted = canvas.is_some();
+        if let Some(canvas) = canvas {
             CanvasNode(canvas).invalidate();
         }
+        mounted
     }
 }
 
