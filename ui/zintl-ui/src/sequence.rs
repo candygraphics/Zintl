@@ -37,6 +37,8 @@ impl<T> Sequence<T> {
 pub struct Arena {
     sequences: Vec<Box<dyn Any>>,
     sequence_ids: HashMap<TypeId, usize>,
+    /// Write counts of values written at least once.
+    revisions: HashMap<StoreId, u64>,
 }
 
 impl Arena {
@@ -44,6 +46,7 @@ impl Arena {
         Self {
             sequences: Vec::new(),
             sequence_ids: HashMap::new(),
+            revisions: HashMap::new(),
         }
     }
 
@@ -73,6 +76,16 @@ impl Arena {
             .get_mut(id.sequence_id)?
             .downcast_mut::<Sequence<T>>()?
             .get_mut(id.index)
+    }
+
+    /// Returns how many times the value has been written.
+    pub fn revision(&self, id: StoreId) -> u64 {
+        self.revisions.get(&id).copied().unwrap_or(0)
+    }
+
+    /// Records a write to the value.
+    pub fn bump_revision(&mut self, id: StoreId) {
+        *self.revisions.entry(id).or_insert(0) += 1;
     }
 
     pub fn insert<T: 'static>(&mut self, item: T) -> StoreId {
@@ -105,6 +118,19 @@ impl Default for Arena {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn counts_writes_per_value() {
+        // Each value has its own write count, starting at zero.
+        let mut arena = Arena::new();
+        let first = arena.insert(1_i32);
+        let second = arena.insert(2_i32);
+        arena.bump_revision(first);
+        arena.bump_revision(first);
+
+        assert_eq!(arena.revision(first), 2);
+        assert_eq!(arena.revision(second), 0);
+    }
 
     #[test]
     fn groups_values_into_sequences_by_type() {

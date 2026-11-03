@@ -315,6 +315,8 @@ pub enum ScrollAlignment {
 pub struct ScrollTarget {
     pub id: String,
     pub alignment: ScrollAlignment,
+    /// Changes on every request, so the same ID can be revealed again.
+    pub revision: u64,
 }
 
 /// Directions in which a scroll view scrolls.

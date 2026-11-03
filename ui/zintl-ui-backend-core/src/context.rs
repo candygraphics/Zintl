@@ -59,6 +59,11 @@ impl<'a> Context<'a> {
         self.store_context.get(store)
     }
 
+    /// Returns how many times `store` has been written, even with an equal value.
+    pub fn revision<T: 'static>(&self, store: Store<T>) -> u64 {
+        self.store_context.revision(store)
+    }
+
     pub fn watch<T, F, E>(&self, store: Store<T>, render: F) -> StoreWatcher<T, F, E>
     where
         T: 'static,

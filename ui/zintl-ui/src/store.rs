@@ -1,7 +1,7 @@
 use crate::hook::{Hook, HookId};
 use std::marker::PhantomData;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct StoreId {
     pub(crate) sequence_id: usize,
     pub(crate) index: usize,

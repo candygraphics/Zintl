@@ -278,7 +278,10 @@ impl NativeNode {
                 multiline,
                 ..
             } => {
-                control.set_text(TextProperty::Text, value)?;
+                // Typed text stays until the value changes, so unbound fields keep edits.
+                if !matches!(old, Some(ViewKind::TextField { value: old, .. }) if old == value) {
+                    control.set_text(TextProperty::Text, value)?;
+                }
                 control.set_bool(BoolProperty::Multiline, *multiline)?;
                 if *editable {
                     control.set_text(
@@ -368,8 +371,14 @@ impl NativeNode {
                         format.fraction_digits as f64,
                     )?;
                 }
-                if control.number(NumberProperty::Value)? != *value || old.is_none() {
-                    control.set_number(NumberProperty::Value, *value)?;
+                // Typed numbers stay until the value changes, so unbound fields keep edits.
+                // Out-of-range input is always replaced, as it was clamped.
+                let shown = control.number(NumberProperty::Value)?;
+                let in_range = (format.minimum..=format.maximum).contains(&shown);
+                match old {
+                    Some(ViewKind::NumberField { value: old, .. }) if old == value && in_range => {}
+                    Some(_) if shown == *value => {}
+                    _ => control.set_number(NumberProperty::Value, *value)?,
                 }
             }
             ViewKind::SearchField { value, placeholder } => {

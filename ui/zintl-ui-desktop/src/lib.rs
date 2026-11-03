@@ -44,7 +44,7 @@ pub use zintl_ui_native::{
     ListStyle, MagnifyEvent, MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, Modifiers,
     NamedKey, NativeView, PointerButton, PointerEvent, PointerPhase, Popover, PopoverEdge,
     ProgressIndicator, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAlignment, ScrollAxes,
-    ScrollEvent, ScrollStatus, Separator, Shortcut, Sidebar, SidebarItem, SidebarSection,
+    ScrollEvent, ScrollStatus, Separator, Shortcut, Sidebar, SidebarItem, SidebarSection, Signal,
     StandardAction, StandardMenu, StandardText, StoreSender, Table, TableColumn, TableRow,
     TextAlignment, TextColor, TextEditor, TitleBar, Toolbar, ToolbarItem, UndoHandler, ViewKind,
     graphics, list,
@@ -370,6 +370,15 @@ impl TextField {
 
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.inner = self.inner.placeholder(placeholder);
+        self
+    }
+
+    /// Shows `value`; a bound Store takes precedence.
+    ///
+    /// The field keeps typed text until `value` itself changes, so `on_commit`
+    /// can write edits back to their source.
+    pub fn value(mut self, value: impl Into<String>) -> Self {
+        self.inner = self.inner.value(value);
         self
     }
 

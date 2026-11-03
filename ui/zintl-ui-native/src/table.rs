@@ -6,7 +6,7 @@ use zintl_ui::element::{ElementFactory, IntoElement, KeyedElement, ListFactory};
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
 use zintl_ui_backend_core::ViewKind;
-use zintl_ui_layout::{LayoutStyle, Size};
+use zintl_ui_layout::{LayoutDimension, LayoutStyle, Size};
 
 use crate::attach::attachments;
 use crate::{Attachments, Context, Element, Event, EventKind, NativeView, RenderNode};
@@ -116,6 +116,13 @@ impl Table {
 
     pub fn minimum_size(mut self, size: Size) -> Self {
         self.layout.minimum_size = size;
+        self
+    }
+
+    /// Uses a fixed height instead of filling the remaining space.
+    pub fn height(mut self, height: f32) -> Self {
+        self.layout.height = LayoutDimension::Points(height);
+        self.layout.grow = 0.0;
         self
     }
 

@@ -1613,12 +1613,111 @@ fn scroll_view_reveals_the_target_row() {
         app.render(),
         RenderNode::View {
             kind: ViewKind::ScrollView {
-                reveal: Some(zintl_ui_native::ScrollTarget { id, alignment: ScrollAlignment::Center }),
+                reveal: Some(zintl_ui_native::ScrollTarget { id, alignment: ScrollAlignment::Center, .. }),
                 ..
             },
             ..
         } if id == "row-1"
     ));
+}
+
+#[test]
+fn scroll_view_reveals_the_same_row_again_when_its_target_is_rewritten() {
+    // Verifies writing the same ID again makes a new reveal request, while plain rerenders do not.
+    let (mut app, target) = Harness::mount(
+        |cx| cx.store(None::<String>),
+        |target| {
+            ScrollView::new(VStack::new(list![Text::new("Row").id("row-1")]))
+                .scroll_to(target, ScrollAlignment::Nearest)
+        },
+    );
+    let reveal = |app: &App| match app.render() {
+        RenderNode::View {
+            kind: ViewKind::ScrollView { reveal, .. },
+            ..
+        } => reveal,
+        _ => panic!("expected a scroll view"),
+    };
+    app.set(target, Some("row-1".to_owned()));
+    let first = reveal(&app).expect("the row is requested");
+    assert_eq!(reveal(&app), Some(first.clone()));
+
+    app.set(target, Some("row-1".to_owned()));
+    let second = reveal(&app).expect("the row is requested again");
+    assert_eq!(second.id, first.id);
+    assert_ne!(second.revision, first.revision);
+}
+
+#[test]
+fn table_height_fixes_its_layout_height() {
+    // Verifies a table with a height stops growing and uses that height.
+    let (app, _) = Harness::mount(
+        |_| (),
+        |()| Table::new([TableColumn::new("Name")], []).height(180.0),
+    );
+    assert!(matches!(
+        app.render(),
+        RenderNode::View {
+            kind: ViewKind::Table { .. },
+            layout,
+            ..
+        } if layout.height == LayoutDimension::Points(180.0) && layout.grow == 0.0
+    ));
+}
+
+#[test]
+fn unbound_fields_show_their_values() {
+    // Verifies `value` sets what unbound text and number fields show.
+    let (app, _) = Harness::mount(
+        |_| (),
+        |()| {
+            HStack::new(list![
+                TextField::new().value("cell"),
+                NumberField::new().value(2.5)
+            ])
+        },
+    );
+    let tree = app.render_tree();
+    assert!(matches!(
+        &tree.children[0].value,
+        RenderNode::View { kind: ViewKind::TextField { value, .. }, .. } if value == "cell"
+    ));
+    assert!(matches!(
+        &tree.children[1].value,
+        RenderNode::View { kind: ViewKind::NumberField { value, .. }, .. } if *value == 2.5
+    ));
+}
+
+#[test]
+fn bound_fields_prefer_their_stores_over_values() {
+    // Verifies a bound Store wins over `value` on both field kinds.
+    let (app, _) = Harness::mount(
+        |cx| (cx.store("stored".to_owned()), cx.store(7.0_f64)),
+        |(text, number)| {
+            HStack::new(list![
+                TextField::new().value("ignored").bind(text),
+                NumberField::new().value(1.0).bind(number),
+            ])
+        },
+    );
+    let tree = app.render_tree();
+    assert!(matches!(
+        &tree.children[0].value,
+        RenderNode::View { kind: ViewKind::TextField { value, .. }, .. } if value == "stored"
+    ));
+    assert!(matches!(
+        &tree.children[1].value,
+        RenderNode::View { kind: ViewKind::NumberField { value, .. }, .. } if *value == 7.0
+    ));
+}
+
+#[test]
+fn signal_is_available_from_the_desktop_crate() {
+    // Verifies apps can share canvas values through `zintl_ui_desktop::Signal` alone.
+    let signal = Signal::new(1);
+    let shared = signal.clone();
+    shared.set(2);
+    assert_eq!(signal.with(|value| *value), 2);
 }
 
 #[test]
