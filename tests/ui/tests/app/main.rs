@@ -8,6 +8,14 @@ use zintl_ui_desktop::{App, AppError};
 
 fn main() -> Result<(), AppError> {
     let options = LaunchOptions::read();
+    // Records panics, including those during process teardown that abort.
+    if let Some(path) = options.variable("ZINTL_UI_TEST_PANIC_MARKER") {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let _ = std::fs::write(&path, info.to_string());
+            previous(info);
+        }));
+    }
     let scenario = options
         .scenario
         .clone()

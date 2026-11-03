@@ -10,11 +10,25 @@ use zpd_appkit::geometry;
 use zpd_appkit::ui::{CanvasFrame, CanvasInput, CanvasInputDelegate, MetalCanvasDelegate};
 use zpd_appkit::ui::{MetalCanvasView, MetalLayer};
 
-use super::AppError;
 use super::canvas::Host;
+use super::{AppError, GpuSlot};
 use crate::convert::Shared;
 use crate::graphics::Point;
 use crate::{CanvasNode, MainTaskSender, WgpuContext, WgpuError, WgpuTarget};
+
+impl GpuSlot {
+    /// Returns the context every canvas of the app shares, creating it on first use.
+    ///
+    /// A failure is not kept, so a later canvas tries again.
+    fn context(&self) -> Result<WgpuContext, WgpuError> {
+        if let Some(context) = self.context.borrow().as_ref() {
+            return Ok(context.clone());
+        }
+        let created = WgpuContext::new()?;
+        *self.context.borrow_mut() = Some(created.clone());
+        Ok(created)
+    }
+}
 
 /// A surface over the view's `CAMetalLayer` and its current configuration.
 struct Surface {
@@ -42,9 +56,11 @@ impl WgpuBridge {
         view: &MetalCanvasView,
         canvas: &CanvasNode,
         sender: Arc<MainTaskSender>,
+        gpu: &GpuSlot,
         errors: &ErrorSlot<AppError>,
     ) {
-        let context = Self::shared_context()
+        let context = gpu
+            .context()
             .map_err(|error| errors.record(AppError::Wgpu(error)))
             .ok();
         view.set_delegate(Rc::new(Self {
@@ -54,21 +70,6 @@ impl WgpuBridge {
             errors: errors.clone(),
         }));
         canvas.attach(Rc::new(Host(view.handle())), Some(sender));
-    }
-
-    /// Returns the context every canvas of the main thread shares, creating it once.
-    fn shared_context() -> Result<WgpuContext, WgpuError> {
-        thread_local! {
-            static CONTEXT: RefCell<Option<WgpuContext>> = const { RefCell::new(None) };
-        }
-        CONTEXT.with(|context| {
-            if let Some(context) = context.borrow().as_ref() {
-                return Ok(context.clone());
-            }
-            let created = WgpuContext::new()?;
-            *context.borrow_mut() = Some(created.clone());
-            Ok(created)
-        })
     }
 
     /// Creates a surface over `layer` and connects the canvas to the GPU on first use.

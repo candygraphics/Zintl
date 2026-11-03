@@ -15,10 +15,10 @@ use zpd_appkit::geometry::Rect;
 use zintl_ui_backend_core::layout::HostLayout;
 use zintl_ui_backend_core::tree::ErrorSlot;
 
-use super::AppError;
 use super::canvas::CanvasBridge;
 #[cfg(feature = "wgpu")]
 use super::wgpu::WgpuBridge;
+use super::{AppError, GpuSlot};
 use crate::convert::{Native, Shared};
 use crate::{ButtonType, MainTaskSender, ViewKind};
 
@@ -97,8 +97,11 @@ impl NativeNode {
         application: &Application,
         kind: &ViewKind,
         main_tasks: Arc<MainTaskSender>,
+        gpu: &GpuSlot,
         errors: &ErrorSlot<AppError>,
     ) -> Result<Self, UiError> {
+        #[cfg(not(feature = "wgpu"))]
+        let _ = gpu;
         let native = match kind {
             ViewKind::Container => {
                 Self::Container(View::new(application, Rect::new(0.0, 0.0, 0.0, 0.0))?)
@@ -143,7 +146,7 @@ impl NativeNode {
             #[cfg(feature = "wgpu")]
             ViewKind::WgpuCanvas { canvas, .. } => {
                 let view = zpd_appkit::ui::MetalCanvasView::new(application)?;
-                WgpuBridge::install(&view, canvas, main_tasks, errors);
+                WgpuBridge::install(&view, canvas, main_tasks, gpu, errors);
                 Self::WgpuCanvas(view)
             }
         };

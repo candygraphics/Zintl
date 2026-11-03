@@ -124,12 +124,16 @@ pub fn run_composer(
 ) -> Result<(), AppError> {
     let application = Application::new().map_err(AppError::Application)?;
     let on_exit = Rc::new(RefCell::new(Some(on_exit)));
+    let gpu = composer.backend().gpu.clone();
     let exit = {
         let on_exit = on_exit.clone();
         move || {
             if let Some(action) = on_exit.borrow_mut().take() {
                 action();
             }
+            // Release GPU objects now; after ⌘Q, AppKit ends the process with
+            // `exit`, and Metal cleanup fails while thread-locals are destroyed.
+            gpu.release();
         }
     };
     application

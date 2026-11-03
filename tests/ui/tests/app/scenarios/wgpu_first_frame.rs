@@ -43,14 +43,18 @@ impl WgpuCanvasHandler for Probe {
 }
 
 /// An on-demand wgpu canvas that nothing redraws after it is attached.
+///
+/// "Remove canvas" unmounts it, so only the app keeps GPU objects until exit.
 pub struct MainView {
     status: Store<String>,
+    shown: Store<bool>,
 }
 
 impl MainView {
     pub fn new() -> Self {
         Self {
             status: Store::default(),
+            shown: Store::default(),
         }
     }
 }
@@ -60,6 +64,7 @@ impl View for MainView {
 
     fn init(&mut self, cx: &mut Context<'_>) {
         self.status = cx.store("Waiting".to_owned());
+        self.shown = cx.store(true);
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
@@ -70,20 +75,22 @@ impl View for MainView {
         .redraw(RedrawPolicy::OnDemand)
         .fill_width()
         .grow();
+        let shown = self.shown;
+        let mut children = list![
+            cx.watch(self.status, |status| Text::new(status.clone())
+                .id("render-status")),
+            Button::new("Remove canvas")
+                .id("remove-canvas")
+                .on_click(move |cx| cx.update(shown, |shown| *shown = false)),
+        ];
+        if *cx.get(shown) {
+            children.push(ElementFactory::new(canvas));
+        }
         Window::new(
             Rect::new(100.0, 100.0, 480.0, 320.0),
             "Zintl Wgpu First Frame UI Test",
         )
         .id("main-window")
-        .content(
-            VStack::new(list![
-                cx.watch(self.status, |status| Text::new(status.clone())
-                    .id("render-status")),
-                canvas,
-            ])
-            .spacing(12.0)
-            .fill_width()
-            .grow(),
-        )
+        .content(VStack::new(children).spacing(12.0).fill_width().grow())
     }
 }
