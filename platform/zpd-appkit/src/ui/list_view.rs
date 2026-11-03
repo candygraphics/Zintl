@@ -31,6 +31,14 @@ impl ListStyle {
     }
 }
 
+/// A titled column of a [`ListView`] shown as a table.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TableColumn {
+    pub title: String,
+    /// The initial width in points; `None` lets the table size it.
+    pub width: Option<f64>,
+}
+
 /// A table row: a section header or a selectable row with an ID.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ListEntry {
@@ -41,9 +49,10 @@ pub enum ListEntry {
 struct Entry {
     /// `None` for section headers.
     id: Option<String>,
-    cell: Strong,
-    /// The row wrapper's Actor under the table, so row views' events reach the window.
-    actor: Option<ActorRef>,
+    /// One view per column; a section header has one that spans the row.
+    cells: Vec<Strong>,
+    /// The cell wrappers' Actors under the table, so cell views' events reach the window.
+    actors: Vec<ActorRef>,
     height: f64,
 }
 
@@ -84,13 +93,13 @@ impl ListState {
         }
     }
 
-    /// Returns the wrappers of selectable rows in order.
+    /// Returns the cell wrappers of selectable rows, row by row.
     fn row_cells(&self) -> Vec<Id> {
         self.entries
             .borrow()
             .iter()
             .filter(|entry| entry.id.is_some())
-            .map(|entry| entry.cell.as_ptr())
+            .flat_map(|entry| entry.cells.iter().map(Strong::as_ptr))
             .collect()
     }
 }
@@ -99,9 +108,19 @@ unsafe extern "C" fn row_count(object: Id, _: zpd_objc::Sel, _: Id) -> i64 {
     ListState::with(object, |state| state.entries.borrow().len() as i64)
 }
 
-unsafe extern "C" fn row_view(object: Id, _: zpd_objc::Sel, _: Id, _: Id, row: i64) -> Id {
+unsafe extern "C" fn row_view(object: Id, _: zpd_objc::Sel, table: Id, column: Id, row: i64) -> Id {
+    // Group rows ask with a nil column and show their first cell across the row.
+    let column = if column.is_null() {
+        0
+    } else {
+        // SAFETY: AppKit passes the live table and one of its columns.
+        unsafe {
+            let columns = zpd_objc::msg_send!(table, zpd_objc::sel!("tableColumns"), () => Id);
+            zpd_objc::msg_send!(columns, zpd_objc::sel!("indexOfObjectIdenticalTo:"), ((column): Id) => usize)
+        }
+    };
     ListState::with(object, |state| {
-        state.entry(row, |entry| Some(entry.cell.as_ptr()))
+        state.entry(row, |entry| entry.cells.get(column).map(Strong::as_ptr))
     })
     .unwrap_or(zpd_objc::NIL)
 }
@@ -149,9 +168,13 @@ unsafe extern "C" fn menu_needs_update(object: Id, _: zpd_objc::Sel, menu: Id) {
             };
             let table = zpd_objc::msg_send!(scroll, zpd_objc::sel!("documentView"), () => Id);
             let row = zpd_objc::msg_send!(table, zpd_objc::sel!("clickedRow"), () => i64);
-            let Some(cell) =
-                state.entry(row, |entry| entry.id.is_some().then(|| entry.cell.as_ptr()))
-            else {
+            let Some(cell) = state.entry(row, |entry| {
+                entry
+                    .id
+                    .is_some()
+                    .then(|| entry.cells.first().map(Strong::as_ptr))
+                    .flatten()
+            }) else {
                 return;
             };
             let subviews = zpd_objc::msg_send!(cell, zpd_objc::sel!("subviews"), () => Id);
@@ -210,14 +233,17 @@ fn delegate_class() -> zpd_objc::Class {
     }) as zpd_objc::Class
 }
 
-/// A single-column `NSTableView` whose rows host arbitrary views.
+/// An `NSTableView` whose cells host arbitrary views.
 ///
-/// Each row view sits in a wrapper whose layout callback receives the cell
-/// bounds, so content lays out at the width the table gives it.
+/// Without columns it is a list with one untitled column; with
+/// [`ListView::set_columns`] it is a table with column headers. Each cell
+/// view sits in a wrapper whose layout callback receives the cell bounds, so
+/// content lays out at the width the table gives it.
 pub struct ListView {
     view: ViewActor,
     table: ActorRef,
     state: Rc<ListState>,
+    columns: Cell<usize>,
 }
 
 impl ListView {
@@ -274,7 +300,70 @@ impl ListView {
             view,
             table: table_actor,
             state,
+            columns: Cell::new(1),
         })
+    }
+
+    /// Shows `columns` with headers; an empty slice shows one untitled list column.
+    ///
+    /// Apply the rows again with [`ListView::set_entries`] afterwards.
+    pub fn set_columns(&self, columns: &[TableColumn]) -> Result<(), UiError> {
+        self.columns.set(columns.len().max(1));
+        self.table.with(|table| {
+            // SAFETY: The Actor holds the live NSTableView; new columns and the header are retained by it.
+            unsafe {
+                let existing = zpd_objc::msg_send!(table, zpd_objc::sel!("tableColumns"), () => Id);
+                let existing = zpd_objc::msg_send!(existing, zpd_objc::sel!("copy"), () => Id);
+                let count = zpd_objc::msg_send!(existing, zpd_objc::sel!("count"), () => usize);
+                for index in 0..count {
+                    let column = zpd_objc::msg_send!(existing, zpd_objc::sel!("objectAtIndex:"), ((index): usize) => Id);
+                    zpd_objc::msg_send!(table, zpd_objc::sel!("removeTableColumn:"), ((column): Id) => ());
+                }
+                zpd_objc::msg_send!(existing, zpd_objc::sel!("release"), () => ());
+                let list_column = TableColumn {
+                    title: String::new(),
+                    width: None,
+                };
+                let shown = if columns.is_empty() {
+                    std::slice::from_ref(&list_column)
+                } else {
+                    columns
+                };
+                for (index, declared) in shown.iter().enumerate() {
+                    let identifier = native::nsstring(&format!("column-{index}"));
+                    let Some(column) = Strong::from_retained(zpd_objc::msg_send!(zpd_objc::msg_send!(zpd_objc::class!("NSTableColumn"), zpd_objc::sel!("alloc"), () => Id), zpd_objc::sel!("initWithIdentifier:"), ((identifier.as_ptr()): Id) => Id)) else {
+                        continue;
+                    };
+                    let title = native::nsstring(&declared.title);
+                    zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("setTitle:"), ((title.as_ptr()): Id) => ());
+                    if let Some(width) = declared.width {
+                        zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("setWidth:"), ((width): f64) => ());
+                    }
+                    zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("setResizingMask:"), ((native::NS_TABLE_COLUMN_AUTORESIZING_MASK | Self::USER_RESIZING_MASK): u64) => ());
+                    zpd_objc::msg_send!(table, zpd_objc::sel!("addTableColumn:"), ((column.as_ptr()): Id) => ());
+                }
+                let header = if columns.is_empty() {
+                    None
+                } else {
+                    Some(native::alloc_init(zpd_objc::class!("NSTableHeaderView")))
+                };
+                zpd_objc::msg_send!(table, zpd_objc::sel!("setHeaderView:"), ((header.as_ref().map_or(zpd_objc::NIL, Strong::as_ptr)): Id) => ());
+            }
+        })?;
+        Ok(())
+    }
+
+    const USER_RESIZING_MASK: u64 = 1 << 1;
+
+    /// Shades every other row.
+    pub fn set_striped(&self, striped: bool) -> Result<(), UiError> {
+        self.table.with(|table| {
+            // SAFETY: The Actor holds the live NSTableView.
+            unsafe {
+                zpd_objc::msg_send!(table, zpd_objc::sel!("setUsesAlternatingRowBackgroundColors:"), ((striped): bool) => ());
+            }
+        })?;
+        Ok(())
     }
 
     pub fn set_style(&self, style: ListStyle) -> Result<(), UiError> {
@@ -287,32 +376,39 @@ impl ListView {
         Ok(())
     }
 
-    /// Replaces the rows; `rows` holds one view per [`ListEntry::Row`], in order.
+    /// Replaces the rows; `cells` holds one view per column of each [`ListEntry::Row`], row by row.
     ///
     /// Keeps the selected ID selected when it is still present, without reporting it.
-    pub fn set_entries(&self, entries: &[ListEntry], rows: &[ViewRef<'_>]) -> Result<(), UiError> {
+    pub fn set_entries(&self, entries: &[ListEntry], cells: &[ViewRef<'_>]) -> Result<(), UiError> {
         let selected = self.selected_id()?;
-        let mut rows = rows.iter();
+        let columns = self.columns.get();
+        let mut cells = cells.iter();
         let mut built = Vec::with_capacity(entries.len());
         for entry in entries {
             built.push(match entry {
                 ListEntry::Header(title) => Entry {
                     id: None,
-                    cell: super::sidebar_table::cell(title, None, true),
-                    actor: None,
+                    cells: vec![super::sidebar_table::cell(title, None, true)],
+                    actors: Vec::new(),
                     height: ListState::HEADER_HEIGHT,
                 },
                 ListEntry::Row(id) => {
-                    let content = rows.next().ok_or(UiError::InvalidHierarchy)?;
-                    let wrapper = view::new_layout_view(Rect::new(0.0, 0.0, 0.0, 0.0))?;
                     let tree = self.table.tree_handle().ok_or(UiError::Closed)?;
-                    let actor = tree.insert_child(&self.table, wrapper.clone())?;
-                    content.remove_from_superview()?;
-                    ViewRef::from_actor(&actor).add_subview(content)?;
+                    let mut wrappers = Vec::with_capacity(columns);
+                    let mut actors = Vec::with_capacity(columns);
+                    for _ in 0..columns {
+                        let content = cells.next().ok_or(UiError::InvalidHierarchy)?;
+                        let wrapper = view::new_layout_view(Rect::new(0.0, 0.0, 0.0, 0.0))?;
+                        let actor = tree.insert_child(&self.table, wrapper.clone())?;
+                        content.remove_from_superview()?;
+                        ViewRef::from_actor(&actor).add_subview(content)?;
+                        wrappers.push(wrapper);
+                        actors.push(actor);
+                    }
                     Entry {
                         id: Some(id.clone()),
-                        cell: wrapper,
-                        actor: Some(actor),
+                        cells: wrappers,
+                        actors,
                         height: 44.0,
                     }
                 }
@@ -320,8 +416,8 @@ impl ListView {
         }
         self.state.release_row_callbacks();
         let old = std::mem::replace(&mut *self.state.entries.borrow_mut(), built);
-        // Old wrappers are empty now; their rows moved into the new ones.
-        for actor in old.into_iter().filter_map(|entry| entry.actor) {
+        // Old wrappers are empty now; their cells moved into the new ones.
+        for actor in old.into_iter().flat_map(|entry| entry.actors) {
             actor.remove();
         }
         self.quietly(|table| {
@@ -331,7 +427,7 @@ impl ListView {
         self.select(selected.as_deref())
     }
 
-    /// Runs `callback` with the cell bounds whenever the row at `index` lays out.
+    /// Runs `callback` with the cell bounds whenever cell `index`, counted row by row, lays out.
     pub fn set_row_layout_handler(
         &self,
         index: usize,
@@ -344,7 +440,7 @@ impl ListView {
         Ok(())
     }
 
-    /// Sets the height of each row, in the order of `set_entries`, and lays rows out again.
+    /// Sets the height of each selectable row, in the order of `set_entries`, and lays rows out again.
     pub fn set_row_heights(&self, heights: &[f64]) -> Result<(), UiError> {
         let mut changed = Vec::new();
         {
@@ -379,16 +475,41 @@ impl ListView {
         Ok(())
     }
 
-    /// Returns the width available to row content.
-    pub fn row_width(&self) -> Result<f64, UiError> {
+    /// Returns the number of cells in each row.
+    pub fn column_count(&self) -> usize {
+        self.columns.get()
+    }
+
+    /// Returns the width available to the content of column `index`.
+    pub fn column_width(&self, index: usize) -> Result<f64, UiError> {
         let width = self.table.with(|table| {
-            // SAFETY: The live table returns the rectangle of its single column.
+            // SAFETY: The live table returns the rectangle of one of its columns.
             unsafe {
-                let rect = zpd_objc::msg_send!(table, zpd_objc::sel!("rectOfColumn:"), ((0): i64) => native::Rect);
+                let rect = zpd_objc::msg_send!(table, zpd_objc::sel!("rectOfColumn:"), ((index as i64): i64) => native::Rect);
                 rect.size.width
             }
         })?;
         Ok(width)
+    }
+
+    /// Scrolls the row with `id` into view.
+    pub fn reveal(&self, id: &str) -> Result<(), UiError> {
+        let Some(row) = self
+            .state
+            .entries
+            .borrow()
+            .iter()
+            .position(|entry| entry.id.as_deref() == Some(id))
+        else {
+            return Ok(());
+        };
+        self.table.with(|table| {
+            // SAFETY: The Actor holds the live NSTableView.
+            unsafe {
+                zpd_objc::msg_send!(table, zpd_objc::sel!("scrollRowToVisible:"), ((row as i64): i64) => ());
+            }
+        })?;
+        Ok(())
     }
 
     /// Selects the row with `id`, or nothing, without reporting a user selection.

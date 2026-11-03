@@ -45,7 +45,7 @@ pub use dialogs::{
 };
 pub use error::UiError;
 pub use layout::{Dimension, LayoutConstraint, XAxisAnchor, YAxisAnchor};
-pub use list_view::{ListEntry, ListStyle, ListView};
+pub use list_view::{ListEntry, ListStyle, ListView, TableColumn};
 pub use menu::ContextMenu;
 pub use popover::{Popover, PopoverEdge};
 pub use rich_text::{RichParagraph, RichRun, RichStyle};

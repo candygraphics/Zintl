@@ -19,6 +19,7 @@ fn main() -> Result<(), AppError> {
         "controls" => App::new(scenarios::controls::MainView::new()).run()?,
         "document" => App::new(scenarios::document::MainView::new()).run()?,
         "store-sender" => App::new(scenarios::store_sender::MainView::new()).run()?,
+        "table" => App::new(scenarios::table::MainView::new()).run()?,
         "text-commit" => App::new(scenarios::text_commit::MainView::new()).run()?,
         "text-field" => App::new(scenarios::text_field::MainView::new()).run()?,
         "hstack" => App::new(scenarios::hstack::MainView).run()?,

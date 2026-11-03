@@ -209,6 +209,17 @@ impl Shared for ui::NamedKey {
     }
 }
 
+impl Native for core::TableColumn {
+    type Output = ui::TableColumn;
+
+    fn native(&self) -> ui::TableColumn {
+        ui::TableColumn {
+            title: self.title.clone(),
+            width: self.width,
+        }
+    }
+}
+
 impl Native for core::ScrollAlignment {
     type Output = ui::ScrollAlignment;
 

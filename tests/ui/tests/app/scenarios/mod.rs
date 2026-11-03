@@ -8,6 +8,7 @@ pub mod hstack;
 pub mod perform_main;
 pub mod scroll_status;
 pub mod store_sender;
+pub mod table;
 pub mod text_commit;
 pub mod text_field;
 pub mod window_close;

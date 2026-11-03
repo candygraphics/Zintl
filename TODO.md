@@ -87,6 +87,10 @@ selection or section headers. Use a WinUI `ListView` with grouped items,
 `SelectionMode::Single`, and row content hosted as item templates, and report
 `Event::ListSelectionChanged`.
 
+`ViewKind::Table` falls back the same way, without column headers. Host its
+cells in a `ListView` whose item template is a `Grid` with one column per
+`TableColumn`, add a header row, and alternate row backgrounds when `striped`.
+
 ## TextEditor on Windows
 
 `ViewKind::TextEditor` maps to a multiline `TextBox`, but it does not fill the

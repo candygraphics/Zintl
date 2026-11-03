@@ -1620,3 +1620,41 @@ fn scroll_view_reveals_the_target_row() {
         } if id == "row-1"
     ));
 }
+
+#[test]
+fn table_lays_out_cells_by_row_and_writes_the_selection() {
+    // Verifies a table declares its columns and rows, pads short rows to one cell per column, and binds selection.
+    let (mut app, selected) = Harness::mount(
+        |cx| cx.store(None::<String>),
+        |selected| {
+            Table::new(
+                [
+                    TableColumn::new("Name").width(120.0),
+                    TableColumn::new("Length"),
+                ],
+                [
+                    TableRow::new("a", list![Text::new("Section A"), Text::new("1k200")]),
+                    TableRow::new("b", list![Text::new("Section B")]),
+                ],
+            )
+            .bind(selected)
+        },
+    );
+    let tree = app.render_tree();
+    assert!(matches!(
+        &tree.value,
+        RenderNode::View {
+            kind: ViewKind::Table { columns, rows, striped: true, selected: None },
+            ..
+        } if columns.len() == 2 && columns[0].width == Some(120.0) && rows == &["a", "b"]
+    ));
+    assert_eq!(tree.children.len(), 4);
+
+    app.dispatch_at(
+        &[0],
+        Event::ListSelectionChanged {
+            id: Some("b".into()),
+        },
+    );
+    assert_eq!(app.get(selected), Some("b".to_owned()));
+}

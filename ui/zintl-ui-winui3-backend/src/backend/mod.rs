@@ -552,9 +552,10 @@ impl WinUI3Backend {
             .clone();
         let content = self.content_snapshots(id)?;
         let (children, hosted) = match kind {
-            ViewKind::ScrollView { .. } | ViewKind::TabView { .. } | ViewKind::List { .. } => {
-                (Vec::new(), content)
-            }
+            ViewKind::ScrollView { .. }
+            | ViewKind::TabView { .. }
+            | ViewKind::List { .. }
+            | ViewKind::Table { .. } => (Vec::new(), content),
             _ => (content, Vec::new()),
         };
         Ok(LayoutSnapshot {

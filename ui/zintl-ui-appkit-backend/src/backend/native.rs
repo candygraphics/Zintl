@@ -56,7 +56,7 @@ pub(super) enum NativeNode {
     List(ListView, ListRows),
 }
 
-/// The layouts of a list's rows; each lays out one row at its cell bounds.
+/// The layouts of a list's or table's cells; each lays out one cell at its bounds.
 pub(super) struct ListRows {
     pub(super) layouts: RefCell<Vec<Rc<RefCell<HostLayout<NativeNode>>>>>,
     /// Rows lay out when AppKit displays them, outside the backend's update.
@@ -128,7 +128,7 @@ impl NativeNode {
                 Self::ScrollView(ScrollView::new(application)?, ScrollState::default())
             }
             ViewKind::TabView { .. } => Self::TabView(TabView::new(application)?),
-            ViewKind::List { .. } => Self::List(
+            ViewKind::List { .. } | ViewKind::Table { .. } => Self::List(
                 ListView::new(application)?,
                 ListRows {
                     layouts: RefCell::new(Vec::new()),
@@ -534,6 +534,35 @@ impl NativeNode {
                 // Rows are applied while attaching children; selection follows them.
                 if list.selected_id()? != *selected {
                     list.select(selected.as_deref())?;
+                    if let Some(id) = selected {
+                        list.reveal(id)?;
+                    }
+                }
+            }
+            (
+                Self::List(list, _),
+                ViewKind::Table {
+                    columns,
+                    selected,
+                    striped,
+                    ..
+                },
+            ) => {
+                if old.is_none() {
+                    list.set_style(zpd_appkit::ui::ListStyle::Plain)?;
+                }
+                // New columns take effect when the rows are attached again.
+                if !matches!(old, Some(ViewKind::Table { columns: old, .. }) if old == columns) {
+                    list.set_columns(&columns.iter().map(Native::native).collect::<Vec<_>>())?;
+                }
+                if !matches!(old, Some(ViewKind::Table { striped: old, .. }) if old == striped) {
+                    list.set_striped(*striped)?;
+                }
+                if list.selected_id()? != *selected {
+                    list.select(selected.as_deref())?;
+                    if let Some(id) = selected {
+                        list.reveal(id)?;
+                    }
                 }
             }
             _ => return Err(UiError::InvalidHierarchy),

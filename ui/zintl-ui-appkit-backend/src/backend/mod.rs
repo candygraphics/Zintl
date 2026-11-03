@@ -551,25 +551,31 @@ impl AppKitBackend {
                 Ok(())
             }
             NativeNode::List(list, rows) => {
-                let RenderNode::View {
-                    kind:
-                        ViewKind::List {
-                            sections, selected, ..
-                        },
-                    ..
-                } = self.kind(id)
-                else {
-                    return Err(AppError::InvalidTree);
+                let (entries, selected) = match self.kind(id) {
+                    RenderNode::View {
+                        kind:
+                            ViewKind::List {
+                                sections, selected, ..
+                            },
+                        ..
+                    } => (
+                        sections
+                            .iter()
+                            .flat_map(|section| {
+                                let header = section.title.clone().map(ListEntry::Header);
+                                header
+                                    .into_iter()
+                                    .chain(section.ids.iter().cloned().map(ListEntry::Row))
+                            })
+                            .collect::<Vec<_>>(),
+                        selected,
+                    ),
+                    RenderNode::View {
+                        kind: ViewKind::Table { rows, selected, .. },
+                        ..
+                    } => (rows.into_iter().map(ListEntry::Row).collect(), selected),
+                    _ => return Err(AppError::InvalidTree),
                 };
-                let entries = sections
-                    .iter()
-                    .flat_map(|section| {
-                        let header = section.title.clone().map(ListEntry::Header);
-                        header
-                            .into_iter()
-                            .chain(section.ids.iter().cloned().map(ListEntry::Row))
-                    })
-                    .collect::<Vec<_>>();
                 let natives = self
                     .children(id)
                     .iter()
@@ -581,7 +587,7 @@ impl AppKitBackend {
                     .collect::<Vec<_>>();
                 list.set_entries(&entries, &views)?;
                 list.select(selected.as_deref())?;
-                // Each row lays out at its cell bounds; `layout_hosted` fills in its snapshot.
+                // Each cell lays out at its bounds; `layout_hosted` fills in its snapshot.
                 let mut layouts = Vec::with_capacity(natives.len());
                 for (index, (row_id, native)) in natives.iter().enumerate() {
                     let layout = Rc::new(RefCell::new(HostLayout::default()));
@@ -634,9 +640,10 @@ impl AppKitBackend {
             .map_err(AppError::Ui)?;
         let content = self.content_snapshots(id)?;
         let (children, hosted) = match kind {
-            ViewKind::ScrollView { .. } | ViewKind::TabView { .. } | ViewKind::List { .. } => {
-                (Vec::new(), content)
-            }
+            ViewKind::ScrollView { .. }
+            | ViewKind::TabView { .. }
+            | ViewKind::List { .. }
+            | ViewKind::Table { .. } => (Vec::new(), content),
             _ => (content, Vec::new()),
         };
         Ok(LayoutSnapshot {
@@ -896,6 +903,31 @@ impl RenderBackend<RenderNode> for AppKitBackend {
             },
         ) = (&old, &new)
             && old != new
+        {
+            self.structure_dirty = true;
+        }
+        // Table rows and columns are applied together with their cells.
+        if let (
+            RenderNode::View {
+                kind:
+                    ViewKind::Table {
+                        columns: old_columns,
+                        rows: old_rows,
+                        ..
+                    },
+                ..
+            },
+            RenderNode::View {
+                kind:
+                    ViewKind::Table {
+                        columns: new_columns,
+                        rows: new_rows,
+                        ..
+                    },
+                ..
+            },
+        ) = (&old, &new)
+            && (old_columns != new_columns || old_rows != new_rows)
         {
             self.structure_dirty = true;
         }

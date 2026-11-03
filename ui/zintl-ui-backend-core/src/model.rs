@@ -33,6 +33,14 @@ pub struct ListSection {
     pub ids: Vec<String>,
 }
 
+/// A titled column of a [`crate::ViewKind::Table`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TableColumn {
+    pub title: String,
+    /// The initial width in points; `None` lets the table size it.
+    pub width: Option<f64>,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ListStyle {
     /// Inset rows with rounded selection, like Notes and Mail.

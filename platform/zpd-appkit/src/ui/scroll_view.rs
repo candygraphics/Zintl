@@ -198,10 +198,14 @@ impl ScrollView {
         while let Some(view) = pending.pop() {
             // SAFETY: Guaranteed by the caller for the root; subviews are live while their parent is.
             unsafe {
-                let name = zpd_objc::msg_send!(view, zpd_objc::sel!("accessibilityIdentifier"), () => Id);
+                let name =
+                    zpd_objc::msg_send!(view, zpd_objc::sel!("accessibilityIdentifier"), () => Id);
                 if view != document && !name.is_null() && native::rust_string(name) == identifier {
-                    let bounds = zpd_objc::msg_send!(view, zpd_objc::sel!("bounds"), () => native::Rect);
-                    return Some(zpd_objc::msg_send!(view, zpd_objc::sel!("convertRect:toView:"), ((bounds): native::Rect, (document): Id) => native::Rect));
+                    let bounds =
+                        zpd_objc::msg_send!(view, zpd_objc::sel!("bounds"), () => native::Rect);
+                    return Some(
+                        zpd_objc::msg_send!(view, zpd_objc::sel!("convertRect:toView:"), ((bounds): native::Rect, (document): Id) => native::Rect),
+                    );
                 }
                 let subviews = zpd_objc::msg_send!(view, zpd_objc::sel!("subviews"), () => Id);
                 let count = zpd_objc::msg_send!(subviews, zpd_objc::sel!("count"), () => usize);

@@ -112,7 +112,9 @@ impl NativeNode {
             // TODO: Use a ProgressRing or ProgressBar, and a line; see TODO.md.
             ViewKind::ProgressIndicator { .. } | ViewKind::Separator => ControlKind::Canvas,
             // TODO: Use a ListView with selection; see TODO.md.
-            ViewKind::ScrollView { .. } | ViewKind::List { .. } => ControlKind::ScrollViewer,
+            ViewKind::ScrollView { .. } | ViewKind::List { .. } | ViewKind::Table { .. } => {
+                ControlKind::ScrollViewer
+            }
             ViewKind::TabView { .. } => ControlKind::TabView,
             // TODO: Draw with Direct2D on a SwapChainPanel; see TODO.md.
             ViewKind::Canvas2D { .. } => ControlKind::Canvas,
@@ -397,7 +399,7 @@ impl NativeNode {
                     self.restore.set(*offset);
                 }
             }
-            ViewKind::List { .. } => {
+            ViewKind::List { .. } | ViewKind::Table { .. } => {
                 if old.is_none() {
                     control.set_bool(BoolProperty::HorizontalScroll, false)?;
                     control.set_bool(BoolProperty::VerticalScroll, true)?;
