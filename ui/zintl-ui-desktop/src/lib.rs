@@ -11,9 +11,11 @@ macro_rules! native_view {
     )*};
 }
 
+mod arrangements;
 mod controls;
 mod split_view;
 
+pub use arrangements::{DisclosureGroup, Grid, ZStack};
 pub use controls::{
     ColorWell, ComboBox, NumberField, Picker, PickerStyle, ScrollView, SearchField, Slider, Tab,
     TabView, Toggle, ToggleStyle,
@@ -30,26 +32,31 @@ pub use zintl_ui_layout::{
     Axis, ChildSizing, CrossAxisAlignment, LayoutDimension, LayoutStyle, MainAxisDistribution, Size,
 };
 pub use zintl_ui_native::graphics::{
-    AttributedText, FillRule, Font, FontWeight, GradientStop, Graphics2D, Image, LineCap, LineJoin,
-    Paint, ParagraphStyle, Path, Point, SpanStyle, StrokeStyle, TextMetrics, Transform,
+    AttributedText, FillRule, Font, FontWeight, GradientStop, Graphics2D, HorizontalAlign, Image,
+    LineCap, LineJoin, Paint, ParagraphStyle, Path, Point, SpanStyle, StrokeStyle, TextAlign,
+    TextMetrics, Transform, VerticalAlign,
 };
 pub use zintl_ui_native::{
     Alert, AlertButton, AlertStyle, Attach, Attachments, ButtonRole, Canvas2D, Canvas2DHandler,
-    CanvasEvent, CanvasEventContext, CanvasSetup, Color, ColorPanel, Context, EnglishMenuLocalizer,
-    Event, EventKind, FileDialog, Frame, Invalidator, JapaneseMenuLocalizer, Key, KeyEvent,
-    KeyPhase, List, ListFactory, ListRow, ListSection, ListStyle, MainMenu, Menu, MenuItem,
-    MenuLocalizer, Modifier, Modifiers, NamedKey, NativeView, PointerButton, PointerEvent,
-    PointerPhase, Popover, PopoverEdge, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAxes,
-    ScrollEvent, ScrollStatus, Shortcut, Sidebar, SidebarItem, SidebarSection, StandardAction,
-    StandardMenu, StandardText, TextAlignment, TextColor, TextEditor, TitleBar, Toolbar,
-    ToolbarItem, ViewKind, graphics, list,
+    CanvasEvent, CanvasEventContext, CanvasId, CanvasSetup, Color, ColorPanel, Context, Cursor,
+    EnglishMenuLocalizer, Event, EventKind, FileDialog, Frame, GesturePhase, Invalidator,
+    JapaneseMenuLocalizer, Key, KeyEvent, KeyPhase, List, ListFactory, ListRow, ListSection,
+    ListStyle, MagnifyEvent, MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, Modifiers,
+    NamedKey, NativeView, PointerButton, PointerEvent, PointerPhase, Popover, PopoverEdge,
+    ProgressIndicator, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAlignment, ScrollAxes,
+    ScrollEvent, ScrollStatus, Separator, Shortcut, Sidebar, SidebarItem, SidebarSection,
+    StandardAction, StandardMenu, StandardText, StoreSender, Table, TableColumn, TableRow,
+    TextAlignment, TextColor, TextEditor, TitleBar, Toolbar, ToolbarItem, UndoHandler, ViewKind,
+    graphics, list,
 };
 #[cfg(feature = "wgpu")]
 pub use zintl_ui_native::{
     WgpuCanvas, WgpuCanvasHandler, WgpuContext, WgpuError, WgpuSetup, WgpuTarget, wgpu,
 };
 
-native_view!(Text, Button, TextField, HStack, VStack, Spacer);
+native_view!(
+    Text, Button, TextField, HStack, VStack, Spacer, ZStack, Grid
+);
 
 #[derive(Clone)]
 pub struct Window {
@@ -98,6 +105,30 @@ impl Window {
     /// Runs after the user closes the window.
     pub fn on_close(mut self, action: impl for<'a> Fn(&mut Context<'a>) + 'static) -> Self {
         self.inner = self.inner.on_close(action);
+        self
+    }
+
+    /// Asks `request` before the close button or quitting closes the window.
+    ///
+    /// Returning `false` keeps it open, for example to present an [`Alert`];
+    /// close it later through [`Window::bind_open`].
+    pub fn on_close_request(
+        mut self,
+        request: impl for<'a> Fn(&mut Context<'a>) -> bool + 'static,
+    ) -> Self {
+        self.inner = self.inner.on_close_request(request);
+        self
+    }
+
+    /// Marks the window as having unsaved changes, shown in its close button.
+    pub fn edited(mut self, edited: bool) -> Self {
+        self.inner = self.inner.edited(edited);
+        self
+    }
+
+    /// Lets Undo and Redo step through the app's history while no text is being edited.
+    pub fn undo(mut self, handler: UndoHandler) -> Self {
+        self.inner = self.inner.undo(handler);
         self
     }
 
@@ -272,6 +303,18 @@ impl Button {
         self.inner = self.inner.enabled(enabled);
         self
     }
+
+    /// Shows `menu` below the button when clicked, like a pull-down button.
+    pub fn menu(mut self, menu: impl Into<Menu>) -> Self {
+        self.inner = self.inner.menu(menu);
+        self
+    }
+
+    /// Shows the button as selected, such as the chosen row number in a list.
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.inner = self.inner.selected(selected);
+        self
+    }
 }
 
 /// The bezel drawn around a [`Button`].
@@ -338,6 +381,12 @@ impl TextField {
     /// Runs after each edit, once the bound Store is updated.
     pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static) -> Self {
         self.inner = self.inner.on_change(action);
+        self
+    }
+
+    /// Runs when editing ends with Return, Tab, or a focus change.
+    pub fn on_commit(mut self, action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static) -> Self {
+        self.inner = self.inner.on_commit(action);
         self
     }
 
@@ -882,6 +931,7 @@ mod tests {
                 style: zintl_ui_native::WindowStyle::Normal,
                 toolbar: None,
                 autosave: None,
+                document: Default::default(),
             }
         );
     }
@@ -919,6 +969,7 @@ mod tests {
                 id: None,
                 enabled: true,
                 title_bar_interactive: false,
+                help: None,
             }
         );
         assert!(matches!(

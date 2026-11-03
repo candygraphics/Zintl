@@ -173,4 +173,34 @@ mod tests {
             }]
         );
     }
+
+    #[test]
+    fn aligned_text_places_the_anchor_and_returns_its_bounds() {
+        // Verifies centered and right-bottom anchors move the baseline origin and report the drawn line.
+        let mut backend = RecordingBackend::new();
+        let font = Font::system(10.0);
+        let mut graphics = Graphics2D::new(&mut backend, Rect::from_size(100.0, 100.0), 1.0);
+        // "abcd" measures 20 wide, 8 above and 2 below the baseline.
+        let centered = graphics.fill_text_aligned(
+            "abcd",
+            Point::new(50.0, 50.0),
+            crate::TextAlign::CENTER,
+            &font,
+            Color::BLACK,
+        );
+        let corner = graphics.fill_text_aligned(
+            "abcd",
+            Point::new(100.0, 100.0),
+            crate::TextAlign::RIGHT_BOTTOM,
+            &font,
+            Color::BLACK,
+        );
+
+        assert_eq!(centered, Rect::new(40.0, 45.0, 20.0, 10.0));
+        assert_eq!(corner, Rect::new(80.0, 90.0, 20.0, 10.0));
+        assert!(matches!(
+            &backend.commands()[0],
+            DrawCommand::FillText { origin, .. } if *origin == Point::new(40.0, 53.0)
+        ));
+    }
 }

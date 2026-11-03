@@ -2,6 +2,7 @@ use zintl_ui_layout::{LayoutDimension, Rect as LayoutRect, Size};
 
 use super::AppError;
 use super::native::NativeNode;
+use crate::convert::Native;
 use zintl_ui_backend_core::layout::{HostLayout, LayoutNative, LayoutSnapshot};
 use zpd_appkit::geometry::Rect;
 
@@ -20,7 +21,7 @@ impl LayoutNative for NativeNode {
         hosted: &[LayoutSnapshot<Self>],
     ) -> Result<(), AppError> {
         match self {
-            Self::ScrollView(scroll, restore) => {
+            Self::ScrollView(scroll, state) => {
                 let (width, height) = scroll.content_size().map_err(AppError::Ui)?;
                 let (width, height) = (width as f32, height as f32);
                 let size = HostLayout::place(
@@ -34,8 +35,14 @@ impl LayoutNative for NativeNode {
                 scroll
                     .set_document_size(size.width.max(width) as f64, size.height.max(height) as f64)
                     .map_err(AppError::Ui)?;
-                if let Some((x, y)) = restore.take() {
+                if let Some((x, y)) = state.restore.take() {
                     scroll.scroll_to(x, y).map_err(AppError::Ui)?;
+                }
+                // Nested views are placed with the document, so the target can be found now.
+                if let Some(target) = state.reveal.take() {
+                    scroll
+                        .reveal(&target.id, target.alignment.native())
+                        .map_err(AppError::Ui)?;
                 }
             }
             Self::TabView(tabs) => {
@@ -45,29 +52,34 @@ impl LayoutNative for NativeNode {
                     page.apply_as_root(size)?;
                 }
             }
-            Self::List(list, rows) => {
-                // Rows stretch across the cell and fit their content's height.
-                let width = list.row_width().map_err(AppError::Ui)? as f32;
-                let layouts = rows.layouts.borrow();
-                let mut heights = Vec::with_capacity(hosted.len());
-                for (layout, row) in layouts.iter().zip(hosted) {
-                    let mut row = row.clone();
-                    row.style.width = LayoutDimension::Percent(1.0);
+            Self::List(list, cells) => {
+                // Cells stretch across their column; a row is as tall as its tallest cell.
+                let columns = list.column_count();
+                let widths = (0..columns)
+                    .map(|column| list.column_width(column).map(|width| width as f32))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(AppError::Ui)?;
+                let layouts = cells.layouts.borrow();
+                let mut heights = vec![1.0_f64; hosted.len().div_ceil(columns)];
+                for (index, (layout, cell)) in layouts.iter().zip(hosted).enumerate() {
+                    let mut cell = cell.clone();
+                    cell.style.width = LayoutDimension::Percent(1.0);
                     let mut layout = layout.borrow_mut();
                     *layout = HostLayout {
-                        children: vec![row],
+                        children: vec![cell],
                         padding: 0.0,
                     };
                     let height = HostLayout::place(
                         &layout.children,
                         0.0,
-                        Some(width),
+                        Some(widths[index % columns]),
                         None,
                         Size::default(),
                         None,
                     )?
                     .height;
-                    heights.push(height.ceil().max(1.0) as f64);
+                    let row = &mut heights[index / columns];
+                    *row = row.max(height.ceil() as f64);
                 }
                 list.set_row_heights(&heights).map_err(AppError::Ui)?;
             }

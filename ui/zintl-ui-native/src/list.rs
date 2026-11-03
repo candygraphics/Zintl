@@ -157,6 +157,7 @@ impl NativeView for List {
             id: self.id.clone(),
             enabled: true,
             title_bar_interactive: false,
+            help: None,
         })
         .with_children(rows);
         self.route(element)

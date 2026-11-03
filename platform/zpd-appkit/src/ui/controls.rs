@@ -49,7 +49,71 @@ as_view!(
     NumberField,
     SearchField,
     ColorWell,
+    ProgressIndicator,
+    Separator,
 );
+
+/// A native `NSProgressIndicator`, spinning or showing a fraction as a bar.
+pub struct ProgressIndicator {
+    view: ViewActor,
+}
+impl ProgressIndicator {
+    const STYLE_BAR: u64 = 0;
+    const STYLE_SPINNING: u64 = 1;
+
+    pub fn new(application: &Application) -> Result<Self, UiError> {
+        let native = create(zpd_objc::class!("NSProgressIndicator"))?;
+        // SAFETY: The retained object is an NSProgressIndicator.
+        unsafe {
+            zpd_objc::msg_send!(native.as_ptr(), zpd_objc::sel!("setMinValue:"), ((0.0): f64) => ());
+            zpd_objc::msg_send!(native.as_ptr(), zpd_objc::sel!("setMaxValue:"), ((1.0): f64) => ());
+            zpd_objc::msg_send!(native.as_ptr(), zpd_objc::sel!("setDisplayedWhenStopped:"), ((true): bool) => ());
+        }
+        Ok(Self {
+            view: ViewActor::new(application, native),
+        })
+    }
+    /// Spins while `value` is `None`; otherwise shows `value` in `0.0..=1.0` as a bar.
+    pub fn set_value(&self, value: Option<f64>) -> Result<(), UiError> {
+        self.view.as_view().with(|indicator| {
+            // SAFETY: The live view is an NSProgressIndicator.
+            unsafe {
+                match value {
+                    None => {
+                        zpd_objc::msg_send!(indicator, zpd_objc::sel!("setStyle:"), ((Self::STYLE_SPINNING): u64) => ());
+                        zpd_objc::msg_send!(indicator, zpd_objc::sel!("setIndeterminate:"), ((true): bool) => ());
+                        zpd_objc::msg_send!(indicator, zpd_objc::sel!("startAnimation:"), ((zpd_objc::NIL): Id) => ());
+                    }
+                    Some(value) => {
+                        zpd_objc::msg_send!(indicator, zpd_objc::sel!("stopAnimation:"), ((zpd_objc::NIL): Id) => ());
+                        zpd_objc::msg_send!(indicator, zpd_objc::sel!("setStyle:"), ((Self::STYLE_BAR): u64) => ());
+                        zpd_objc::msg_send!(indicator, zpd_objc::sel!("setIndeterminate:"), ((false): bool) => ());
+                        zpd_objc::msg_send!(indicator, zpd_objc::sel!("setDoubleValue:"), ((value.clamp(0.0, 1.0)): f64) => ());
+                    }
+                }
+            }
+        })
+    }
+}
+
+/// A separator line drawn by an `NSBox`.
+pub struct Separator {
+    view: ViewActor,
+}
+impl Separator {
+    const BOX_SEPARATOR: u64 = 2;
+
+    pub fn new(application: &Application) -> Result<Self, UiError> {
+        let native = create(zpd_objc::class!("NSBox"))?;
+        // SAFETY: The retained object is an NSBox; separators draw a line along their longer side.
+        unsafe {
+            zpd_objc::msg_send!(native.as_ptr(), zpd_objc::sel!("setBoxType:"), ((Self::BOX_SEPARATOR): u64) => ());
+        }
+        Ok(Self {
+            view: ViewActor::new(application, native),
+        })
+    }
+}
 
 /// A native `NSSwitch`.
 pub struct Switch {
@@ -360,10 +424,16 @@ pub struct NumberFormat {
 }
 
 /// A number-only `NSTextField` paired with an `NSStepper`.
+///
+/// With [`NumberField::set_text`] the field shows caller-formatted text and
+/// reports edits as [`WindowEventKind::TextCommitted`] instead of parsing them.
 pub struct NumberField {
     view: ViewActor,
     field: crate::actor::ActorRef,
     stepper: crate::actor::ActorRef,
+    formatter: crate::actor::ActorRef,
+    /// The caller-formatted text, or `None` while the number formatter parses input.
+    text: std::rc::Rc<std::cell::RefCell<Option<String>>>,
 }
 impl NumberField {
     const STEPPER_WIDTH: f64 = 19.0;
@@ -415,12 +485,26 @@ impl NumberField {
         let tree = view.actor().tree_handle().ok_or(UiError::Closed)?;
         let field_actor = tree.insert_child(view.actor(), field)?;
         let stepper_actor = tree.insert_child(view.actor(), stepper)?;
-        tree.insert_child(&field_actor, formatter)?;
+        let formatter_actor = tree.insert_child(&field_actor, formatter)?;
+        let text = std::rc::Rc::new(std::cell::RefCell::new(None::<String>));
 
         let emit = std::rc::Rc::new(callback::emitter(view.actor()));
         let field_emit = emit.clone();
         let stepper_for_field = stepper_actor.clone();
+        let field_text = text.clone();
         callback::install_action(&field_actor, move |field| {
+            if let Some(shown) = field_text.borrow().as_deref() {
+                // SAFETY: The sender is the live field without a formatter.
+                let value = unsafe { string_value(field) };
+                // The caller parses the text; until it re-renders, the field shows its last text.
+                let shown = native::nsstring(shown);
+                // SAFETY: The sender is the live field.
+                unsafe {
+                    zpd_objc::msg_send!(field, zpd_objc::sel!("setStringValue:"), ((shown.as_ptr()): Id) => ())
+                };
+                field_emit(WindowEventKind::TextCommitted { value });
+                return;
+            }
             // SAFETY: The sender is the live field; its formatter parsed `doubleValue`.
             let value =
                 unsafe { zpd_objc::msg_send!(field, zpd_objc::sel!("doubleValue"), () => f64) };
@@ -430,20 +514,49 @@ impl NumberField {
             field_emit(WindowEventKind::ValueChanged { value });
         })?;
         let field_for_stepper = field_actor.clone();
+        let stepper_text = text.clone();
         callback::install_action(&stepper_actor, move |stepper| {
             // SAFETY: The sender is the live stepper; the field is updated to match.
             let value =
                 unsafe { zpd_objc::msg_send!(stepper, zpd_objc::sel!("doubleValue"), () => f64) };
-            let _ = field_for_stepper.with(|field| unsafe {
-                zpd_objc::msg_send!(field, zpd_objc::sel!("setDoubleValue:"), ((value): f64) => ())
-            });
+            // Caller-formatted text follows the value when the caller re-renders.
+            if stepper_text.borrow().is_none() {
+                let _ = field_for_stepper.with(|field| unsafe {
+                    zpd_objc::msg_send!(field, zpd_objc::sel!("setDoubleValue:"), ((value): f64) => ())
+                });
+            }
             emit(WindowEventKind::ValueChanged { value });
         })?;
         Ok(Self {
             view,
             field: field_actor,
             stepper: stepper_actor,
+            formatter: formatter_actor,
+            text,
         })
+    }
+
+    /// Shows `text` instead of the formatted value, or `None` to format it again.
+    pub fn set_text(&self, text: Option<&str>) -> Result<(), UiError> {
+        let was_custom = self.text.replace(text.map(str::to_owned)).is_some();
+        let formatter = if text.is_some() {
+            zpd_objc::NIL
+        } else {
+            self.formatter.with(|formatter| formatter)?
+        };
+        self.field.with(|field| {
+            // SAFETY: The field is a live NSTextField; the formatter is its live child or nil.
+            unsafe {
+                if text.is_some() != was_custom {
+                    zpd_objc::msg_send!(field, zpd_objc::sel!("setFormatter:"), ((formatter): Id) => ());
+                }
+                if let Some(text) = text {
+                    let text = native::nsstring(text);
+                    zpd_objc::msg_send!(field, zpd_objc::sel!("setStringValue:"), ((text.as_ptr()): Id) => ());
+                }
+            }
+        })?;
+        Ok(())
     }
     pub fn value(&self) -> Result<f64, UiError> {
         self.stepper
@@ -454,7 +567,13 @@ impl NumberField {
             .map_err(Into::into)
     }
     pub fn set_value(&self, value: f64) -> Result<(), UiError> {
-        for control in [&self.field, &self.stepper] {
+        let custom = self.text.borrow().is_some();
+        let controls = if custom {
+            vec![&self.stepper]
+        } else {
+            vec![&self.field, &self.stepper]
+        };
+        for control in controls {
             control.with(|control| {
                 // SAFETY: Both Actors hold live NSControls accepting doubles.
                 unsafe {
@@ -485,6 +604,13 @@ impl NumberField {
                 zpd_objc::msg_send!(formatter, zpd_objc::sel!("setMaximumFractionDigits:"), ((format.fraction_digits as u64): u64) => ());
             }
         })?;
+        Ok(())
+    }
+    /// Shows `text` over both the field and its stepper.
+    pub fn set_tool_tip(&self, text: Option<&str>) -> Result<(), UiError> {
+        for control in [&self.field, &self.stepper] {
+            ViewRef::from_actor(control).set_tool_tip(text)?;
+        }
         Ok(())
     }
     /// Enables or disables both the field and its stepper.

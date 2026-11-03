@@ -23,6 +23,7 @@ impl Nodes {
             id: None,
             enabled: true,
             title_bar_interactive: false,
+            help: None,
         }
     }
 
@@ -36,6 +37,7 @@ impl Nodes {
             style,
             toolbar: None,
             autosave: None,
+            document: Default::default(),
         }
     }
 }

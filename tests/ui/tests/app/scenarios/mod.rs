@@ -1,7 +1,14 @@
+pub mod arrangements;
+pub mod canvas_action;
+pub mod controls;
+pub mod document;
 pub mod full_size_sidebar;
 pub mod full_width_stack;
 pub mod hstack;
 pub mod perform_main;
 pub mod scroll_status;
+pub mod store_sender;
+pub mod table;
+pub mod text_commit;
 pub mod text_field;
 pub mod window_close;

@@ -93,14 +93,19 @@ impl TextField {
             .map_err(UiError::from)?;
         if !label {
             let actor = view.actor().clone();
-            let target = callback::target(move |notification| unsafe {
+            let target = callback::text_target(move |notification| unsafe {
                 let field =
                     zpd_objc::msg_send!(notification, zpd_objc::sel!("object"), () => zpd_objc::Id);
                 let value = native::rust_string(
                     zpd_objc::msg_send!(field, zpd_objc::sel!("stringValue"), () => zpd_objc::Id),
                 );
+                let kind = if callback::is_end_editing(notification) {
+                    WindowEventKind::TextCommitted { value }
+                } else {
+                    WindowEventKind::TextChanged { value }
+                };
                 if let Some(tree) = actor.tree_handle() {
-                    tree.emit(&actor, WindowEventKind::TextChanged { value });
+                    tree.emit(&actor, kind);
                 }
             });
             let tree = view.actor().tree_handle().ok_or(UiError::Closed)?;

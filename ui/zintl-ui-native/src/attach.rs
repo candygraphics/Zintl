@@ -19,12 +19,14 @@ pub trait NativeView: Clone + 'static {
             value:
                 RenderNode::View {
                     title_bar_interactive,
+                    help,
                     ..
                 },
             ..
         } = &mut element
         {
             *title_bar_interactive = self.attachments().title_bar_interactive;
+            help.clone_from(&self.attachments().help);
         }
         self.attachments().attach(element, cx)
     }
@@ -54,6 +56,14 @@ pub trait Attach: NativeView + Sized {
         self.attachments_mut().title_bar_interactive = true;
         self
     }
+
+    /// Shows `text` when the pointer rests on the view (`NSView.toolTip`).
+    ///
+    /// It also shows while the view is disabled, so it can say why.
+    fn help(mut self, text: impl Into<String>) -> Self {
+        self.attachments_mut().help = Some(text.into());
+        self
+    }
 }
 
 impl<V: NativeView> Attach for V {}
@@ -64,6 +74,7 @@ pub struct Attachments {
     menu: Option<Menu>,
     popovers: Vec<Popover>,
     title_bar_interactive: bool,
+    help: Option<String>,
 }
 
 impl Attachments {

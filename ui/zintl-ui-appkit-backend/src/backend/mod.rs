@@ -105,6 +105,8 @@ struct WindowState {
     applied_sidebar: Option<Option<Sidebar>>,
     /// `None` until the toolbar declaration has been applied once.
     applied_toolbar: Option<Option<Toolbar>>,
+    /// The close request count already handled; a higher count closes the window.
+    applied_close_requests: u64,
     /// Set when the user closed the window; it is not recreated afterwards.
     closed: bool,
 }
@@ -301,6 +303,7 @@ impl AppKitBackend {
             style,
             toolbar,
             autosave,
+            document,
         } = self.kind(window_id)
         else {
             return Ok(());
@@ -344,6 +347,8 @@ impl AppKitBackend {
                 applied_title_bar: None,
                 applied_sidebar: None,
                 applied_toolbar: None,
+                // A window created after close requests starts with them handled.
+                applied_close_requests: document.close_requests,
                 closed: false,
             });
             self.opened_window = true;
@@ -362,6 +367,7 @@ impl AppKitBackend {
         let apply_sidebar = state.applied_sidebar.as_ref() != Some(&sidebar);
         // The sidebar decides whether the toolbar includes its toggle, so both reapply together.
         let apply_toolbar = apply_sidebar || state.applied_toolbar.as_ref() != Some(&toolbar);
+        let close = document.close_requests > state.applied_close_requests;
         cx.with_window(native_id, |window| -> Result<(), AppError> {
             window
                 .actor_ref()
@@ -388,9 +394,23 @@ impl AppKitBackend {
             if new_window && let Some(name) = &autosave {
                 window.set_frame_autosave_name(name)?;
             }
+            window.set_confirms_close(document.confirms_close);
+            window.set_document_edited(document.edited)?;
+            window.set_undo(document.undo.map(|undo| undo.native()));
             Ok(())
         })
         .ok_or(UiError::Closed)??;
+        if close {
+            self.state_mut(window_id)
+                .window
+                .as_mut()
+                .expect("a synchronized window has native state")
+                .applied_close_requests = document.close_requests;
+            // Closing reports WillClose and DidClose, which remove the window.
+            cx.with_window(native_id, |window| window.close())
+                .ok_or(UiError::Closed)??;
+            return Ok(());
+        }
         let state = self
             .state_mut(window_id)
             .window
@@ -449,6 +469,7 @@ impl AppKitBackend {
                     id,
                     enabled,
                     title_bar_interactive,
+                    help,
                     ..
                 } = self.kind(child)
             {
@@ -464,6 +485,9 @@ impl AppKitBackend {
                 }
                 if title_bar_interactive {
                     native.as_view().set_title_bar_interactive(true)?;
+                }
+                if help.is_some() {
+                    native.set_tool_tip(help.as_deref())?;
                 }
                 native
                     .as_view()
@@ -527,25 +551,31 @@ impl AppKitBackend {
                 Ok(())
             }
             NativeNode::List(list, rows) => {
-                let RenderNode::View {
-                    kind:
-                        ViewKind::List {
-                            sections, selected, ..
-                        },
-                    ..
-                } = self.kind(id)
-                else {
-                    return Err(AppError::InvalidTree);
+                let (entries, selected) = match self.kind(id) {
+                    RenderNode::View {
+                        kind:
+                            ViewKind::List {
+                                sections, selected, ..
+                            },
+                        ..
+                    } => (
+                        sections
+                            .iter()
+                            .flat_map(|section| {
+                                let header = section.title.clone().map(ListEntry::Header);
+                                header
+                                    .into_iter()
+                                    .chain(section.ids.iter().cloned().map(ListEntry::Row))
+                            })
+                            .collect::<Vec<_>>(),
+                        selected,
+                    ),
+                    RenderNode::View {
+                        kind: ViewKind::Table { rows, selected, .. },
+                        ..
+                    } => (rows.into_iter().map(ListEntry::Row).collect(), selected),
+                    _ => return Err(AppError::InvalidTree),
                 };
-                let entries = sections
-                    .iter()
-                    .flat_map(|section| {
-                        let header = section.title.clone().map(ListEntry::Header);
-                        header
-                            .into_iter()
-                            .chain(section.ids.iter().cloned().map(ListEntry::Row))
-                    })
-                    .collect::<Vec<_>>();
                 let natives = self
                     .children(id)
                     .iter()
@@ -557,7 +587,7 @@ impl AppKitBackend {
                     .collect::<Vec<_>>();
                 list.set_entries(&entries, &views)?;
                 list.select(selected.as_deref())?;
-                // Each row lays out at its cell bounds; `layout_hosted` fills in its snapshot.
+                // Each cell lays out at its bounds; `layout_hosted` fills in its snapshot.
                 let mut layouts = Vec::with_capacity(natives.len());
                 for (index, (row_id, native)) in natives.iter().enumerate() {
                     let layout = Rc::new(RefCell::new(HostLayout::default()));
@@ -610,9 +640,10 @@ impl AppKitBackend {
             .map_err(AppError::Ui)?;
         let content = self.content_snapshots(id)?;
         let (children, hosted) = match kind {
-            ViewKind::ScrollView { .. } | ViewKind::TabView { .. } | ViewKind::List { .. } => {
-                (Vec::new(), content)
-            }
+            ViewKind::ScrollView { .. }
+            | ViewKind::TabView { .. }
+            | ViewKind::List { .. }
+            | ViewKind::Table { .. } => (Vec::new(), content),
             _ => (content, Vec::new()),
         };
         Ok(LayoutSnapshot {
@@ -802,6 +833,7 @@ impl AppKitBackend {
                 id: old_id,
                 enabled: old_enabled,
                 title_bar_interactive: old_interactive,
+                help: old_help,
                 ..
             },
             RenderNode::View {
@@ -809,6 +841,7 @@ impl AppKitBackend {
                 id: new_id,
                 enabled: new_enabled,
                 title_bar_interactive: new_interactive,
+                help: new_help,
                 ..
             },
         ) = (old, new)
@@ -826,6 +859,9 @@ impl AppKitBackend {
                 .as_view()
                 .set_title_bar_interactive(*new_interactive)?;
         }
+        if old_help != new_help {
+            native.set_tool_tip(new_help.as_deref())?;
+        }
         native.apply(Some(old_kind), new_kind)?;
         Ok(())
     }
@@ -835,7 +871,7 @@ impl RenderBackend<RenderNode> for AppKitBackend {
     type NodeId = NodeId;
 
     fn create_context<'a>(&'a self, store_context: StoreContext<'a>) -> Context<'a> {
-        Context::new(store_context, Some(self.main_tasks.sender()))
+        Context::new(store_context, Some(self.main_tasks.shared_sender()))
     }
 
     fn root(&self) -> Self::NodeId {
@@ -867,6 +903,31 @@ impl RenderBackend<RenderNode> for AppKitBackend {
             },
         ) = (&old, &new)
             && old != new
+        {
+            self.structure_dirty = true;
+        }
+        // Table rows and columns are applied together with their cells.
+        if let (
+            RenderNode::View {
+                kind:
+                    ViewKind::Table {
+                        columns: old_columns,
+                        rows: old_rows,
+                        ..
+                    },
+                ..
+            },
+            RenderNode::View {
+                kind:
+                    ViewKind::Table {
+                        columns: new_columns,
+                        rows: new_rows,
+                        ..
+                    },
+                ..
+            },
+        ) = (&old, &new)
+            && (old_columns != new_columns || old_rows != new_rows)
         {
             self.structure_dirty = true;
         }

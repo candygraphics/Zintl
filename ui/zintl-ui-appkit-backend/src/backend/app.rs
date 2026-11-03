@@ -9,7 +9,7 @@ use zpd_appkit::runloop::Application;
 
 use super::{AppError, AppKitBackend};
 use crate::convert::Shared;
-use crate::{Event, MainTask, RenderNode};
+use crate::{Event, MainTask, RenderNode, StoreUpdates};
 
 pub(super) enum Message {
     Window(WindowEvent),
@@ -79,7 +79,19 @@ impl MessageLoopHandler<Message> for AppHandler<'_> {
 
     fn on(&mut self, cx: &MessageContext<'_, '_, Message>, message: Message) {
         match message {
-            Message::PerformMain(task) => task(),
+            Message::PerformMain(task) => {
+                task();
+                let updates = StoreUpdates::take();
+                if !updates.is_empty() {
+                    self.composer.context(|cx| {
+                        for update in updates {
+                            update(cx);
+                        }
+                    });
+                    self.composer.flush();
+                    self.synchronize(cx);
+                }
+            }
             Message::Command(id) => {
                 if let Some(route) = self.composer.backend().main_menu_route() {
                     self.dispatch(route, Event::MenuItemSelected { id });

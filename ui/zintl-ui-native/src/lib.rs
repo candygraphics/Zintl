@@ -5,10 +5,12 @@ mod button;
 mod canvas;
 mod containers;
 mod controls;
+mod indicators;
 mod list;
 mod menu;
 mod presentation;
 mod sidebar;
+mod table;
 mod text_field;
 mod toolbar;
 mod types;
@@ -24,6 +26,7 @@ pub use containers::{ScrollView, TabView, TabViewItem};
 pub use controls::{
     ColorWell, ComboBox, NumberField, PopUpButton, SearchField, SegmentedControl, Slider, Switch,
 };
+pub use indicators::{ProgressIndicator, Separator};
 pub use list::{List, ListRow, ListSection};
 pub use menu::{
     EnglishMenuLocalizer, JapaneseMenuLocalizer, MainMenu, Menu, MenuItem, MenuItemState,
@@ -32,20 +35,22 @@ pub use menu::{
 };
 pub use presentation::{Alert, AlertButton, ColorPanel, FileDialog, Popover};
 pub use sidebar::{Sidebar, SidebarItem, SidebarSection};
+pub use table::{Table, TableColumn, TableRow};
 pub use text_field::{TextEditor, TextField};
 pub use toolbar::{Toolbar, ToolbarItem};
 pub use types::{ButtonRole, ScrollStatus};
 pub use view::View;
-pub use window::Window;
+pub use window::{UndoHandler, Window};
 pub use zintl_ui::element::{Element, IntoElement, ListFactory};
 pub use zintl_ui::list;
 pub use zintl_ui::store::Store;
 pub use zintl_ui_backend_core::{
-    AlertStyle, BezelStyle, ButtonType, Canvas2DHandler, CanvasEvent, CanvasEventContext,
-    CanvasNode, CanvasSetup, Color, Event, EventKind, Frame, Invalidator, Key, KeyEvent, KeyPhase,
-    ListStyle, Modifiers, NamedKey, NodeId, PointerButton, PointerEvent, PointerPhase, PopoverEdge,
-    Rect, Redraw, RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, TextAlignment, TextColor,
-    TextStyle, TitleBar, ViewKind, WindowStyle, graphics,
+    AlertStyle, BezelStyle, ButtonType, Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasId,
+    CanvasNode, CanvasSetup, Color, Cursor, DocumentState, Event, EventKind, Frame, GesturePhase,
+    Invalidator, Key, KeyEvent, KeyPhase, ListStyle, MagnifyEvent, Modifiers, NamedKey, NodeId,
+    PointerButton, PointerEvent, PointerPhase, PopoverEdge, Rect, Redraw, RedrawPolicy, RenderNode,
+    ScrollAlignment, ScrollAxes, ScrollEvent, ScrollTarget, Signal, StoreSender, TextAlignment,
+    TextColor, TextStyle, TitleBar, UndoState, ViewKind, WindowStyle, graphics,
 };
 #[cfg(feature = "wgpu")]
 pub use zintl_ui_backend_core::{
@@ -354,6 +359,106 @@ mod tests {
 
         assert!(composer.dispatch_event(route, Event::Canvas(down)));
         assert_eq!(composer.context(|cx| *cx.get(clicks)), 1);
+    }
+
+    /// Emits the click location's x as an `f64` and its count as a `u32`.
+    #[derive(Clone)]
+    struct Emitter;
+
+    impl Canvas2DHandler for Emitter {
+        fn draw(&mut self, _g: &mut graphics::Graphics2D<'_>, _frame: &Frame) {}
+
+        fn event(&mut self, event: &CanvasEvent, cx: &mut CanvasEventContext) -> bool {
+            if let CanvasEvent::Pointer(pointer) = event {
+                cx.emit(pointer.location.x);
+                cx.emit(pointer.click_count);
+            }
+            true
+        }
+    }
+
+    /// Ignores every request a canvas makes.
+    struct NullHost;
+
+    impl zintl_ui_backend_core::CanvasHost for NullHost {
+        fn invalidate(&self) {}
+        fn set_focus(&self, _focused: bool) {}
+        fn set_cursor(&self, _cursor: Cursor) {}
+        fn actions_emitted(&self, _canvas: CanvasId) {}
+    }
+
+    #[test]
+    fn canvas_actions_reach_the_on_action_of_their_type() {
+        // Verifies each typed on_action sees only its actions, and raw input is not reported without on_event.
+        let mut composer = Composer::new(HeadlessBackend::new());
+        let seen = composer.context(|cx: &mut Context<'_>| cx.store(Vec::<String>::new()));
+        composer.mount(
+            Canvas2D::new(Emitter)
+                .on_action(move |cx, x: &f64| cx.update(seen, |seen| seen.push(format!("x={x}"))))
+                .on_action(move |cx, count: &u32| {
+                    cx.update(seen, |seen| seen.push(format!("count={count}")))
+                }),
+        );
+        let node = root_id(&composer);
+        let mounted = canvas(composer.backend().value(node).unwrap());
+        assert!(matches!(
+            composer.backend().value(node),
+            Some(RenderNode::View {
+                kind: ViewKind::Canvas2D {
+                    reports_input: false,
+                    ..
+                },
+                ..
+            })
+        ));
+        mounted.attach(Rc::new(NullHost), None);
+        mounted.event(&CanvasEvent::Pointer(PointerEvent {
+            phase: PointerPhase::Down,
+            button: Some(PointerButton::Primary),
+            location: graphics::Point::new(3.0, 1.0),
+            modifiers: Modifiers::default(),
+            click_count: 2,
+        }));
+
+        let route = composer.backend().event_route(node).unwrap();
+        assert!(composer.dispatch_event(
+            route,
+            Event::CanvasActions {
+                canvas: mounted.id()
+            }
+        ));
+        assert_eq!(
+            composer.context(|cx| cx.get(seen).clone()),
+            ["x=3", "count=2"]
+        );
+    }
+
+    #[test]
+    fn store_sender_writes_from_another_thread_on_the_main_thread() {
+        // Verifies a write sent off the main thread waits for the main-thread task and then updates the Store.
+        let mut composer = Composer::new(HeadlessBackend::new());
+        let tasks = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let queue = tasks.clone();
+        composer.backend().connect_main_tasks(move |task| {
+            queue.lock().unwrap().push(task);
+            true
+        });
+        let status = composer.context(|cx: &mut Context<'_>| cx.store("Building".to_owned()));
+        let sender = composer.context(|cx| cx.sender(status));
+
+        std::thread::spawn(move || assert!(sender.set("Done".to_owned())))
+            .join()
+            .unwrap();
+        assert_eq!(composer.context(|cx| cx.get(status).clone()), "Building");
+        for task in tasks.lock().unwrap().drain(..) {
+            task();
+        }
+        composer.context(|cx| {
+            for update in zintl_ui_backend_core::StoreUpdates::take() {
+                update(cx);
+            }
+        });
+        assert_eq!(composer.context(|cx| cx.get(status).clone()), "Done");
     }
 
     #[test]

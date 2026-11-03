@@ -124,12 +124,27 @@ impl CanvasSetup {
 pub struct CanvasEventContext {
     redraw: bool,
     focus: Option<bool>,
+    cursor: Option<Cursor>,
+    actions: Vec<Box<dyn Any>>,
 }
 
 impl CanvasEventContext {
     /// Draws again at the next display refresh without rebuilding views.
     pub fn invalidate(&mut self) {
         self.redraw = true;
+    }
+
+    /// Sends `action` to the canvas view's `on_action` handlers for its type.
+    ///
+    /// Actions reach views after the handler returns, in the order emitted.
+    /// Handlers for other types ignore it.
+    pub fn emit<A: 'static>(&mut self, action: A) {
+        self.actions.push(Box::new(action));
+    }
+
+    /// Shows `cursor` while the pointer stays over the canvas.
+    pub fn set_cursor(&mut self, cursor: Cursor) {
+        self.cursor = Some(cursor);
     }
 
     /// Makes the canvas receive keyboard input. Requires a focusable canvas.
@@ -159,7 +174,9 @@ impl Invalidator {
             return false;
         };
         let canvas = self.canvas;
-        sender(Box::new(move || CanvasRegistry::invalidate(canvas)))
+        sender(Box::new(move || {
+            CanvasRegistry::invalidate(canvas);
+        }))
     }
 }
 
@@ -177,6 +194,51 @@ pub trait CanvasHost {
     /// Schedules a draw at the next display refresh.
     fn invalidate(&self);
     fn set_focus(&self, focused: bool);
+    fn set_cursor(&self, cursor: Cursor);
+    /// Tells the canvas's event route that `canvas` has actions to take.
+    ///
+    /// The backend dispatches [`Event::CanvasActions`](crate::Event::CanvasActions)
+    /// on the route; views drain them with [`CanvasId::take_actions`].
+    fn actions_emitted(&self, canvas: CanvasId);
+}
+
+/// The pointer shape a canvas shows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Cursor {
+    #[default]
+    Arrow,
+    PointingHand,
+    IBeam,
+    Crosshair,
+    OpenHand,
+    ClosedHand,
+    ResizeLeftRight,
+    ResizeUpDown,
+    NotAllowed,
+}
+
+/// Identifies a mounted canvas across the message loop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct CanvasId(u64);
+
+impl CanvasId {
+    /// Reconstructs an ID that a backend passed through native code.
+    pub fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+
+    pub fn into_raw(self) -> u64 {
+        self.0
+    }
+
+    /// Removes and returns the actions the canvas emitted, oldest first.
+    ///
+    /// Returns nothing once the canvas is removed.
+    pub fn take_actions(self) -> Vec<Box<dyn Any>> {
+        CanvasRegistry::get(self.0)
+            .map(|canvas| std::mem::take(&mut *canvas.actions.borrow_mut()))
+            .unwrap_or_default()
+    }
 }
 
 /// What a handler receives when it is set up.
@@ -255,6 +317,8 @@ struct CanvasCell {
     #[cfg(feature = "wgpu")]
     gpu: RefCell<Option<crate::wgpu_canvas::GpuBinding>>,
     set_up: Cell<bool>,
+    /// Actions emitted by events and not yet taken by the view.
+    actions: RefCell<Vec<Box<dyn Any>>>,
 }
 
 impl Drop for CanvasCell {
@@ -288,7 +352,12 @@ impl CanvasNode {
             #[cfg(feature = "wgpu")]
             gpu: RefCell::new(None),
             set_up: Cell::new(false),
+            actions: RefCell::new(Vec::new()),
         }))
+    }
+
+    pub fn id(&self) -> CanvasId {
+        CanvasId(self.0.id)
     }
 
     /// Returns the concrete handler type; canvases of different types are different kinds.
@@ -347,11 +416,13 @@ impl CanvasNode {
     /// Renders one frame of a wgpu canvas into `target`.
     #[cfg(feature = "wgpu")]
     pub fn render(&self, target: &mut crate::WgpuTarget<'_>, frame: &Frame) {
+        let _reading = crate::signal::Reading::start(self.0.id);
         self.with_handler(|handler| handler.render(target, frame));
     }
 
     /// Draws one frame with the handler.
     pub fn draw(&self, g: &mut Graphics2D<'_>, frame: &Frame) {
+        let _reading = crate::signal::Reading::start(self.0.id);
         self.with_handler(|handler| handler.draw(g, frame));
     }
 
@@ -365,10 +436,22 @@ impl CanvasNode {
         if cx.redraw {
             self.invalidate();
         }
+        let host = self.host();
         if let Some(focused) = cx.focus
-            && let Some(host) = self.host()
+            && let Some(host) = &host
         {
             host.set_focus(focused);
+        }
+        if let Some(cursor) = cx.cursor
+            && let Some(host) = &host
+        {
+            host.set_cursor(cursor);
+        }
+        if !cx.actions.is_empty() {
+            self.0.actions.borrow_mut().extend(cx.actions);
+            if let Some(host) = &host {
+                host.actions_emitted(self.id());
+            }
         }
         handled
     }
@@ -448,7 +531,7 @@ impl fmt::Debug for CanvasNode {
 }
 
 /// Mounted canvases of the main thread, addressed by [`Invalidator`]s.
-struct CanvasRegistry;
+pub(crate) struct CanvasRegistry;
 
 thread_local! {
     static CANVASES: RefCell<HashMap<u64, Weak<CanvasCell>>> = RefCell::new(HashMap::new());
@@ -464,11 +547,18 @@ impl CanvasRegistry {
         let _ = CANVASES.try_with(|canvases| canvases.borrow_mut().remove(&id));
     }
 
-    fn invalidate(id: u64) {
-        let canvas = CANVASES.with(|canvases| canvases.borrow().get(&id).and_then(Weak::upgrade));
+    fn get(id: u64) -> Option<Rc<CanvasCell>> {
+        CANVASES.with(|canvases| canvases.borrow().get(&id).and_then(Weak::upgrade))
+    }
+
+    /// Schedules a draw of canvas `id`; returns whether it is still mounted.
+    pub(crate) fn invalidate(id: u64) -> bool {
+        let canvas = Self::get(id);
+        let mounted = canvas.is_some();
         if let Some(canvas) = canvas {
             CanvasNode(canvas).invalidate();
         }
+        mounted
     }
 }
 
@@ -573,11 +663,31 @@ pub struct KeyEvent {
     pub code: u32,
 }
 
+/// How far a continuous gesture has progressed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GesturePhase {
+    Began,
+    Changed,
+    Ended,
+    Cancelled,
+}
+
+/// A pinch on a trackpad.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MagnifyEvent {
+    pub location: Point,
+    /// The scale change since the previous event; `0.1` grows content by 10%.
+    pub delta: f64,
+    pub phase: GesturePhase,
+    pub modifiers: Modifiers,
+}
+
 /// Input delivered to a canvas.
 #[derive(Clone, Debug, PartialEq)]
 pub enum CanvasEvent {
     Pointer(PointerEvent),
     Scroll(ScrollEvent),
+    Magnify(MagnifyEvent),
     Key(KeyEvent),
     ModifiersChanged(Modifiers),
     /// The canvas gained (`true`) or lost keyboard focus.
@@ -648,6 +758,8 @@ mod tests {
     struct Host {
         invalidations: Cell<u32>,
         focus: Cell<Option<bool>>,
+        cursor: Cell<Option<Cursor>>,
+        notified: RefCell<Vec<CanvasId>>,
     }
 
     impl CanvasHost for Host {
@@ -657,6 +769,14 @@ mod tests {
 
         fn set_focus(&self, focused: bool) {
             self.focus.set(Some(focused));
+        }
+
+        fn set_cursor(&self, cursor: Cursor) {
+            self.cursor.set(Some(cursor));
+        }
+
+        fn actions_emitted(&self, canvas: CanvasId) {
+            self.notified.borrow_mut().push(canvas);
         }
     }
 
@@ -670,14 +790,18 @@ mod tests {
         }
     }
 
-    fn pointer(phase: PointerPhase) -> CanvasEvent {
-        CanvasEvent::Pointer(PointerEvent {
+    fn pointer_event(phase: PointerPhase) -> PointerEvent {
+        PointerEvent {
             phase,
             button: None,
             location: Point::ZERO,
             modifiers: Modifiers::default(),
             click_count: 0,
-        })
+        }
+    }
+
+    fn pointer(phase: PointerPhase) -> CanvasEvent {
+        CanvasEvent::Pointer(pointer_event(phase))
     }
 
     fn filled_paths(commands: &[DrawCommand]) -> Vec<Path> {
@@ -836,5 +960,73 @@ mod tests {
             task();
         }
         assert_eq!(host.invalidations.get(), 0);
+    }
+
+    /// Emits its click count as an action and shows a hand while hovered.
+    #[derive(Clone)]
+    struct Clicks;
+
+    impl Canvas2DHandler for Clicks {
+        fn draw(&mut self, _g: &mut Graphics2D<'_>, _frame: &Frame) {}
+
+        fn event(&mut self, event: &CanvasEvent, cx: &mut CanvasEventContext) -> bool {
+            let CanvasEvent::Pointer(pointer) = event else {
+                return false;
+            };
+            match pointer.phase {
+                PointerPhase::Down => {
+                    cx.emit(pointer.click_count);
+                    cx.emit("down");
+                }
+                PointerPhase::Moved => cx.set_cursor(Cursor::PointingHand),
+                _ => {}
+            }
+            true
+        }
+    }
+
+    #[test]
+    fn emitted_actions_queue_on_the_canvas_and_notify_the_host() {
+        // Verifies actions keep their order, are taken once, and the host hears about each event that emitted.
+        let host = Rc::new(Host::default());
+        let canvas = CanvasNode::new(Clicks);
+        canvas.attach(host.clone(), None);
+
+        canvas.event(&CanvasEvent::Pointer(PointerEvent {
+            click_count: 2,
+            ..pointer_event(PointerPhase::Down)
+        }));
+        canvas.event(&pointer(PointerPhase::Up));
+
+        assert_eq!(*host.notified.borrow(), [canvas.id()]);
+        let actions = canvas.id().take_actions();
+        assert_eq!(actions.len(), 2);
+        assert_eq!(actions[0].downcast_ref::<u32>(), Some(&2));
+        assert_eq!(actions[1].downcast_ref::<&str>(), Some(&"down"));
+        assert!(canvas.id().take_actions().is_empty());
+    }
+
+    #[test]
+    fn removed_canvases_have_no_actions() {
+        // Verifies an action notification that arrives after the canvas is gone yields nothing.
+        let host = Rc::new(Host::default());
+        let canvas = CanvasNode::new(Clicks);
+        canvas.attach(host.clone(), None);
+        canvas.event(&pointer(PointerPhase::Down));
+        let id = canvas.id();
+        drop(canvas);
+
+        assert!(id.take_actions().is_empty());
+    }
+
+    #[test]
+    fn cursor_requests_reach_the_host() {
+        // Verifies a cursor set while handling input is applied through the host.
+        let host = Rc::new(Host::default());
+        let canvas = CanvasNode::new(Clicks);
+        canvas.attach(host.clone(), None);
+
+        canvas.event(&pointer(PointerPhase::Moved));
+        assert_eq!(host.cursor.get(), Some(Cursor::PointingHand));
     }
 }

@@ -34,6 +34,31 @@ pub struct ScrollAxes {
     pub vertical: bool,
 }
 
+/// Where [`ScrollView::reveal`] places a view in the visible area.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ScrollAlignment {
+    /// Scrolls only as far as needed to show the whole view.
+    #[default]
+    Nearest,
+    Start,
+    Center,
+    End,
+}
+
+impl ScrollAlignment {
+    /// Returns the new offset along one axis for an item at `start..start + length`.
+    fn offset(self, current: f64, visible: f64, start: f64, length: f64) -> f64 {
+        match self {
+            Self::Start => start,
+            Self::Center => start + length / 2.0 - visible / 2.0,
+            Self::End => start + length - visible,
+            Self::Nearest if start < current => start,
+            Self::Nearest if start + length > current + visible => start + length - visible,
+            Self::Nearest => current,
+        }
+    }
+}
+
 /// An `NSScrollView` whose document view uses top-left coordinates.
 pub struct ScrollView {
     view: ViewActor,
@@ -139,6 +164,57 @@ impl ScrollView {
         });
         self.quiet.set(false);
         result
+    }
+    /// Scrolls the descendant whose accessibility identifier is `identifier` into view.
+    ///
+    /// Returns `false` when no such view is in the document. The scroll is
+    /// reported as a user scroll so bound offsets follow it.
+    pub fn reveal(&self, identifier: &str, alignment: ScrollAlignment) -> Result<bool, UiError> {
+        let document = self.document.with(|document| document)?;
+        // SAFETY: The document view and its subviews are live NSViews on the main thread.
+        let Some(frame) = (unsafe { Self::find(document, identifier) }) else {
+            return Ok(false);
+        };
+        self.view.as_view().with(|scroll| {
+            // SAFETY: The live view is an NSScrollView and its clip view takes NSRect/NSPoint values.
+            unsafe {
+                let clip = zpd_objc::msg_send!(scroll, zpd_objc::sel!("contentView"), () => Id);
+                let mut bounds = zpd_objc::msg_send!(clip, zpd_objc::sel!("bounds"), () => native::Rect);
+                bounds.origin.x = alignment.offset(bounds.origin.x, bounds.size.width, frame.origin.x, frame.size.width);
+                bounds.origin.y = alignment.offset(bounds.origin.y, bounds.size.height, frame.origin.y, frame.size.height);
+                let bounds = zpd_objc::msg_send!(clip, zpd_objc::sel!("constrainBoundsRect:"), ((bounds): native::Rect) => native::Rect);
+                zpd_objc::msg_send!(clip, zpd_objc::sel!("scrollToPoint:"), ((bounds.origin): native::Point) => ());
+                zpd_objc::msg_send!(scroll, zpd_objc::sel!("reflectScrolledClipView:"), ((clip): Id) => ());
+            }
+        })?;
+        Ok(true)
+    }
+    /// Returns the frame in `document` coordinates of its first descendant named `identifier`.
+    ///
+    /// # Safety
+    /// `document` must be a live NSView.
+    unsafe fn find(document: Id, identifier: &str) -> Option<native::Rect> {
+        let mut pending = vec![document];
+        while let Some(view) = pending.pop() {
+            // SAFETY: Guaranteed by the caller for the root; subviews are live while their parent is.
+            unsafe {
+                let name =
+                    zpd_objc::msg_send!(view, zpd_objc::sel!("accessibilityIdentifier"), () => Id);
+                if view != document && !name.is_null() && native::rust_string(name) == identifier {
+                    let bounds =
+                        zpd_objc::msg_send!(view, zpd_objc::sel!("bounds"), () => native::Rect);
+                    return Some(
+                        zpd_objc::msg_send!(view, zpd_objc::sel!("convertRect:toView:"), ((bounds): native::Rect, (document): Id) => native::Rect),
+                    );
+                }
+                let subviews = zpd_objc::msg_send!(view, zpd_objc::sel!("subviews"), () => Id);
+                let count = zpd_objc::msg_send!(subviews, zpd_objc::sel!("count"), () => usize);
+                for index in (0..count).rev() {
+                    pending.push(zpd_objc::msg_send!(subviews, zpd_objc::sel!("objectAtIndex:"), ((index): usize) => Id));
+                }
+            }
+        }
+        None
     }
     /// Resizes the scrollable document area.
     pub fn set_document_size(&self, width: f64, height: f64) -> Result<(), UiError> {

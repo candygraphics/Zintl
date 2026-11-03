@@ -66,8 +66,6 @@ inset are ignored by the WinUI 3 backend (it passes an inset of 0). With
 ## Canvas2D: follow-ups
 
 - IME and marked text (`NSTextInputClient`) for canvases that accept text.
-- Cursor shape control from the handler. `SplitView`'s divider needs a resize
-  cursor (`NSCursor.resizeLeftRight`).
 - An opt-in render thread (`Canvas2D::threaded`) for heavy drawing.
 
 ## Text styling on Windows
@@ -88,6 +86,10 @@ WinUI 3 yet, so the split shows no divider there and cannot be resized.
 selection or section headers. Use a WinUI `ListView` with grouped items,
 `SelectionMode::Single`, and row content hosted as item templates, and report
 `Event::ListSelectionChanged`.
+
+`ViewKind::Table` falls back the same way, without column headers. Host its
+cells in a `ListView` whose item template is a `Grid` with one column per
+`TableColumn`, add a header row, and alternate row backgrounds when `striped`.
 
 ## TextEditor on Windows
 
@@ -122,3 +124,36 @@ item as an `AutoSuggestBox`, and save the window placement in app settings.
 `SidebarItem::badge` and `SidebarItem::context_menu` are ignored by the WinUI 3
 navigation view. Use `NavigationViewItem.InfoBadge` and a `ContextFlyout` per
 item that reports `Event::MenuItemSelected` on the window route.
+
+## Text commits and formatted number fields on Windows
+
+The WinUI 3 backend never reports `Event::TextCommitted`, so `TextField::on_commit`
+does not run, and it ignores `ViewKind::NumberField::text`. Report a commit from
+`TextBox.LostFocus` and Enter in `KeyDown`. For a formatted number field, show
+`text` in a `TextBox` next to the `NumberBox` spin buttons (or set
+`NumberBox.NumberFormatter` to an `INumberFormatter2` that calls back into Rust)
+and report the typed text as `Event::TextCommitted`.
+
+## Close requests, edited state, and app undo on Windows
+
+The WinUI 3 backend ignores `RenderNode::Window::document`. Handle
+`AppWindow.Closing` (set `Cancel` and report `Event::WindowCloseRequested`
+while `confirms_close` is set), close the window when `close_requests`
+increases, and show `edited` in the title. Ctrl+Z and Ctrl+Y should report
+`Event::Undo` and `Event::Redo` unless a focused `TextBox` can undo.
+
+## Tooltips, indicators, separators, and menu buttons on Windows
+
+The WinUI 3 backend ignores `RenderNode::View::help`, shows
+`ViewKind::ProgressIndicator` and `ViewKind::Separator` as empty panels, and
+ignores `Button::shows_menu` and `Button::keeps_state`. Set
+`ToolTipService.ToolTip`, use a `ProgressRing` (spinning) or `ProgressBar`, draw
+the separator as a 1-pixel `Rectangle`, attach the context menu as a
+`Button.Flyout`, and restore a kept toggle state after each click.
+
+## Scrolling to a child on Windows
+
+`ViewKind::ScrollView::reveal` is ignored by the WinUI 3 backend. After layout,
+find the descendant whose `AutomationProperties.AutomationId` matches the target
+ID and call `ScrollViewer.ChangeView` (or `UIElement.StartBringIntoView` with
+the alignment as `BringIntoViewOptions`).

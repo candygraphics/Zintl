@@ -26,7 +26,8 @@ mod window;
 pub use button::{BezelStyle, Button, ButtonType};
 pub use canvas::{
     CanvasDelegate, CanvasFrame, CanvasHandle, CanvasInput, CanvasInputDelegate, CanvasRedraw,
-    CanvasView, KeyInput, Modifiers, MouseButton, MouseInput, MousePhase, NamedKey, ScrollInput,
+    CanvasView, Cursor, GesturePhase, KeyInput, MagnifyInput, Modifiers, MouseButton, MouseInput,
+    MousePhase, NamedKey, ScrollInput,
 };
 #[cfg(feature = "metal")]
 pub use canvas::{MetalCanvasDelegate, MetalCanvasView, MetalLayer};
@@ -35,8 +36,8 @@ pub use commands::{
     CommandItem, CommandMenu, CommandModifier, CommandRole, CommandSet, MenuRole, WindowAppMenu,
 };
 pub use controls::{
-    ColorWell, ComboBox, NumberField, NumberFormat, PopUpButton, SearchField, SegmentedControl,
-    Slider, Switch,
+    ColorWell, ComboBox, NumberField, NumberFormat, PopUpButton, ProgressIndicator, SearchField,
+    SegmentedControl, Separator, Slider, Switch,
 };
 pub use dialogs::{
     AlertButton, AlertButtonRole, AlertConfig, AlertSheet, AlertStyle, ColorPanelSession,
@@ -44,15 +45,15 @@ pub use dialogs::{
 };
 pub use error::UiError;
 pub use layout::{Dimension, LayoutConstraint, XAxisAnchor, YAxisAnchor};
-pub use list_view::{ListEntry, ListStyle, ListView};
+pub use list_view::{ListEntry, ListStyle, ListView, TableColumn};
 pub use menu::ContextMenu;
 pub use popover::{Popover, PopoverEdge};
 pub use rich_text::{RichParagraph, RichRun, RichStyle};
-pub use scroll_view::{ScrollAxes, ScrollView};
+pub use scroll_view::{ScrollAlignment, ScrollAxes, ScrollView};
 pub use sidebar::{Sidebar, SidebarItem, SidebarSearch, SidebarSection};
 pub use tab_view::TabView;
 pub use text_editor::TextEditor;
 pub use text_field::{TextAlignment, TextColor, TextField};
 pub use toolbar::{Toolbar, ToolbarItem};
 pub use view::{AsView, View, ViewRef};
-pub use window::{TitleBar, Window, WindowStyle};
+pub use window::{TitleBar, UndoState, Window, WindowStyle};

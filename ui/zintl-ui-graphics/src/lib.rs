@@ -22,4 +22,4 @@ pub use paint::{
 };
 pub use path::{FillRule, Path, PathElement};
 pub use recording::{DrawCommand, RecordingBackend};
-pub use text::{Font, FontWeight, TextMetrics};
+pub use text::{Font, FontWeight, HorizontalAlign, TextAlign, TextMetrics, VerticalAlign};

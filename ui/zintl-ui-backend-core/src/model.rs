@@ -33,6 +33,14 @@ pub struct ListSection {
     pub ids: Vec<String>,
 }
 
+/// A titled column of a [`crate::ViewKind::Table`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TableColumn {
+    pub title: String,
+    /// The initial width in points; `None` lets the table size it.
+    pub width: Option<f64>,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ListStyle {
     /// Inset rows with rounded selection, like Notes and Mail.
@@ -289,6 +297,24 @@ pub enum PopoverEdge {
     Top,
     #[default]
     Bottom,
+}
+
+/// Where a revealed child sits in a scroll view's visible area.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ScrollAlignment {
+    /// Scrolls only as far as needed to show the whole child.
+    #[default]
+    Nearest,
+    Start,
+    Center,
+    End,
+}
+
+/// The child a scroll view keeps in view, by its view ID.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScrollTarget {
+    pub id: String,
+    pub alignment: ScrollAlignment,
 }
 
 /// Directions in which a scroll view scrolls.

@@ -86,3 +86,48 @@ impl TextMetrics {
         self.ascent + self.descent
     }
 }
+
+/// Where a point sits horizontally on a line of text.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum HorizontalAlign {
+    #[default]
+    Left,
+    Center,
+    Right,
+}
+
+/// Where a point sits vertically on a line of text.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum VerticalAlign {
+    Top,
+    Center,
+    #[default]
+    Baseline,
+    Bottom,
+}
+
+/// The point of a text line that [`Graphics2D::fill_text_aligned`](crate::Graphics2D::fill_text_aligned) places.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct TextAlign {
+    pub horizontal: HorizontalAlign,
+    pub vertical: VerticalAlign,
+}
+
+impl TextAlign {
+    pub const LEFT_TOP: Self = Self::new(HorizontalAlign::Left, VerticalAlign::Top);
+    pub const CENTER_TOP: Self = Self::new(HorizontalAlign::Center, VerticalAlign::Top);
+    pub const RIGHT_TOP: Self = Self::new(HorizontalAlign::Right, VerticalAlign::Top);
+    pub const LEFT_CENTER: Self = Self::new(HorizontalAlign::Left, VerticalAlign::Center);
+    pub const CENTER: Self = Self::new(HorizontalAlign::Center, VerticalAlign::Center);
+    pub const RIGHT_CENTER: Self = Self::new(HorizontalAlign::Right, VerticalAlign::Center);
+    pub const LEFT_BOTTOM: Self = Self::new(HorizontalAlign::Left, VerticalAlign::Bottom);
+    pub const CENTER_BOTTOM: Self = Self::new(HorizontalAlign::Center, VerticalAlign::Bottom);
+    pub const RIGHT_BOTTOM: Self = Self::new(HorizontalAlign::Right, VerticalAlign::Bottom);
+
+    pub const fn new(horizontal: HorizontalAlign, vertical: VerticalAlign) -> Self {
+        Self {
+            horizontal,
+            vertical,
+        }
+    }
+}

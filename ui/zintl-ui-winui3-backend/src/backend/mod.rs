@@ -552,9 +552,10 @@ impl WinUI3Backend {
             .clone();
         let content = self.content_snapshots(id)?;
         let (children, hosted) = match kind {
-            ViewKind::ScrollView { .. } | ViewKind::TabView { .. } | ViewKind::List { .. } => {
-                (Vec::new(), content)
-            }
+            ViewKind::ScrollView { .. }
+            | ViewKind::TabView { .. }
+            | ViewKind::List { .. }
+            | ViewKind::Table { .. } => (Vec::new(), content),
             _ => (content, Vec::new()),
         };
         Ok(LayoutSnapshot {
@@ -907,7 +908,7 @@ impl RenderBackend<RenderNode> for WinUI3Backend {
     type NodeId = NodeId;
 
     fn create_context<'a>(&'a self, store_context: StoreContext<'a>) -> Context<'a> {
-        Context::new(store_context, Some(self.main_tasks.sender()))
+        Context::new(store_context, Some(self.main_tasks.shared_sender()))
     }
 
     fn root(&self) -> Self::NodeId {

@@ -64,6 +64,8 @@ pub struct Application {
     run_loop: RunLoop<'static>,
     actor: ActorRef,
     tree: ActorTree,
+    /// `NSApplication` keeps its delegate unretained.
+    _delegate: Strong,
     _main_thread: PhantomData<Rc<()>>,
 }
 impl Application {
@@ -87,14 +89,42 @@ impl Application {
         unsafe {
             zpd_objc::msg_send!(app.as_ptr(), zpd_objc::sel!("setActivationPolicy:"), ((native::NS_APPLICATION_ACTIVATION_POLICY_REGULAR): i64) => ())
         };
+        let delegate = native::alloc_init(Self::delegate_class());
+        // SAFETY: The delegate outlives its registration; Drop clears it first.
+        unsafe {
+            zpd_objc::msg_send!(app.as_ptr(), zpd_objc::sel!("setDelegate:"), ((delegate.as_ptr()): Id) => ())
+        };
         // Each Application gets a fresh tree, so ActorRefs from an earlier one stay dropped.
         let tree = ActorTree::new(app);
         Ok(Self {
             run_loop: RunLoop::current(),
             actor: tree.root(),
             tree,
+            _delegate: delegate,
             _main_thread: PhantomData,
         })
+    }
+    /// Answers `applicationShouldTerminate:` so windows that confirm closing can delay a quit.
+    fn delegate_class() -> zpd_objc::Class {
+        unsafe extern "C" fn should_terminate(_: Id, _: zpd_objc::Sel, _: Id) -> u64 {
+            const TERMINATE_CANCEL: u64 = 0;
+            const TERMINATE_NOW: u64 = 1;
+            if zpd_objc::abort_on_unwind(Window::should_terminate) {
+                TERMINATE_NOW
+            } else {
+                TERMINATE_CANCEL
+            }
+        }
+
+        static CLASS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+        *CLASS.get_or_init(|| {
+            zpd_objc::decl!(ZpdRustApplicationDelegate: [zpd_objc::class!("NSObject")] {
+                fields {}
+                methods {
+                    "applicationShouldTerminate:": "Q@:@" => should_terminate,
+                }
+            }) as usize
+        }) as zpd_objc::Class
     }
     pub fn run_loop(&self) -> RunLoop<'_> {
         self.run_loop
@@ -180,6 +210,9 @@ impl Drop for Application {
             let _ = self
                 .actor
                 .with(|app| zpd_objc::msg_send!(app, zpd_objc::sel!("setMainMenu:"), ((zpd_objc::NIL): zpd_objc::Id) => ()));
+            let _ = self
+                .actor
+                .with(|app| zpd_objc::msg_send!(app, zpd_objc::sel!("setDelegate:"), ((zpd_objc::NIL): zpd_objc::Id) => ()));
         }
         self.tree.clear();
         INITIALIZED.store(false, Ordering::Release);

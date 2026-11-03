@@ -5,8 +5,8 @@ use std::sync::Arc;
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
     AsView, Button, CanvasView, ColorWell, ComboBox, ListView, NumberField, PopUpButton,
-    ScrollView, SearchField, SegmentedControl, Slider, Switch, TabView, TextEditor, TextField,
-    UiError, View, ViewRef,
+    ProgressIndicator, ScrollView, SearchField, SegmentedControl, Separator, Slider, Switch,
+    TabView, TextEditor, TextField, UiError, View, ViewRef,
 };
 
 use zintl_ui_layout::Size;
@@ -22,6 +22,15 @@ use super::wgpu::WgpuBridge;
 use crate::convert::{Native, Shared};
 use crate::{ButtonType, MainTaskSender, ViewKind};
 
+/// Scrolling that waits for a scroll view's next layout.
+#[derive(Default)]
+pub(super) struct ScrollState {
+    /// The document point to restore once, after the view is created.
+    pub(super) restore: Cell<Option<(f64, f64)>>,
+    /// The descendant to scroll into view.
+    pub(super) reveal: RefCell<Option<crate::ScrollTarget>>,
+}
+
 /// A native view created for a [`ViewKind`].
 pub(super) enum NativeNode {
     Container(View),
@@ -34,10 +43,12 @@ pub(super) enum NativeNode {
     SegmentedControl(SegmentedControl),
     ComboBox(ComboBox),
     NumberField(NumberField),
+    ProgressIndicator(ProgressIndicator),
+    Separator(Separator),
     SearchField(SearchField),
     ColorWell(ColorWell),
     /// The offset waits until layout has sized the document.
-    ScrollView(ScrollView, Cell<Option<(f64, f64)>>),
+    ScrollView(ScrollView, ScrollState),
     TabView(TabView),
     Canvas(CanvasView),
     #[cfg(feature = "wgpu")]
@@ -45,7 +56,7 @@ pub(super) enum NativeNode {
     List(ListView, ListRows),
 }
 
-/// The layouts of a list's rows; each lays out one row at its cell bounds.
+/// The layouts of a list's or table's cells; each lays out one cell at its bounds.
 pub(super) struct ListRows {
     pub(super) layouts: RefCell<Vec<Rc<RefCell<HostLayout<NativeNode>>>>>,
     /// Rows lay out when AppKit displays them, outside the backend's update.
@@ -65,6 +76,8 @@ impl NativeNode {
             Self::SegmentedControl(view) => view.as_view(),
             Self::ComboBox(view) => view.as_view(),
             Self::NumberField(view) => view.as_view(),
+            Self::ProgressIndicator(view) => view.as_view(),
+            Self::Separator(view) => view.as_view(),
             Self::SearchField(view) => view.as_view(),
             Self::ColorWell(view) => view.as_view(),
             Self::ScrollView(view, _) => view.as_view(),
@@ -105,13 +118,17 @@ impl NativeNode {
             }
             ViewKind::ComboBox { .. } => Self::ComboBox(ComboBox::new(application)?),
             ViewKind::NumberField { .. } => Self::NumberField(NumberField::new(application)?),
+            ViewKind::ProgressIndicator { .. } => {
+                Self::ProgressIndicator(ProgressIndicator::new(application)?)
+            }
+            ViewKind::Separator => Self::Separator(Separator::new(application)?),
             ViewKind::SearchField { .. } => Self::SearchField(SearchField::new(application)?),
             ViewKind::ColorWell { .. } => Self::ColorWell(ColorWell::new(application)?),
             ViewKind::ScrollView { .. } => {
-                Self::ScrollView(ScrollView::new(application)?, Cell::new(None))
+                Self::ScrollView(ScrollView::new(application)?, ScrollState::default())
             }
             ViewKind::TabView { .. } => Self::TabView(TabView::new(application)?),
-            ViewKind::List { .. } => Self::List(
+            ViewKind::List { .. } | ViewKind::Table { .. } => Self::List(
                 ListView::new(application)?,
                 ListRows {
                     layouts: RefCell::new(Vec::new()),
@@ -165,6 +182,14 @@ impl NativeNode {
             raise(declared.width, measure_width, width),
             raise(declared.height, measure_height, height),
         ))
+    }
+
+    /// Sets the tooltip on the view the pointer rests on.
+    pub(super) fn set_tool_tip(&self, text: Option<&str>) -> Result<(), UiError> {
+        match self {
+            Self::NumberField(field) => field.set_tool_tip(text),
+            _ => self.as_view().set_tool_tip(text),
+        }
     }
 
     pub(super) fn set_enabled(&self, enabled: bool) -> Result<(), UiError> {
@@ -222,6 +247,8 @@ impl NativeNode {
                 if old.is_none_or(|old| old.destructive != button.destructive) {
                     native.set_destructive(button.destructive)?;
                 }
+                native.set_shows_menu(button.shows_menu);
+                native.set_keeps_state(button.keeps_state);
             }
             (
                 Self::TextField(field),
@@ -239,11 +266,39 @@ impl NativeNode {
                 if field.string_value()? != *value {
                     field.set_string_value(value)?;
                 }
-                field.set_placeholder_string(placeholder.as_deref())?;
-                field.set_editable(*editable)?;
-                field.set_selectable(*selectable)?;
-                field.set_bordered(*bordered)?;
-                field.set_draws_background(*draws_background)?;
+                // Reapplying unchanged properties while editing would clear the typing undo history.
+                let old_field = match old {
+                    Some(ViewKind::TextField {
+                        placeholder,
+                        editable,
+                        selectable,
+                        bordered,
+                        draws_background,
+                        ..
+                    }) => Some((
+                        placeholder,
+                        editable,
+                        selectable,
+                        bordered,
+                        draws_background,
+                    )),
+                    _ => None,
+                };
+                if old_field.is_none_or(|old| old.0 != placeholder) {
+                    field.set_placeholder_string(placeholder.as_deref())?;
+                }
+                if old_field.is_none_or(|old| old.1 != editable) {
+                    field.set_editable(*editable)?;
+                }
+                if old_field.is_none_or(|old| old.2 != selectable) {
+                    field.set_selectable(*selectable)?;
+                }
+                if old_field.is_none_or(|old| old.3 != bordered) {
+                    field.set_bordered(*bordered)?;
+                }
+                if old_field.is_none_or(|old| old.4 != draws_background) {
+                    field.set_draws_background(*draws_background)?;
+                }
                 let old_style = match old {
                     Some(ViewKind::TextField {
                         multiline, style, ..
@@ -359,15 +414,32 @@ impl NativeNode {
                     combo.set_string_value(value)?;
                 }
             }
-            (Self::NumberField(field), ViewKind::NumberField { value, format }) => {
+            (
+                Self::NumberField(field),
+                ViewKind::NumberField {
+                    value,
+                    format,
+                    text,
+                },
+            ) => {
                 if !matches!(old, Some(ViewKind::NumberField { format: old, .. }) if old == format)
                 {
                     field.set_format(format.native())?;
+                }
+                if !matches!(old, Some(ViewKind::NumberField { text: old, .. }) if old == text) {
+                    field.set_text(text.as_deref())?;
                 }
                 if field.value()? != *value || old.is_none() {
                     field.set_value(*value)?;
                 }
             }
+            (Self::ProgressIndicator(indicator), ViewKind::ProgressIndicator { value }) => {
+                if !matches!(old, Some(ViewKind::ProgressIndicator { value: old }) if old == value)
+                {
+                    indicator.set_value(*value)?;
+                }
+            }
+            (Self::Separator(_), ViewKind::Separator) => {}
             (Self::SearchField(field), ViewKind::SearchField { value, placeholder }) => {
                 field.set_placeholder(placeholder.as_deref())?;
                 if field.string_value()? != *value {
@@ -379,13 +451,24 @@ impl NativeNode {
                     well.set_color(color.native())?;
                 }
             }
-            (Self::ScrollView(scroll, restore), ViewKind::ScrollView { axes, offset }) => {
+            (
+                Self::ScrollView(scroll, state),
+                ViewKind::ScrollView {
+                    axes,
+                    offset,
+                    reveal,
+                },
+            ) => {
                 if !matches!(old, Some(ViewKind::ScrollView { axes: old, .. }) if old == axes) {
                     scroll.set_axes(axes.native())?;
                 }
                 // Later offsets echo the user's scrolling, so only a new view restores one.
                 if old.is_none() {
-                    restore.set(*offset);
+                    state.restore.set(*offset);
+                }
+                // The target scrolls into view once layout has placed it.
+                if !matches!(old, Some(ViewKind::ScrollView { reveal: old, .. }) if old == reveal) {
+                    state.reveal.replace(reveal.clone());
                 }
             }
             (Self::TabView(tabs), ViewKind::TabView { selected, .. }) => {
@@ -395,9 +478,13 @@ impl NativeNode {
             (
                 Self::Canvas(view),
                 ViewKind::Canvas2D {
-                    redraw, focusable, ..
+                    redraw,
+                    focusable,
+                    reports_input,
+                    ..
                 },
             ) => {
+                view.set_reports_input(*reports_input);
                 let (old_redraw, old_focusable) = match old {
                     Some(ViewKind::Canvas2D {
                         redraw, focusable, ..
@@ -415,9 +502,13 @@ impl NativeNode {
             (
                 Self::WgpuCanvas(view),
                 ViewKind::WgpuCanvas {
-                    redraw, focusable, ..
+                    redraw,
+                    focusable,
+                    reports_input,
+                    ..
                 },
             ) => {
+                view.set_reports_input(*reports_input);
                 let (old_redraw, old_focusable) = match old {
                     Some(ViewKind::WgpuCanvas {
                         redraw, focusable, ..
@@ -443,6 +534,35 @@ impl NativeNode {
                 // Rows are applied while attaching children; selection follows them.
                 if list.selected_id()? != *selected {
                     list.select(selected.as_deref())?;
+                    if let Some(id) = selected {
+                        list.reveal(id)?;
+                    }
+                }
+            }
+            (
+                Self::List(list, _),
+                ViewKind::Table {
+                    columns,
+                    selected,
+                    striped,
+                    ..
+                },
+            ) => {
+                if old.is_none() {
+                    list.set_style(zpd_appkit::ui::ListStyle::Plain)?;
+                }
+                // New columns take effect when the rows are attached again.
+                if !matches!(old, Some(ViewKind::Table { columns: old, .. }) if old == columns) {
+                    list.set_columns(&columns.iter().map(Native::native).collect::<Vec<_>>())?;
+                }
+                if !matches!(old, Some(ViewKind::Table { striped: old, .. }) if old == striped) {
+                    list.set_striped(*striped)?;
+                }
+                if list.selected_id()? != *selected {
+                    list.select(selected.as_deref())?;
+                    if let Some(id) = selected {
+                        list.reveal(id)?;
+                    }
                 }
             }
             _ => return Err(UiError::InvalidHierarchy),

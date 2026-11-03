@@ -109,8 +109,12 @@ impl NativeNode {
             ViewKind::NumberField { .. } => ControlKind::NumberBox,
             ViewKind::SearchField { .. } => ControlKind::AutoSuggestBox,
             ViewKind::ColorWell { .. } => ControlKind::ColorButton,
+            // TODO: Use a ProgressRing or ProgressBar, and a line; see TODO.md.
+            ViewKind::ProgressIndicator { .. } | ViewKind::Separator => ControlKind::Canvas,
             // TODO: Use a ListView with selection; see TODO.md.
-            ViewKind::ScrollView { .. } | ViewKind::List { .. } => ControlKind::ScrollViewer,
+            ViewKind::ScrollView { .. } | ViewKind::List { .. } | ViewKind::Table { .. } => {
+                ControlKind::ScrollViewer
+            }
             ViewKind::TabView { .. } => ControlKind::TabView,
             // TODO: Draw with Direct2D on a SwapChainPanel; see TODO.md.
             ViewKind::Canvas2D { .. } => ControlKind::Canvas,
@@ -233,7 +237,7 @@ impl NativeNode {
     pub(super) fn apply(&self, old: Option<&ViewKind>, new: &ViewKind) -> Result<(), AppError> {
         let control = &self.control;
         match new {
-            ViewKind::Container => {}
+            ViewKind::Container | ViewKind::ProgressIndicator { .. } | ViewKind::Separator => {}
             ViewKind::Button(button) => {
                 let old = match old {
                     Some(ViewKind::Button(old)) => Some(old),
@@ -353,7 +357,7 @@ impl NativeNode {
                 )?;
                 control.set_text(TextProperty::Text, value)?;
             }
-            ViewKind::NumberField { value, format } => {
+            ViewKind::NumberField { value, format, .. } => {
                 if !matches!(old, Some(ViewKind::NumberField { format: old, .. }) if old == format)
                 {
                     control.set_number(NumberProperty::Minimum, format.minimum)?;
@@ -385,7 +389,7 @@ impl NativeNode {
                     })?;
                 }
             }
-            ViewKind::ScrollView { axes, offset } => {
+            ViewKind::ScrollView { axes, offset, .. } => {
                 if !matches!(old, Some(ViewKind::ScrollView { axes: old, .. }) if old == axes) {
                     control.set_bool(BoolProperty::HorizontalScroll, axes.horizontal)?;
                     control.set_bool(BoolProperty::VerticalScroll, axes.vertical)?;
@@ -395,7 +399,7 @@ impl NativeNode {
                     self.restore.set(*offset);
                 }
             }
-            ViewKind::List { .. } => {
+            ViewKind::List { .. } | ViewKind::Table { .. } => {
                 if old.is_none() {
                     control.set_bool(BoolProperty::HorizontalScroll, false)?;
                     control.set_bool(BoolProperty::VerticalScroll, true)?;

@@ -48,6 +48,8 @@ pub enum BezelStyle {
 pub struct Button {
     view: ViewActor,
     stateful: Rc<Cell<bool>>,
+    shows_menu: Rc<Cell<bool>>,
+    keeps_state: Rc<Cell<bool>>,
 }
 impl Button {
     pub fn with_title(application: &Application, title: &str) -> Result<Self, UiError> {
@@ -64,7 +66,31 @@ impl Button {
         let stateful = Rc::new(Cell::new(false));
         let emit = callback::emitter(view.actor());
         let emits_state = stateful.clone();
+        let shows_menu = Rc::new(Cell::new(false));
+        let pops_up = shows_menu.clone();
+        let keeps_state = Rc::new(Cell::new(false));
+        let restores = keeps_state.clone();
         callback::install_action(view.actor(), move |button| {
+            if pops_up.get() {
+                // SAFETY: The action sender is the live NSButton; its menu is nil or live.
+                unsafe { Self::pop_up_menu(button) };
+                return;
+            }
+            if restores.get() {
+                // SAFETY: The action sender is the live NSButton; the click toggled its state.
+                unsafe {
+                    let state =
+                        zpd_objc::msg_send!(button, zpd_objc::sel!("state"), () => native::Integer);
+                    let previous = if state == native::NS_CONTROL_STATE_VALUE_ON {
+                        0
+                    } else {
+                        native::NS_CONTROL_STATE_VALUE_ON
+                    };
+                    zpd_objc::msg_send!(button, zpd_objc::sel!("setState:"), ((previous): native::Integer) => ());
+                }
+                emit(WindowEventKind::ButtonClicked);
+                return;
+            }
             emit(WindowEventKind::ButtonClicked);
             if emits_state.get() {
                 // SAFETY: The action sender is the live NSButton.
@@ -76,7 +102,45 @@ impl Button {
                 });
             }
         })?;
-        Ok(Self { view, stateful })
+        Ok(Self {
+            view,
+            stateful,
+            shows_menu,
+            keeps_state,
+        })
+    }
+    /// Undoes the toggle of each click, leaving the state to [`Button::set_on`].
+    pub fn set_keeps_state(&self, keeps: bool) {
+        self.keeps_state.set(keeps);
+    }
+    /// Makes a click show the button's menu below it instead of emitting `ButtonClicked`.
+    pub fn set_shows_menu(&self, shows: bool) {
+        self.shows_menu.set(shows);
+    }
+    /// Shows the menu of `button` below its bottom-left corner.
+    ///
+    /// # Safety
+    /// `button` must be a live NSButton.
+    unsafe fn pop_up_menu(button: zpd_objc::Id) {
+        // SAFETY: Guaranteed by the caller; a nil menu is skipped.
+        unsafe {
+            let menu = zpd_objc::msg_send!(button, zpd_objc::sel!("menu"), () => zpd_objc::Id);
+            if menu.is_null() {
+                return;
+            }
+            let bounds = zpd_objc::msg_send!(button, zpd_objc::sel!("bounds"), () => native::Rect);
+            let flipped = zpd_objc::msg_send!(button, zpd_objc::sel!("isFlipped"), () => bool);
+            let y = if flipped {
+                bounds.origin.y + bounds.size.height + 4.0
+            } else {
+                bounds.origin.y - 4.0
+            };
+            let point = native::Point {
+                x: bounds.origin.x,
+                y,
+            };
+            zpd_objc::msg_send!(menu, zpd_objc::sel!("popUpMenuPositioningItem:atLocation:inView:"), ((zpd_objc::NIL): zpd_objc::Id, (point): native::Point, (button): zpd_objc::Id) => bool);
+        }
     }
     pub fn set_title(&self, title: &str) -> Result<(), UiError> {
         let title = native::nsstring(title);

@@ -10,8 +10,8 @@ use zintl_ui::view::View;
 use zintl_ui_layout::{Axis, Size};
 
 use crate::{
-    Canvas2D, Canvas2DHandler, CanvasEvent, CanvasEventContext, Color, Context, Frame, Graphics2D,
-    HStack, PointerButton, PointerPhase, RenderNode, VStack, graphics, list,
+    Canvas2D, Canvas2DHandler, CanvasEvent, CanvasEventContext, Color, Context, Cursor, Frame,
+    Graphics2D, HStack, PointerButton, PointerPhase, RenderNode, VStack, graphics, list,
 };
 
 /// Two panes with a divider that the user drags to resize the first one.
@@ -174,7 +174,15 @@ impl Canvas2DHandler for Divider {
 
     // Consuming the drag keeps the window from moving when the divider sits
     // under a transparent title bar.
-    fn event(&mut self, event: &CanvasEvent, _cx: &mut CanvasEventContext) -> bool {
+    fn event(&mut self, event: &CanvasEvent, cx: &mut CanvasEventContext) -> bool {
+        if let CanvasEvent::Pointer(pointer) = event
+            && pointer.phase == PointerPhase::Entered
+        {
+            cx.set_cursor(match self.axis {
+                Axis::Horizontal => Cursor::ResizeLeftRight,
+                Axis::Vertical => Cursor::ResizeUpDown,
+            });
+        }
         matches!(
             event,
             CanvasEvent::Pointer(pointer)

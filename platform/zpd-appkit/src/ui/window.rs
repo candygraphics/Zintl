@@ -1,6 +1,6 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::marker::PhantomData;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::sync::OnceLock;
 
 use crate::actor::{ActorRef, ActorRollback, EventRouteToken, WindowEventKind};
@@ -13,10 +13,58 @@ use super::UiError;
 use super::sidebar::{self, Sidebar, SidebarNative};
 use super::view::{self, ViewRef};
 
+/// Whether the app's own undo history can step back and forward.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UndoState {
+    pub can_undo: bool,
+    pub can_redo: bool,
+}
+
 struct WindowState {
     actor: RefCell<Option<ActorRef>>,
+    /// Whether closing asks the event route with `CloseRequested` instead of closing.
+    intercepts_close: Cell<bool>,
+    /// The app's undo history, or `None` to leave Undo to AppKit.
+    undo: Cell<Option<UndoState>>,
 }
+
+thread_local! {
+    /// Every window of the main thread, so quitting can ask each to close.
+    static WINDOWS: RefCell<Vec<Weak<WindowState>>> = const { RefCell::new(Vec::new()) };
+}
+
 impl WindowState {
+    fn emit(&self, kind: WindowEventKind) {
+        let actor = self.actor.borrow().clone();
+        if let Some(actor) = actor
+            && let Some(tree) = actor.tree_handle()
+        {
+            tree.emit(&actor, kind);
+        }
+    }
+
+    /// See [`Window::should_terminate`].
+    fn should_terminate() -> bool {
+        let windows = WINDOWS.with(|windows| {
+            let mut windows = windows.borrow_mut();
+            windows.retain(|window| window.strong_count() > 0);
+            windows.iter().filter_map(Weak::upgrade).collect::<Vec<_>>()
+        });
+        if !windows.iter().any(|window| window.intercepts_close.get()) {
+            return true;
+        }
+        for window in windows {
+            let actor = window.actor.borrow().clone();
+            if let Some(actor) = actor {
+                // SAFETY: The live actor is an NSWindow; performClose: asks its delegate first.
+                let _ = actor.with(|window| unsafe {
+                    zpd_objc::msg_send!(window, zpd_objc::sel!("performClose:"), ((zpd_objc::NIL): Id) => ())
+                });
+            }
+        }
+        false
+    }
+
     fn resized(&self) {
         let actor = self.actor.borrow().clone();
         if let Some(actor) = actor
@@ -50,6 +98,153 @@ unsafe extern "C" fn window_will_close(object: Id, _: zpd_objc::Sel, _: Id) {
         zpd_objc::abort_on_unwind(|| state.close());
     }
 }
+unsafe extern "C" fn window_should_close(object: Id, _: zpd_objc::Sel, _: Id) -> bool {
+    // SAFETY: This callback is installed only on delegates with a `_zpdWindowState` ivar.
+    let Some(state) = (unsafe { WINDOW_STATE.get(object) }) else {
+        return true;
+    };
+    if !state.intercepts_close.get() {
+        return true;
+    }
+    zpd_objc::abort_on_unwind(|| state.emit(WindowEventKind::CloseRequested));
+    false
+}
+
+/// Returns the state of `window`'s delegate, if it is a window created here.
+///
+/// # Safety
+/// `window` must be a live NSWindow.
+unsafe fn window_state(window: Id) -> Option<Rc<WindowState>> {
+    // SAFETY: Guaranteed by the caller; only our delegate class carries the ivar.
+    unsafe {
+        let delegate = zpd_objc::msg_send!(window, zpd_objc::sel!("delegate"), () => Id);
+        if delegate.is_null()
+            || !zpd_objc::msg_send!(delegate, zpd_objc::sel!("isKindOfClass:"), ((window_delegate_class()): zpd_objc::Class) => bool)
+        {
+            return None;
+        }
+        WINDOW_STATE.get(delegate)
+    }
+}
+
+/// Returns the app's undo state of `window` unless text editing owns this step.
+///
+/// A text view that is editing keeps Undo (or Redo, with `redo`) while its
+/// typing history has a step to take; otherwise the step goes to the app.
+///
+/// # Safety
+/// `window` must be a live NSWindow.
+unsafe fn app_undo(window: Id, redo: bool) -> Option<(Rc<WindowState>, UndoState)> {
+    // SAFETY: Guaranteed by the caller.
+    let state = unsafe { window_state(window) }?;
+    let undo = state.undo.get()?;
+    // SAFETY: The window is live; its first responder and the responder's undo manager are nil or live.
+    let text_owns_step = unsafe {
+        let responder = zpd_objc::msg_send!(window, zpd_objc::sel!("firstResponder"), () => Id);
+        if responder.is_null()
+            || !zpd_objc::msg_send!(responder, zpd_objc::sel!("isKindOfClass:"), ((zpd_objc::class!("NSText")): zpd_objc::Class) => bool)
+        {
+            return Some((state, undo));
+        }
+        // Field editors keep a typing history apart from the window's undo manager.
+        let manager = zpd_objc::msg_send!(responder, zpd_objc::sel!("undoManager"), () => Id);
+        !manager.is_null()
+            && if redo {
+                zpd_objc::msg_send!(manager, zpd_objc::sel!("canRedo"), () => bool)
+            } else {
+                zpd_objc::msg_send!(manager, zpd_objc::sel!("canUndo"), () => bool)
+            }
+    };
+    (!text_owns_step).then_some((state, undo))
+}
+
+/// Generates `undo:` and `redo:` overrides that use the app's history when it owns Undo.
+macro_rules! undo_methods {
+    ($($function:ident => $redo:literal, $kind:ident, $superclass:literal),* $(,)?) => {
+        $(
+            unsafe extern "C" fn $function(object: Id, selector: zpd_objc::Sel, sender: Id) {
+                // SAFETY: These methods are installed only on window subclasses.
+                if let Some((state, _)) = unsafe { app_undo(object, $redo) } {
+                    zpd_objc::abort_on_unwind(|| state.emit(WindowEventKind::$kind));
+                    return;
+                }
+                // SAFETY: NSWindow implements undo: and redo:.
+                unsafe {
+                    zpd_objc::msg_send_super!(object, zpd_objc::class!($superclass), selector, ((sender): Id) => ())
+                };
+            }
+        )*
+    };
+}
+
+undo_methods!(
+    window_undo => false, Undo, "NSWindow",
+    window_redo => true, Redo, "NSWindow",
+    panel_undo => false, Undo, "NSPanel",
+    panel_redo => true, Redo, "NSPanel",
+);
+
+/// Enables Undo and Redo from the app's history when it owns Undo.
+///
+/// # Safety
+/// `object` must be a live window of `superclass`, and `item` a live user interface item.
+unsafe fn validate_item(
+    object: Id,
+    selector: zpd_objc::Sel,
+    item: Id,
+    superclass: zpd_objc::Class,
+) -> bool {
+    // SAFETY: Guaranteed by the caller.
+    unsafe {
+        let action = zpd_objc::msg_send!(item, zpd_objc::sel!("action"), () => zpd_objc::Sel);
+        let undo = action == zpd_objc::sel!("undo:");
+        if (undo || action == zpd_objc::sel!("redo:"))
+            && let Some((_, state)) = app_undo(object, !undo)
+        {
+            return if undo { state.can_undo } else { state.can_redo };
+        }
+        zpd_objc::msg_send_super!(object, superclass, selector, ((item): Id) => bool)
+    }
+}
+
+unsafe extern "C" fn window_validate(object: Id, selector: zpd_objc::Sel, item: Id) -> bool {
+    // SAFETY: Installed only on the NSWindow subclass; AppKit passes a live item.
+    unsafe { validate_item(object, selector, item, zpd_objc::class!("NSWindow")) }
+}
+
+unsafe extern "C" fn panel_validate(object: Id, selector: zpd_objc::Sel, item: Id) -> bool {
+    // SAFETY: Installed only on the NSPanel subclass; AppKit passes a live item.
+    unsafe { validate_item(object, selector, item, zpd_objc::class!("NSPanel")) }
+}
+
+fn window_class() -> zpd_objc::Class {
+    static CLASS: OnceLock<usize> = OnceLock::new();
+    *CLASS.get_or_init(|| {
+        zpd_objc::decl!(ZpdRustWindow: [zpd_objc::class!("NSWindow")] {
+            fields {}
+            methods {
+                "undo:": "v@:@" => window_undo,
+                "redo:": "v@:@" => window_redo,
+                "validateUserInterfaceItem:": "B@:@" => window_validate,
+            }
+        }) as usize
+    }) as zpd_objc::Class
+}
+
+fn panel_class() -> zpd_objc::Class {
+    static CLASS: OnceLock<usize> = OnceLock::new();
+    *CLASS.get_or_init(|| {
+        zpd_objc::decl!(ZpdRustPanel: [zpd_objc::class!("NSPanel")] {
+            fields {}
+            methods {
+                "undo:": "v@:@" => panel_undo,
+                "redo:": "v@:@" => panel_redo,
+                "validateUserInterfaceItem:": "B@:@" => panel_validate,
+            }
+        }) as usize
+    }) as zpd_objc::Class
+}
+
 unsafe extern "C" fn window_did_resize(object: Id, _: zpd_objc::Sel, _: Id) {
     // SAFETY: The callback receiver is live on entry; retaining it keeps the delegate alive if
     // resize handling synchronously removes the Window subtree.
@@ -75,6 +270,7 @@ fn window_delegate_class() -> zpd_objc::Class {
             fields { _zpdWindowState: ptr }
             methods {
                 "windowWillClose:": "v@:@" => window_will_close,
+                "windowShouldClose:": "B@:@" => window_should_close,
                 "windowDidResize:": "v@:@" => window_did_resize,
                 "dealloc": "v@:" => delegate_dealloc,
             }
@@ -112,6 +308,7 @@ pub struct Window<'application> {
     /// The declared toolbar; it includes the sidebar toggle when there is a sidebar.
     toolbar: RefCell<Option<super::toolbar::Toolbar>>,
     window_toolbar: RefCell<Option<super::toolbar::WindowToolbar>>,
+    state: Rc<WindowState>,
     _application: PhantomData<&'application Application>,
     _main_thread: PhantomData<Rc<()>>,
 }
@@ -123,7 +320,10 @@ impl<'application> Window<'application> {
     ) -> Result<Self, UiError> {
         let state = Rc::new(WindowState {
             actor: RefCell::new(None),
+            intercepts_close: Cell::new(false),
+            undo: Cell::new(None),
         });
+        WINDOWS.with(|windows| windows.borrow_mut().push(Rc::downgrade(&state)));
         let frame = native::Rect {
             origin: native::Point { x: 0.0, y: 0.0 },
             size: native::Size {
@@ -133,14 +333,14 @@ impl<'application> Window<'application> {
         };
         let (class, style_mask) = match style {
             WindowStyle::Normal => (
-                zpd_objc::class!("NSWindow"),
+                window_class(),
                 native::NS_WINDOW_STYLE_MASK_TITLED
                     | native::NS_WINDOW_STYLE_MASK_CLOSABLE
                     | native::NS_WINDOW_STYLE_MASK_MINIATURIZABLE
                     | native::NS_WINDOW_STYLE_MASK_RESIZABLE,
             ),
             WindowStyle::Panel => (
-                zpd_objc::class!("NSPanel"),
+                panel_class(),
                 native::NS_WINDOW_STYLE_MASK_TITLED
                     | native::NS_WINDOW_STYLE_MASK_CLOSABLE
                     | native::NS_WINDOW_STYLE_MASK_RESIZABLE
@@ -200,7 +400,7 @@ impl<'application> Window<'application> {
             .map_err(UiError::from)?;
         let native_delegate = native::alloc_init(window_delegate_class());
         // SAFETY: The registered delegate class declares the `_zpdWindowState` ivar.
-        unsafe { WINDOW_STATE.set(native_delegate.as_ptr(), state) };
+        unsafe { WINDOW_STATE.set(native_delegate.as_ptr(), state.clone()) };
         actor
             .with(|window| unsafe {
                 zpd_objc::msg_send!(window, zpd_objc::sel!("setDelegate:"), ((native_delegate.as_ptr()): zpd_objc::Id) => ())
@@ -227,6 +427,7 @@ impl<'application> Window<'application> {
             sidebar_toolbar: RefCell::new(None),
             toolbar: RefCell::new(None),
             window_toolbar: RefCell::new(None),
+            state,
             _application: PhantomData,
             _main_thread: PhantomData,
         })
@@ -255,6 +456,41 @@ impl<'application> Window<'application> {
     }
     pub fn is_closed(&self) -> bool {
         !self.actor.is_alive()
+    }
+    /// Returns whether a quit may proceed now.
+    ///
+    /// When a window confirms closing, the quit is cancelled and every window
+    /// is asked to close instead; the app ends once the last one closes.
+    pub(crate) fn should_terminate() -> bool {
+        WindowState::should_terminate()
+    }
+    /// Makes the close button and quitting emit `CloseRequested` instead of closing.
+    ///
+    /// The owner then calls [`Window::close`] to close the window.
+    pub fn set_confirms_close(&self, confirms: bool) {
+        self.state.intercepts_close.set(confirms);
+    }
+    /// Closes the window without asking its delegate.
+    pub fn close(&self) -> Result<(), UiError> {
+        self.actor
+            .with(|window| unsafe {
+                zpd_objc::msg_send!(window, zpd_objc::sel!("close"), () => ())
+            })
+            .map_err(Into::into)
+    }
+    /// Shows the unsaved-changes dot in the close button (`documentEdited`).
+    pub fn set_document_edited(&self, edited: bool) -> Result<(), UiError> {
+        self.actor
+            .with(|window| unsafe {
+                zpd_objc::msg_send!(window, zpd_objc::sel!("setDocumentEdited:"), ((edited): bool) => ())
+            })
+            .map_err(Into::into)
+    }
+    /// Lets Undo and Redo emit `Undo` and `Redo` unless an editing text view has typing to undo.
+    ///
+    /// `None` leaves both to AppKit's undo manager.
+    pub fn set_undo(&self, undo: Option<UndoState>) {
+        self.state.undo.set(undo);
     }
     /// Returns a weak reference to this window's Actor.
     pub fn actor_ref(&self) -> ActorRef {

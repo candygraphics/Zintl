@@ -8,7 +8,9 @@ use zintl_ui::view::View;
 use zintl_ui_layout::{Axis, LayoutStyle, Size};
 use zintl_ui_native::NativeView;
 
-use crate::{Attachments, Color, Context, ListFactory, RenderNode, ScrollAxes, ScrollStatus};
+use crate::{
+    Attachments, Color, Context, ListFactory, RenderNode, ScrollAlignment, ScrollAxes, ScrollStatus,
+};
 
 type Change<T> = dyn for<'a> Fn(&mut Context<'a>, T);
 
@@ -465,6 +467,24 @@ impl NumberField {
         self
     }
 
+    /// Shows values as `format` returns them; the field then parses text itself.
+    pub fn formatter(mut self, format: impl Fn(f64) -> String + 'static) -> Self {
+        self.inner = self.inner.formatter(format);
+        self
+    }
+
+    /// Reads typed text; `None` rejects it and restores the current value.
+    pub fn parser(mut self, parse: impl Fn(&str) -> Option<f64> + 'static) -> Self {
+        self.inner = self.inner.parser(parse);
+        self
+    }
+
+    /// Appends `suffix`, such as `" m"`, to the shown text; typed text may omit it.
+    pub fn suffix(mut self, suffix: impl Into<String>) -> Self {
+        self.inner = self.inner.suffix(suffix);
+        self
+    }
+
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.inner = self.inner.enabled(enabled);
         self
@@ -587,6 +607,12 @@ impl ScrollView {
     /// Uses a fixed height instead of filling the remaining space.
     pub fn height(mut self, height: f32) -> Self {
         self.inner = self.inner.height(height);
+        self
+    }
+
+    /// Scrolls the descendant with the view ID in `target` into view whenever it changes.
+    pub fn scroll_to(mut self, target: Store<Option<String>>, alignment: ScrollAlignment) -> Self {
+        self.inner = self.inner.scroll_to(target, alignment);
         self
     }
 }

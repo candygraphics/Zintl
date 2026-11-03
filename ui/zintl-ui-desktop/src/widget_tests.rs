@@ -205,6 +205,96 @@ fn menu_and_segmented_pickers_render_bound_selection() {
     ));
 }
 
+/// Formats kilometres as `12k345.67`.
+fn format_km(value: f64) -> String {
+    let km = (value / 1000.0).floor();
+    format!("{km}k{:06.2}", value - km * 1000.0)
+}
+
+/// Reads `12k345.67` and plain `12345.67`.
+fn parse_km(text: &str) -> Option<f64> {
+    match text.split_once('k') {
+        Some((km, m)) => Some(km.parse::<f64>().ok()? * 1000.0 + m.parse::<f64>().ok()?),
+        None => text.parse().ok(),
+    }
+}
+
+#[test]
+fn number_field_shows_text_from_its_formatter_and_suffix() {
+    // Verifies a custom formatter replaces platform formatting and the suffix follows the text.
+    let (app, _) = Harness::mount(
+        |cx| cx.store(12345.67_f64),
+        |value| {
+            NumberField::new()
+                .formatter(format_km)
+                .suffix(" m")
+                .bind(value)
+        },
+    );
+    assert!(matches!(
+        app.render(),
+        RenderNode::View {
+            kind: ViewKind::NumberField { text: Some(text), .. },
+            ..
+        } if text == "12k345.67 m"
+    ));
+}
+
+#[test]
+fn number_field_parses_committed_text_and_ignores_invalid_text() {
+    // Verifies committed text goes through the parser, with or without the suffix, and bad text keeps the value.
+    let (mut app, value) = Harness::mount(
+        |cx| cx.store(0.0_f64),
+        |value| {
+            NumberField::new()
+                .formatter(format_km)
+                .parser(parse_km)
+                .suffix(" m")
+                .range(0.0..=50_000.0)
+                .bind(value)
+        },
+    );
+    let commit = |text: &str| Event::TextCommitted { value: text.into() };
+
+    app.dispatch_at(&[0], commit("1k250.5 m"));
+    assert_eq!(app.get(value), 1250.5);
+    app.dispatch_at(&[0], commit("2000"));
+    assert_eq!(app.get(value), 2000.0);
+    app.dispatch_at(&[0], commit("not a number"));
+    assert_eq!(app.get(value), 2000.0);
+    app.dispatch_at(&[0], commit("90k0"));
+    assert_eq!(app.get(value), 50_000.0);
+}
+
+#[test]
+fn text_field_commit_runs_only_when_editing_ends() {
+    // Verifies on_commit ignores keystrokes and runs with the final text when editing ends.
+    let (mut app, committed) = Harness::mount(
+        |cx| cx.store(Vec::<String>::new()),
+        |committed| {
+            TextField::new().on_commit(move |cx, text| {
+                let text = text.to_owned();
+                cx.update(committed, |committed| committed.push(text));
+            })
+        },
+    );
+
+    app.dispatch_at(
+        &[0],
+        Event::TextChanged {
+            value: "Sec".into(),
+        },
+    );
+    assert!(app.get(committed).is_empty());
+    app.dispatch_at(
+        &[0],
+        Event::TextCommitted {
+            value: "Section A".into(),
+        },
+    );
+    assert_eq!(app.get(committed), ["Section A"]);
+}
+
 #[test]
 fn number_field_clamps_entered_values() {
     // Verifies values outside the declared range are clamped before reaching the Store.
@@ -226,6 +316,7 @@ fn number_field_clamps_entered_values() {
                     maximum: 10.0,
                     ..
                 },
+                text: None,
             },
             ..
         }
@@ -1248,4 +1339,322 @@ fn sidebar_items_show_badges_and_route_their_menus() {
 
     assert!(app.dispatch_at(&[0], Event::MenuItemSelected { id }));
     assert_eq!(renames.count(), 1);
+}
+
+/// Counts close requests, undos, and redos; closing is allowed once `allow` is set.
+struct DocumentWindow {
+    allow: Store<bool>,
+    requests: Store<u32>,
+    steps: Store<i32>,
+    published: Rc<Cell<Option<(Store<bool>, Store<u32>, Store<i32>)>>>,
+}
+
+impl DocumentWindow {
+    fn mount() -> (App, Store<bool>, Store<u32>, Store<i32>) {
+        let published = Rc::new(Cell::new(None));
+        let app = App::new(Self {
+            allow: Store::default(),
+            requests: Store::default(),
+            steps: Store::default(),
+            published: published.clone(),
+        });
+        let (allow, requests, steps) = published.get().expect("mounting runs init");
+        (app, allow, requests, steps)
+    }
+}
+
+impl View for DocumentWindow {
+    type Output = RenderNode;
+
+    fn init(&mut self, cx: &mut Context<'_>) {
+        self.allow = cx.store(false);
+        self.requests = cx.store(0);
+        self.steps = cx.store(0);
+        self.published
+            .set(Some((self.allow, self.requests, self.steps)));
+    }
+
+    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
+        let (allow, requests, steps) = (self.allow, self.requests, self.steps);
+        let count = *cx.get(steps);
+        Window::new(Rect::new(0.0, 0.0, 300.0, 200.0), "Document")
+            .edited(count != 0)
+            .on_close_request(move |cx| {
+                cx.update(requests, |requests| *requests += 1);
+                *cx.get(allow)
+            })
+            .undo(
+                UndoHandler::new(count > 0, count < 0)
+                    .on_undo(move |cx| cx.update(steps, |steps| *steps -= 1))
+                    .on_redo(move |cx| cx.update(steps, |steps| *steps += 1)),
+            )
+    }
+}
+
+fn document(app: &App) -> zintl_ui_native::DocumentState {
+    match app.render() {
+        RenderNode::Window { document, .. } => document,
+        other => panic!("expected a window, got {other:?}"),
+    }
+}
+
+#[test]
+fn close_request_keeps_the_window_until_the_handler_allows_it() {
+    // Verifies a refused request leaves the close count alone and an allowed one asks the backend to close.
+    let (mut app, allow, requests, _) = DocumentWindow::mount();
+    assert!(document(&app).confirms_close);
+
+    app.dispatch_root_event(Event::WindowCloseRequested);
+    assert_eq!(app.get(requests), 1);
+    assert_eq!(document(&app).close_requests, 0);
+
+    app.set(allow, true);
+    app.dispatch_root_event(Event::WindowCloseRequested);
+    assert_eq!(document(&app).close_requests, 1);
+}
+
+#[test]
+fn undo_events_run_the_window_history_and_update_menu_state() {
+    // Verifies Undo and Redo reach the handler and the window reports its edited and enabled states.
+    let (mut app, _, _, steps) = DocumentWindow::mount();
+    assert_eq!(
+        document(&app).undo,
+        Some(zintl_ui_native::UndoState {
+            can_undo: false,
+            can_redo: false
+        })
+    );
+
+    app.dispatch_root_event(Event::Redo);
+    assert_eq!(app.get(steps), 1);
+    let state = document(&app);
+    assert!(state.edited);
+    assert_eq!(state.undo.map(|undo| undo.can_undo), Some(true));
+
+    app.dispatch_root_event(Event::Undo);
+    assert_eq!(app.get(steps), 0);
+    assert!(!document(&app).edited);
+}
+
+#[test]
+fn help_text_reaches_any_view() {
+    // Verifies the help modifier sets the tooltip on controls and containers alike.
+    let app = App::new(
+        VStack::new(list![
+            Button::new("Save").enabled(false).help("Nothing to save")
+        ])
+        .help("Tools"),
+    );
+    let tree = app.render_tree();
+    assert!(matches!(
+        &tree.value,
+        RenderNode::View { help: Some(help), .. } if help == "Tools"
+    ));
+    assert!(matches!(
+        &tree.children[0].value,
+        RenderNode::View { help: Some(help), enabled: false, .. } if help == "Nothing to save"
+    ));
+}
+
+#[test]
+fn menu_button_shows_its_menu_instead_of_activating() {
+    // Verifies a menu button marks itself for the native pull-down and carries the menu as an attachment.
+    let app = App::new(Button::new("Samples").menu(Menu::items([MenuItem::new("Load A")])));
+    let tree = app.render_tree();
+    assert!(matches!(
+        &tree.value,
+        RenderNode::View {
+            kind: ViewKind::Button(zintl_ui_backend_core::Button {
+                shows_menu: true,
+                ..
+            }),
+            ..
+        }
+    ));
+    assert!(matches!(
+        &tree.children[..],
+        [child] if matches!(child.value, RenderNode::ContextMenu { .. })
+    ));
+}
+
+#[test]
+fn selected_button_draws_in_the_on_state() {
+    // Verifies a selected button is a push-on-push-off button that shows its selection.
+    let app = App::new(Button::new("1").selected(true));
+    assert!(matches!(
+        app.render(),
+        RenderNode::View {
+            kind: ViewKind::Button(zintl_ui_backend_core::Button {
+                button_type: zintl_ui_native::ButtonType::PushOnPushOff,
+                on: true,
+                ..
+            }),
+            ..
+        }
+    ));
+}
+
+#[test]
+fn indicators_describe_their_kinds() {
+    // Verifies the spinner has no value, the bar keeps its fraction, and separators are thin lines.
+    let render = |view: Element<RenderNode>| App::new(view).render();
+    assert!(matches!(
+        render(ProgressIndicator::spinning().into_element()),
+        RenderNode::View {
+            kind: ViewKind::ProgressIndicator { value: None },
+            ..
+        }
+    ));
+    assert!(matches!(
+        render(ProgressIndicator::bar(0.25).into_element()),
+        RenderNode::View {
+            kind: ViewKind::ProgressIndicator { value: Some(0.25) },
+            ..
+        }
+    ));
+    assert!(matches!(
+        render(Separator::vertical().into_element()),
+        RenderNode::View {
+            kind: ViewKind::Separator,
+            layout: LayoutStyle {
+                width: LayoutDimension::Points(1.0),
+                ..
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn zstack_and_grid_declare_their_arrangements() {
+    // Verifies ZStack overlays its children and a striped Grid adds one stripe per shaded row before its cells.
+    let zstack = App::new(ZStack::new(list![
+        Text::new("Scene"),
+        Text::new("Updating")
+    ]));
+    assert!(matches!(
+        zstack.render(),
+        RenderNode::View {
+            layout: LayoutStyle {
+                arrangement: zintl_ui_layout::Arrangement::Overlay,
+                ..
+            },
+            ..
+        }
+    ));
+
+    let cells = (0..6)
+        .map(|index| ElementFactory::new(Text::new(index.to_string())))
+        .collect::<Vec<_>>();
+    // Six cells in two columns make three rows; only the middle one is shaded.
+    let grid = App::new(Grid::new(2, cells).striped(true)).render_tree();
+    assert!(matches!(
+        grid.value,
+        RenderNode::View {
+            layout: LayoutStyle {
+                arrangement: zintl_ui_layout::Arrangement::Grid { columns: 2 },
+                ..
+            },
+            ..
+        }
+    ));
+    assert_eq!(grid.children.len(), 7);
+    assert!(matches!(
+        grid.children[0].value,
+        RenderNode::View {
+            layout: LayoutStyle {
+                grid_cell: Some(zintl_ui_layout::GridCell {
+                    row: 1,
+                    column: 0,
+                    column_span: 0
+                }),
+                ..
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn disclosure_group_shows_content_only_while_expanded() {
+    // Verifies the disclosure button's state writes the bound Store and the content follows it.
+    let (mut app, expanded) = Harness::mount(
+        |cx| cx.store(false),
+        |expanded| DisclosureGroup::new("Line settings", Text::new("Details")).bind(expanded),
+    );
+    assert_eq!(app.render_tree().children.len(), 1);
+
+    // The disclosure button is the first child of the header row.
+    app.dispatch_at(&[0, 0, 0], Event::StateChanged { on: true });
+    assert!(app.get(expanded));
+    assert_eq!(app.render_tree().children.len(), 2);
+}
+
+#[test]
+fn scroll_view_reveals_the_target_row() {
+    // Verifies the target Store becomes the scroll view's reveal request with its alignment.
+    let (mut app, target) = Harness::mount(
+        |cx| cx.store(None::<String>),
+        |target| {
+            ScrollView::new(VStack::new(list![Text::new("Row").id("row-1")]))
+                .scroll_to(target, ScrollAlignment::Center)
+        },
+    );
+    assert!(matches!(
+        app.render(),
+        RenderNode::View {
+            kind: ViewKind::ScrollView { reveal: None, .. },
+            ..
+        }
+    ));
+
+    app.set(target, Some("row-1".to_owned()));
+    assert!(matches!(
+        app.render(),
+        RenderNode::View {
+            kind: ViewKind::ScrollView {
+                reveal: Some(zintl_ui_native::ScrollTarget { id, alignment: ScrollAlignment::Center }),
+                ..
+            },
+            ..
+        } if id == "row-1"
+    ));
+}
+
+#[test]
+fn table_lays_out_cells_by_row_and_writes_the_selection() {
+    // Verifies a table declares its columns and rows, pads short rows to one cell per column, and binds selection.
+    let (mut app, selected) = Harness::mount(
+        |cx| cx.store(None::<String>),
+        |selected| {
+            Table::new(
+                [
+                    TableColumn::new("Name").width(120.0),
+                    TableColumn::new("Length"),
+                ],
+                [
+                    TableRow::new("a", list![Text::new("Section A"), Text::new("1k200")]),
+                    TableRow::new("b", list![Text::new("Section B")]),
+                ],
+            )
+            .bind(selected)
+        },
+    );
+    let tree = app.render_tree();
+    assert!(matches!(
+        &tree.value,
+        RenderNode::View {
+            kind: ViewKind::Table { columns, rows, striped: true, selected: None },
+            ..
+        } if columns.len() == 2 && columns[0].width == Some(120.0) && rows == &["a", "b"]
+    ));
+    assert_eq!(tree.children.len(), 4);
+
+    app.dispatch_at(
+        &[0],
+        Event::ListSelectionChanged {
+            id: Some("b".into()),
+        },
+    );
+    assert_eq!(app.get(selected), Some("b".to_owned()));
 }

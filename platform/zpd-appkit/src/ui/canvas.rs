@@ -29,6 +29,7 @@ unsafe extern "C" {
 const LAYER_CONTENTS_REDRAW_DURING_VIEW_RESIZE: native::Integer = 2;
 const TRACKING_MOUSE_ENTERED_AND_EXITED: u64 = 0x01;
 const TRACKING_MOUSE_MOVED: u64 = 0x02;
+const TRACKING_CURSOR_UPDATE: u64 = 0x04;
 const TRACKING_ACTIVE_IN_ACTIVE_APP: u64 = 0x40;
 const TRACKING_IN_VISIBLE_RECT: u64 = 0x200;
 /// Points scrolled per line for devices without precise deltas.
@@ -181,11 +182,79 @@ pub struct KeyInput {
     pub key_code: u16,
 }
 
+/// `NSEvent.phase` of a continuous gesture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GesturePhase {
+    Began,
+    Changed,
+    Ended,
+    Cancelled,
+}
+
+impl GesturePhase {
+    fn from_event_phase(phase: u64) -> Self {
+        match phase {
+            0x01 => Self::Began,
+            0x08 => Self::Ended,
+            0x10 => Self::Cancelled,
+            _ => Self::Changed,
+        }
+    }
+}
+
+/// A trackpad pinch from `magnifyWithEvent:`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MagnifyInput {
+    pub location: Point,
+    /// `NSEvent.magnification`: the scale change since the previous event.
+    pub magnification: f64,
+    pub phase: GesturePhase,
+    pub modifiers: Modifiers,
+}
+
+/// A system cursor a canvas view shows while the pointer is over it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Cursor {
+    #[default]
+    Arrow,
+    PointingHand,
+    IBeam,
+    Crosshair,
+    OpenHand,
+    ClosedHand,
+    ResizeLeftRight,
+    ResizeUpDown,
+    OperationNotAllowed,
+}
+
+impl Cursor {
+    /// Makes the cursor current.
+    fn set(self) {
+        let selector = match self {
+            Self::Arrow => zpd_objc::sel!("arrowCursor"),
+            Self::PointingHand => zpd_objc::sel!("pointingHandCursor"),
+            Self::IBeam => zpd_objc::sel!("IBeamCursor"),
+            Self::Crosshair => zpd_objc::sel!("crosshairCursor"),
+            Self::OpenHand => zpd_objc::sel!("openHandCursor"),
+            Self::ClosedHand => zpd_objc::sel!("closedHandCursor"),
+            Self::ResizeLeftRight => zpd_objc::sel!("resizeLeftRightCursor"),
+            Self::ResizeUpDown => zpd_objc::sel!("resizeUpDownCursor"),
+            Self::OperationNotAllowed => zpd_objc::sel!("operationNotAllowedCursor"),
+        };
+        // SAFETY: Each selector is an NSCursor class factory returning a shared cursor.
+        unsafe {
+            let cursor = zpd_objc::msg_send!(zpd_objc::class!("NSCursor"), selector, () => Id);
+            zpd_objc::msg_send!(cursor, zpd_objc::sel!("set"), () => ());
+        }
+    }
+}
+
 /// Raw input a canvas view receives.
 #[derive(Clone, Debug, PartialEq)]
 pub enum CanvasInput {
     Mouse(MouseInput),
     Scroll(ScrollInput),
+    Magnify(MagnifyInput),
     Key(KeyInput),
     ModifiersChanged(Modifiers),
     Focus(bool),
@@ -266,6 +335,12 @@ struct CanvasState {
     actor: ActorRef,
     delegate: RefCell<Option<Delegate>>,
     focusable: Cell<bool>,
+    /// Whether input is also emitted to the event route after the delegate saw it.
+    reports_input: Cell<bool>,
+    /// The cursor shown while the pointer is over the view.
+    cursor: Cell<Cursor>,
+    /// Whether the pointer is over the view, so cursor changes apply at once.
+    hovered: Cell<bool>,
     display_link: RefCell<Option<Strong>>,
     /// The display link's target time for the next draw.
     target_time: Cell<Option<f64>>,
@@ -322,8 +397,16 @@ impl CanvasState {
     fn deliver(&self, input: CanvasInput) -> bool {
         let delegate = self.delegate.borrow().as_ref().map(Delegate::input);
         let handled = delegate.is_some_and(|delegate| delegate.input(&input));
-        // Unrouted canvases skip the message loop, which matters for mouse moves.
-        if self.actor.has_event_route()
+        if let CanvasInput::Mouse(mouse) = &input {
+            match mouse.phase {
+                MousePhase::Entered => self.hovered.set(true),
+                MousePhase::Exited => self.hovered.set(false),
+                _ => {}
+            }
+        }
+        // Canvases without input routes skip the message loop, which matters for mouse moves.
+        if self.reports_input.get()
+            && self.actor.has_event_route()
             && let Some(tree) = self.actor.tree_handle()
         {
             tree.emit(&self.actor, WindowEventKind::CanvasInput(input));
@@ -627,6 +710,14 @@ unsafe fn input(view: Id, selector: &str, event: Id) -> Option<CanvasInput> {
                     modifiers,
                 }))
             }
+            "magnifyWithEvent:" => Some(CanvasInput::Magnify(MagnifyInput {
+                location: location(),
+                magnification: zpd_objc::msg_send!(event, zpd_objc::sel!("magnification"), () => f64),
+                phase: GesturePhase::from_event_phase(
+                    zpd_objc::msg_send!(event, zpd_objc::sel!("phase"), () => u64),
+                ),
+                modifiers,
+            })),
             "keyDown:" => key(true),
             "keyUp:" => key(false),
             "flagsChanged:" => Some(CanvasInput::ModifiersChanged(modifiers)),
@@ -683,10 +774,18 @@ event_methods!(
     mouse_entered => "mouseEntered:",
     mouse_exited => "mouseExited:",
     scroll_wheel => "scrollWheel:",
+    magnify => "magnifyWithEvent:",
     key_down => "keyDown:",
     key_up => "keyUp:",
     flags_changed => "flagsChanged:",
 );
+
+unsafe extern "C" fn cursor_update(object: Id, _: zpd_objc::Sel, _event: Id) {
+    // SAFETY: This method is installed only on the canvas view class.
+    if let Some(state) = unsafe { state(object) } {
+        state.cursor.get().set();
+    }
+}
 
 unsafe extern "C" fn backing_properties_changed(object: Id, selector: zpd_objc::Sel) {
     // SAFETY: NSView implements this notification method; the receiver is a live view.
@@ -735,6 +834,8 @@ impl CanvasView {
                     "mouseEntered:": "v@:@" => mouse_entered,
                     "mouseExited:": "v@:@" => mouse_exited,
                     "scrollWheel:": "v@:@" => scroll_wheel,
+                    "magnifyWithEvent:": "v@:@" => magnify,
+                    "cursorUpdate:": "v@:@" => cursor_update,
                     "keyDown:": "v@:@" => key_down,
                     "keyUp:": "v@:@" => key_up,
                     "flagsChanged:": "v@:@" => flags_changed,
@@ -762,6 +863,9 @@ impl CanvasView {
             actor: view.actor().clone(),
             delegate: RefCell::new(None),
             focusable: Cell::new(false),
+            reports_input: Cell::new(false),
+            cursor: Cell::new(Cursor::Arrow),
+            hovered: Cell::new(false),
             display_link: RefCell::new(None),
             target_time: Cell::new(None),
             last_time: Cell::new(None),
@@ -778,6 +882,7 @@ impl CanvasView {
                 zpd_objc::msg_send!(object, zpd_objc::sel!("setClipsToBounds:"), ((true): bool) => ());
                 let options = TRACKING_MOUSE_ENTERED_AND_EXITED
                     | TRACKING_MOUSE_MOVED
+                    | TRACKING_CURSOR_UPDATE
                     | TRACKING_ACTIVE_IN_ACTIVE_APP
                     | TRACKING_IN_VISIBLE_RECT;
                 let area = zpd_objc::msg_send!(zpd_objc::class!("NSTrackingArea"), zpd_objc::sel!("alloc"), () => Id);
@@ -797,6 +902,7 @@ impl CanvasView {
     pub fn handle(&self) -> CanvasHandle {
         CanvasHandle {
             actor: self.view.actor().clone(),
+            state: Rc::downgrade(&self.state),
         }
     }
 
@@ -887,6 +993,11 @@ impl CanvasView {
         self.state.focusable.set(focusable);
     }
 
+    /// Emits input to the event route after the delegate saw it.
+    pub fn set_reports_input(&self, reports: bool) {
+        self.state.reports_input.set(reports);
+    }
+
     /// Focuses a focusable canvas before it receives the click.
     ///
     /// # Safety
@@ -911,6 +1022,7 @@ impl CanvasView {
 #[derive(Clone)]
 pub struct CanvasHandle {
     actor: ActorRef,
+    state: Weak<CanvasState>,
 }
 
 impl CanvasHandle {
@@ -938,6 +1050,25 @@ impl CanvasHandle {
                     && zpd_objc::msg_send!(window, zpd_objc::sel!("makeFirstResponder:"), ((view): Id) => bool)
             }
         })
+    }
+
+    /// Shows `cursor` while the pointer is over the view, at once if it is already.
+    pub fn set_cursor(&self, cursor: Cursor) {
+        let Some(state) = self.state.upgrade() else {
+            return;
+        };
+        if state.cursor.replace(cursor) != cursor && state.hovered.get() {
+            cursor.set();
+        }
+    }
+
+    /// Emits [`WindowEventKind::CanvasNotified`] with `token` to the view's event route.
+    pub fn notify(&self, token: u64) {
+        if self.actor.has_event_route()
+            && let Some(tree) = self.actor.tree_handle()
+        {
+            tree.emit(&self.actor, WindowEventKind::CanvasNotified { token });
+        }
     }
 
     /// Gives up first responder status if the view has it.
@@ -1006,6 +1137,11 @@ impl MetalCanvasView {
     /// Lets clicks and [`CanvasHandle::focus`] make the view the first responder.
     pub fn set_focusable(&self, focusable: bool) {
         self.0.set_focusable(focusable);
+    }
+
+    /// Emits input to the event route after the delegate saw it.
+    pub fn set_reports_input(&self, reports: bool) {
+        self.0.set_reports_input(reports);
     }
 }
 

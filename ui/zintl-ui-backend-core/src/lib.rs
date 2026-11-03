@@ -7,6 +7,7 @@ mod canvas;
 mod context;
 mod event;
 mod model;
+mod signal;
 #[cfg(feature = "wgpu")]
 mod wgpu_canvas;
 
@@ -15,20 +16,22 @@ pub mod layout;
 pub mod tree;
 
 pub use canvas::{
-    Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasHost, CanvasNode, CanvasSetup, Frame,
-    Invalidator, Key, KeyEvent, KeyPhase, Modifiers, NamedKey, PointerButton, PointerEvent,
-    PointerPhase, Redraw, RedrawPolicy, ScrollEvent,
+    Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasHost, CanvasId, CanvasNode,
+    CanvasSetup, Cursor, Frame, GesturePhase, Invalidator, Key, KeyEvent, KeyPhase, MagnifyEvent,
+    Modifiers, NamedKey, PointerButton, PointerEvent, PointerPhase, Redraw, RedrawPolicy,
+    ScrollEvent,
 };
-pub use context::Context;
+pub use context::{Context, StoreSender, StoreUpdate, StoreUpdates};
 pub use event::{Event, EventKind};
 pub use headless::HeadlessBackend;
 pub use model::{
     AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, CommandItem,
     CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig, FileDialogMode,
-    ListSection, ListStyle, MenuRole, NumberFormat, PopoverEdge, ScrollAxes, Sidebar, SidebarItem,
-    SidebarSearch, SidebarSection, TextAlignment, TextColor, TextStyle, TitleBar, Toolbar,
-    ToolbarItem, WindowAppMenu, WindowStyle,
+    ListSection, ListStyle, MenuRole, NumberFormat, PopoverEdge, ScrollAlignment, ScrollAxes,
+    ScrollTarget, Sidebar, SidebarItem, SidebarSearch, SidebarSection, TableColumn, TextAlignment,
+    TextColor, TextStyle, TitleBar, Toolbar, ToolbarItem, WindowAppMenu, WindowStyle,
 };
+pub use signal::Signal;
 #[cfg(feature = "wgpu")]
 pub use wgpu;
 #[cfg(feature = "wgpu")]
@@ -52,6 +55,10 @@ pub struct Button {
     pub system_image: Option<String>,
     pub key_equivalent: Option<String>,
     pub destructive: bool,
+    /// A click shows the button's context menu below it instead of activating it.
+    pub shows_menu: bool,
+    /// Clicks leave `on` as declared instead of toggling it, as for a selection.
+    pub keeps_state: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -100,6 +107,9 @@ pub enum ViewKind {
     NumberField {
         value: f64,
         format: NumberFormat,
+        /// Text shown instead of the formatted value; edits then arrive as
+        /// [`Event::TextCommitted`] for the view to parse.
+        text: Option<String>,
     },
     SearchField {
         value: String,
@@ -108,11 +118,19 @@ pub enum ViewKind {
     ColorWell {
         color: Color,
     },
+    /// Spins while `value` is `None`; otherwise shows `value` in `0.0..=1.0` as a bar.
+    ProgressIndicator {
+        value: Option<f64>,
+    },
+    /// A thin line; its layout decides whether it runs across or down.
+    Separator,
     /// Children are laid out in the scrollable document view.
     ScrollView {
         axes: ScrollAxes,
         /// The `(x, y)` document point restored at the top-left once the view is created.
         offset: Option<(f64, f64)>,
+        /// Scrolls to this descendant whenever it changes.
+        reveal: Option<ScrollTarget>,
     },
     /// Each child is the page for the title at the same index.
     TabView {
@@ -125,12 +143,22 @@ pub enum ViewKind {
         selected: Option<String>,
         style: ListStyle,
     },
+    /// A table with column headers; the children are the cells, row by row.
+    Table {
+        columns: Vec<TableColumn>,
+        /// Row IDs; each row has one cell per column.
+        rows: Vec<String>,
+        selected: Option<String>,
+        striped: bool,
+    },
     /// A view drawn by its canvas handler.
     Canvas2D {
         canvas: CanvasNode,
         redraw: RedrawPolicy,
         /// Whether a click or the handler can give the canvas keyboard focus.
         focusable: bool,
+        /// Whether input is reported as [`Event::Canvas`] after the handler saw it.
+        reports_input: bool,
     },
     /// A view rendered by its wgpu canvas handler.
     #[cfg(feature = "wgpu")]
@@ -139,6 +167,8 @@ pub enum ViewKind {
         redraw: RedrawPolicy,
         /// Whether a click or the handler can give the canvas keyboard focus.
         focusable: bool,
+        /// Whether input is reported as [`Event::Canvas`] after the handler saw it.
+        reports_input: bool,
     },
 }
 
@@ -176,6 +206,7 @@ pub enum RenderNode {
         toolbar: Option<Toolbar>,
         /// Saves the frame under this name and restores it on the next launch.
         autosave: Option<String>,
+        document: DocumentState,
     },
     View {
         kind: ViewKind,
@@ -185,6 +216,8 @@ pub enum RenderNode {
         /// Receives mouse input inside the title bar area of a window whose
         /// content extends under it; other views leave that area to the window.
         title_bar_interactive: bool,
+        /// Text shown when the pointer rests on the view, such as why it is disabled.
+        help: Option<String>,
     },
     /// A contextual menu for the parent view.
     ContextMenu { items: Vec<CommandItem> },
@@ -263,6 +296,29 @@ impl zintl_ui::renderer::RenderNode for RenderNode {
             _ => std::mem::discriminant(self) == std::mem::discriminant(other),
         }
     }
+}
+
+/// How a window treats unsaved changes, closing, and Undo.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DocumentState {
+    /// Shows the unsaved-changes mark in the close button.
+    pub edited: bool,
+    /// Closing and quitting report [`Event::WindowCloseRequested`] instead of closing.
+    pub confirms_close: bool,
+    /// Each increase closes the window without asking again.
+    pub close_requests: u64,
+    /// The app's undo history; `None` leaves Undo to text editing alone.
+    pub undo: Option<UndoState>,
+}
+
+/// Whether the app's undo history can step back and forward.
+///
+/// While it is set and no text view is editing, Undo and Redo report
+/// [`Event::Undo`] and [`Event::Redo`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UndoState {
+    pub can_undo: bool,
+    pub can_redo: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

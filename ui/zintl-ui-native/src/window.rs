@@ -7,11 +7,45 @@ use zintl_ui::view::View;
 
 use crate::menu::MenuActions;
 use crate::{
-    Alert, ColorPanel, Context, Element, EventKind, FileDialog, Rect, RenderNode, Sidebar,
-    TitleBar, Toolbar, WindowStyle,
+    Alert, ColorPanel, Context, DocumentState, Element, EventKind, FileDialog, Rect, RenderNode,
+    Sidebar, TitleBar, Toolbar, UndoState, WindowStyle,
 };
 
 type Action = dyn for<'a> Fn(&mut Context<'a>);
+type CloseRequest = dyn for<'a> Fn(&mut Context<'a>) -> bool;
+
+/// The app's own undo history for a window's Undo and Redo menu items.
+///
+/// While no text view is editing, Undo and Redo run these actions instead of
+/// text undo; `can_undo` and `can_redo` enable the menu items.
+#[derive(Clone)]
+pub struct UndoHandler {
+    can_undo: bool,
+    can_redo: bool,
+    undo: Option<Rc<Action>>,
+    redo: Option<Rc<Action>>,
+}
+
+impl UndoHandler {
+    pub fn new(can_undo: bool, can_redo: bool) -> Self {
+        Self {
+            can_undo,
+            can_redo,
+            undo: None,
+            redo: None,
+        }
+    }
+
+    pub fn on_undo(mut self, action: impl for<'a> Fn(&mut Context<'a>) + 'static) -> Self {
+        self.undo = Some(Rc::new(action));
+        self
+    }
+
+    pub fn on_redo(mut self, action: impl for<'a> Fn(&mut Context<'a>) + 'static) -> Self {
+        self.redo = Some(Rc::new(action));
+        self
+    }
+}
 
 /// A sheet or panel presented on a window.
 #[derive(Clone)]
@@ -45,6 +79,11 @@ pub struct Window {
     on_close: Option<Rc<Action>>,
     toolbar: Option<Toolbar>,
     autosave: Option<String>,
+    edited: bool,
+    close_request: Option<Rc<CloseRequest>>,
+    undo: Option<UndoHandler>,
+    /// Counts confirmed close requests; each increase closes the window.
+    closes: Store<u64>,
 }
 
 impl Window {
@@ -62,6 +101,10 @@ impl Window {
             on_close: None,
             toolbar: None,
             autosave: None,
+            edited: false,
+            close_request: None,
+            undo: None,
+            closes: Store::default(),
         }
     }
 
@@ -133,10 +176,40 @@ impl Window {
         self.on_close = Some(Rc::new(action));
         self
     }
+
+    /// Asks `request` before the close button or quitting closes the window.
+    ///
+    /// Returning `false` keeps the window open, for example to present an
+    /// [`Alert`] about unsaved changes; close it later through
+    /// [`Window::bind_open`]. Quitting asks every window and ends the app once
+    /// the last one closes.
+    pub fn on_close_request(
+        mut self,
+        request: impl for<'a> Fn(&mut Context<'a>) -> bool + 'static,
+    ) -> Self {
+        self.close_request = Some(Rc::new(request));
+        self
+    }
+
+    /// Marks the window as having unsaved changes, shown in its close button.
+    pub fn edited(mut self, edited: bool) -> Self {
+        self.edited = edited;
+        self
+    }
+
+    /// Lets Undo and Redo step through the app's history while no text is being edited.
+    pub fn undo(mut self, handler: UndoHandler) -> Self {
+        self.undo = Some(handler);
+        self
+    }
 }
 
 impl View for Window {
     type Output = RenderNode;
+
+    fn init(&mut self, cx: &mut Context<'_>) {
+        self.closes = cx.store(0);
+    }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
         if self.open.is_some_and(|open| !*cx.get(open)) {
@@ -160,6 +233,15 @@ impl View for Window {
             style: self.style,
             toolbar: self.toolbar.as_ref().map(|toolbar| toolbar.state(cx)),
             autosave: self.autosave.clone(),
+            document: DocumentState {
+                edited: self.edited,
+                confirms_close: self.close_request.is_some(),
+                close_requests: *cx.get(self.closes),
+                undo: self.undo.as_ref().map(|undo| UndoState {
+                    can_undo: undo.can_undo,
+                    can_redo: undo.can_redo,
+                }),
+            },
         })
         .with_children([self.children.clone().into_element()])
         .with_children(attachments);
@@ -168,6 +250,22 @@ impl View for Window {
         }
         if let Some(toolbar) = &self.toolbar {
             element = toolbar.route(element);
+        }
+        if let Some(request) = self.close_request.clone() {
+            let closes = self.closes;
+            element = element.on_event(EventKind::WindowCloseRequested, move |cx, _| {
+                if request(cx) {
+                    cx.update(closes, |closes| *closes += 1);
+                }
+            });
+        }
+        if let Some(undo) = &self.undo {
+            if let Some(action) = undo.undo.clone() {
+                element = element.on_event(EventKind::Undo, move |cx, _| action(cx));
+            }
+            if let Some(action) = undo.redo.clone() {
+                element = element.on_event(EventKind::Redo, move |cx, _| action(cx));
+            }
         }
         if self.open.is_some() || self.on_close.is_some() {
             let open = self.open;

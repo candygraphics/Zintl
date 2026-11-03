@@ -3,13 +3,14 @@ use std::path::PathBuf;
 use zintl_ui::event::Event as EventTrait;
 
 use crate::graphics::AttributedText;
-use crate::{CanvasEvent, Color};
+use crate::{CanvasEvent, CanvasId, Color};
 
 /// Selects the event an element route handles.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum EventKind {
     Activated,
     TextChanged,
+    TextCommitted,
     RichTextChanged,
     StateChanged,
     ValueChanged,
@@ -17,6 +18,7 @@ pub enum EventKind {
     ColorChanged,
     Scrolled,
     Canvas,
+    CanvasActions,
     SidebarSelectionChanged,
     ListSelectionChanged,
     ToolbarItemClicked,
@@ -31,6 +33,9 @@ pub enum EventKind {
     WindowDidResize,
     WindowWillClose,
     WindowDidClose,
+    WindowCloseRequested,
+    Undo,
+    Redo,
 }
 
 /// A user change or window lifecycle event reported by a native backend.
@@ -38,6 +43,10 @@ pub enum EventKind {
 pub enum Event {
     Activated,
     TextChanged {
+        value: String,
+    },
+    /// Editing ended with Return, Tab, or a focus change; `value` is the final text.
+    TextCommitted {
         value: String,
     },
     /// A rich text editor's content changed.
@@ -66,6 +75,10 @@ pub enum Event {
     },
     /// Input a canvas received, after its handler saw it.
     Canvas(CanvasEvent),
+    /// A canvas handler emitted actions; take them with [`CanvasId::take_actions`].
+    CanvasActions {
+        canvas: CanvasId,
+    },
     SidebarSelectionChanged {
         id: String,
     },
@@ -101,6 +114,12 @@ pub enum Event {
     WindowDidResize,
     WindowWillClose,
     WindowDidClose,
+    /// The user asked a window that confirms closing to close, or to quit.
+    WindowCloseRequested,
+    /// Undo was chosen while the window's app history owns it.
+    Undo,
+    /// Redo was chosen while the window's app history owns it.
+    Redo,
 }
 
 impl EventTrait for Event {
@@ -110,6 +129,7 @@ impl EventTrait for Event {
         match self {
             Self::Activated => EventKind::Activated,
             Self::TextChanged { .. } => EventKind::TextChanged,
+            Self::TextCommitted { .. } => EventKind::TextCommitted,
             Self::RichTextChanged { .. } => EventKind::RichTextChanged,
             Self::StateChanged { .. } => EventKind::StateChanged,
             Self::ValueChanged { .. } => EventKind::ValueChanged,
@@ -117,6 +137,7 @@ impl EventTrait for Event {
             Self::ColorChanged { .. } => EventKind::ColorChanged,
             Self::Scrolled { .. } => EventKind::Scrolled,
             Self::Canvas(_) => EventKind::Canvas,
+            Self::CanvasActions { .. } => EventKind::CanvasActions,
             Self::SidebarSelectionChanged { .. } => EventKind::SidebarSelectionChanged,
             Self::ListSelectionChanged { .. } => EventKind::ListSelectionChanged,
             Self::ToolbarItemClicked { .. } => EventKind::ToolbarItemClicked,
@@ -131,6 +152,9 @@ impl EventTrait for Event {
             Self::WindowDidResize => EventKind::WindowDidResize,
             Self::WindowWillClose => EventKind::WindowWillClose,
             Self::WindowDidClose => EventKind::WindowDidClose,
+            Self::WindowCloseRequested => EventKind::WindowCloseRequested,
+            Self::Undo => EventKind::Undo,
+            Self::Redo => EventKind::Redo,
         }
     }
 }

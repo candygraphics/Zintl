@@ -63,8 +63,48 @@ fn target_class() -> zpd_objc::Class {
     }) as zpd_objc::Class
 }
 
+/// A text field delegate for `controlTextDidChange:` and `controlTextDidEndEditing:`.
+///
+/// Both call the callback with the notification; [`is_end_editing`] tells them apart.
+fn text_target_class() -> zpd_objc::Class {
+    static CLASS: OnceLock<usize> = OnceLock::new();
+    *CLASS.get_or_init(|| {
+        zpd_objc::decl!(ZpdRustTextDelegate: [zpd_objc::class!("NSObject")] {
+            fields { _zpdCallback: ptr }
+            methods {
+                "controlTextDidChange:": "v@:@" => invoke,
+                "controlTextDidEndEditing:": "v@:@" => invoke,
+                "dealloc": "v@:" => dealloc,
+            }
+        }) as usize
+    }) as zpd_objc::Class
+}
+
+/// Returns whether `notification` ends editing rather than changing the text.
+///
+/// # Safety
+/// `notification` must be a live `NSNotification`.
+pub(crate) unsafe fn is_end_editing(notification: Id) -> bool {
+    // SAFETY: Guaranteed by the caller.
+    let name = unsafe {
+        crate::native::rust_string(
+            zpd_objc::msg_send!(notification, zpd_objc::sel!("name"), () => Id),
+        )
+    };
+    name == "NSControlTextDidEndEditingNotification"
+}
+
 pub(crate) fn target(callback: impl FnMut(Id) + 'static) -> Strong {
-    let target = crate::native::alloc_init(target_class());
+    with_class(target_class(), callback)
+}
+
+/// Creates a text field delegate; see [`text_target_class`].
+pub(crate) fn text_target(callback: impl FnMut(Id) + 'static) -> Strong {
+    with_class(text_target_class(), callback)
+}
+
+fn with_class(class: zpd_objc::Class, callback: impl FnMut(Id) + 'static) -> Strong {
+    let target = crate::native::alloc_init(class);
     // SAFETY: The registered target class declares the `_zpdCallback` ivar.
     unsafe {
         CALLBACK.set(

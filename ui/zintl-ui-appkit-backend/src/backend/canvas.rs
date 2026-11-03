@@ -17,7 +17,7 @@ use crate::graphics::{
     Color, FillRule, Font, Graphics2D, GraphicsBackend, Image, Paint, Path, PathElement, Point,
     Rect, StrokeStyle, TextMetrics, Transform,
 };
-use crate::{CanvasHost, CanvasNode, MainTaskSender};
+use crate::{CanvasHost, CanvasId, CanvasNode, Cursor, MainTaskSender};
 
 /// Native resources a canvas reuses across frames.
 #[derive(Default)]
@@ -100,6 +100,14 @@ impl CanvasHost for Host {
         } else {
             self.0.resign_focus()
         };
+    }
+
+    fn set_cursor(&self, cursor: Cursor) {
+        self.0.set_cursor(cursor.native());
+    }
+
+    fn actions_emitted(&self, canvas: CanvasId) {
+        self.0.notify(canvas.into_raw());
     }
 }
 
