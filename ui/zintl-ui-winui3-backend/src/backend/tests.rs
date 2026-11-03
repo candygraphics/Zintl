@@ -20,6 +20,7 @@ impl Nodes {
             id: None,
             enabled: true,
             title_bar_interactive: false,
+            help: None,
         }
     }
 
@@ -302,6 +303,8 @@ fn view_kinds_choose_matching_controls() {
             system_image: None,
             key_equivalent: None,
             destructive: false,
+            shows_menu: false,
+            keeps_state: false,
         })
     };
     assert_eq!(

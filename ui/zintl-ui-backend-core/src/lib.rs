@@ -55,6 +55,10 @@ pub struct Button {
     pub system_image: Option<String>,
     pub key_equivalent: Option<String>,
     pub destructive: bool,
+    /// A click shows the button's context menu below it instead of activating it.
+    pub shows_menu: bool,
+    /// Clicks leave `on` as declared instead of toggling it, as for a selection.
+    pub keeps_state: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -114,6 +118,12 @@ pub enum ViewKind {
     ColorWell {
         color: Color,
     },
+    /// Spins while `value` is `None`; otherwise shows `value` in `0.0..=1.0` as a bar.
+    ProgressIndicator {
+        value: Option<f64>,
+    },
+    /// A thin line; its layout decides whether it runs across or down.
+    Separator,
     /// Children are laid out in the scrollable document view.
     ScrollView {
         axes: ScrollAxes,
@@ -196,6 +206,8 @@ pub enum RenderNode {
         /// Receives mouse input inside the title bar area of a window whose
         /// content extends under it; other views leave that area to the window.
         title_bar_interactive: bool,
+        /// Text shown when the pointer rests on the view, such as why it is disabled.
+        help: Option<String>,
     },
     /// A contextual menu for the parent view.
     ContextMenu { items: Vec<CommandItem> },

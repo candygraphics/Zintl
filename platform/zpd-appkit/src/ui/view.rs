@@ -392,6 +392,13 @@ impl<'view> ViewRef<'view> {
             zpd_objc::msg_send!(view, zpd_objc::sel!("setAccessibilityIdentifier:"), ((identifier.as_ref().map_or(zpd_objc::NIL, Strong::as_ptr)): zpd_objc::Id) => ());
         })
     }
+    /// Shows `text` when the pointer rests on the view; `None` removes it.
+    pub fn set_tool_tip(self, text: Option<&str>) -> Result<(), UiError> {
+        let text = text.map(native::nsstring);
+        self.with(|view| unsafe {
+            zpd_objc::msg_send!(view, zpd_objc::sel!("setToolTip:"), ((text.as_ref().map_or(zpd_objc::NIL, Strong::as_ptr)): zpd_objc::Id) => ());
+        })
+    }
     /// Keeps mouse input for this view and its subviews inside a title bar
     /// that the window content extends under.
     pub fn set_title_bar_interactive(self, interactive: bool) -> Result<(), UiError> {

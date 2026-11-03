@@ -1,4 +1,5 @@
 pub mod canvas_action;
+pub mod controls;
 pub mod document;
 pub mod full_size_sidebar;
 pub mod full_width_stack;

@@ -23,6 +23,7 @@ impl Nodes {
             id: None,
             enabled: true,
             title_bar_interactive: false,
+            help: None,
         }
     }
 

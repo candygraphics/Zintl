@@ -469,6 +469,7 @@ impl AppKitBackend {
                     id,
                     enabled,
                     title_bar_interactive,
+                    help,
                     ..
                 } = self.kind(child)
             {
@@ -484,6 +485,9 @@ impl AppKitBackend {
                 }
                 if title_bar_interactive {
                     native.as_view().set_title_bar_interactive(true)?;
+                }
+                if help.is_some() {
+                    native.set_tool_tip(help.as_deref())?;
                 }
                 native
                     .as_view()
@@ -822,6 +826,7 @@ impl AppKitBackend {
                 id: old_id,
                 enabled: old_enabled,
                 title_bar_interactive: old_interactive,
+                help: old_help,
                 ..
             },
             RenderNode::View {
@@ -829,6 +834,7 @@ impl AppKitBackend {
                 id: new_id,
                 enabled: new_enabled,
                 title_bar_interactive: new_interactive,
+                help: new_help,
                 ..
             },
         ) = (old, new)
@@ -845,6 +851,9 @@ impl AppKitBackend {
             native
                 .as_view()
                 .set_title_bar_interactive(*new_interactive)?;
+        }
+        if old_help != new_help {
+            native.set_tool_tip(new_help.as_deref())?;
         }
         native.apply(Some(old_kind), new_kind)?;
         Ok(())

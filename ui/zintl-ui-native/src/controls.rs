@@ -165,6 +165,7 @@ impl NativeView for Switch {
             id: self.id.clone(),
             enabled: self.enabled,
             title_bar_interactive: false,
+            help: None,
         });
         Binding {
             store: self.store,
@@ -249,6 +250,7 @@ impl NativeView for Slider {
             id: self.id.clone(),
             enabled: self.enabled,
             title_bar_interactive: false,
+            help: None,
         });
         Binding {
             store: self.store,
@@ -336,6 +338,7 @@ impl NativeView for PopUpButton {
             id: self.id.clone(),
             enabled: self.enabled,
             title_bar_interactive: false,
+            help: None,
         });
         Binding {
             store: self.store,
@@ -407,6 +410,7 @@ impl NativeView for SegmentedControl {
             id: self.id.clone(),
             enabled: self.enabled,
             title_bar_interactive: false,
+            help: None,
         });
         Binding {
             store: self.store,
@@ -485,6 +489,7 @@ impl NativeView for ComboBox {
             id: self.id.clone(),
             enabled: self.enabled,
             title_bar_interactive: false,
+            help: None,
         });
         Binding {
             store: self.store,
@@ -651,6 +656,7 @@ impl NativeView for NumberField {
             id: self.id.clone(),
             enabled: self.enabled,
             title_bar_interactive: false,
+            help: None,
         });
         let binding = || Binding {
             store: self.store,
@@ -744,6 +750,7 @@ impl NativeView for SearchField {
             id: self.id.clone(),
             enabled: true,
             title_bar_interactive: false,
+            help: None,
         });
         Binding {
             store: self.store,
@@ -815,6 +822,7 @@ impl NativeView for ColorWell {
             id: self.id.clone(),
             enabled: self.enabled,
             title_bar_interactive: false,
+            help: None,
         });
         Binding {
             store: self.store,

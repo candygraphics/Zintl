@@ -1,5 +1,6 @@
 use crate::{
-    Color, FillRule, Font, Image, Paint, Path, Point, Rect, StrokeStyle, TextMetrics, Transform,
+    Color, FillRule, Font, HorizontalAlign, Image, Paint, Path, Point, Rect, StrokeStyle,
+    TextAlign, TextMetrics, Transform, VerticalAlign,
 };
 
 /// The drawing operations a native graphics API provides.
@@ -150,6 +151,36 @@ impl<'a> Graphics2D<'a> {
 
     pub fn measure_text(&mut self, text: &str, font: &Font) -> TextMetrics {
         self.backend.measure_text(text, font)
+    }
+
+    /// Draws one line of text with its `align` point at `point`; returns the line's bounds.
+    pub fn fill_text_aligned(
+        &mut self,
+        text: &str,
+        point: Point,
+        align: TextAlign,
+        font: &Font,
+        color: Color,
+    ) -> Rect {
+        let metrics = self.measure_text(text, font);
+        let x = match align.horizontal {
+            HorizontalAlign::Left => point.x,
+            HorizontalAlign::Center => point.x - metrics.width / 2.0,
+            HorizontalAlign::Right => point.x - metrics.width,
+        };
+        let baseline = match align.vertical {
+            VerticalAlign::Top => point.y + metrics.ascent,
+            VerticalAlign::Center => point.y + (metrics.ascent - metrics.descent) / 2.0,
+            VerticalAlign::Baseline => point.y,
+            VerticalAlign::Bottom => point.y - metrics.descent,
+        };
+        self.fill_text(text, Point::new(x, baseline), font, color);
+        Rect::new(
+            x,
+            baseline - metrics.ascent,
+            metrics.width,
+            metrics.height(),
+        )
     }
 
     /// Draws `image` scaled into `rect`.

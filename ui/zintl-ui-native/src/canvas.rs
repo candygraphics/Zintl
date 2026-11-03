@@ -140,6 +140,7 @@ macro_rules! canvas_view {
                     id: self.id.clone(),
                     enabled: true,
                     title_bar_interactive: false,
+                    help: None,
                 });
                 if let Some(action) = self.action.clone() {
                     element = element.on_event(EventKind::Canvas, move |cx, event| {

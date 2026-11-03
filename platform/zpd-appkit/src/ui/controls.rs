@@ -49,7 +49,71 @@ as_view!(
     NumberField,
     SearchField,
     ColorWell,
+    ProgressIndicator,
+    Separator,
 );
+
+/// A native `NSProgressIndicator`, spinning or showing a fraction as a bar.
+pub struct ProgressIndicator {
+    view: ViewActor,
+}
+impl ProgressIndicator {
+    const STYLE_BAR: u64 = 0;
+    const STYLE_SPINNING: u64 = 1;
+
+    pub fn new(application: &Application) -> Result<Self, UiError> {
+        let native = create(zpd_objc::class!("NSProgressIndicator"))?;
+        // SAFETY: The retained object is an NSProgressIndicator.
+        unsafe {
+            zpd_objc::msg_send!(native.as_ptr(), zpd_objc::sel!("setMinValue:"), ((0.0): f64) => ());
+            zpd_objc::msg_send!(native.as_ptr(), zpd_objc::sel!("setMaxValue:"), ((1.0): f64) => ());
+            zpd_objc::msg_send!(native.as_ptr(), zpd_objc::sel!("setDisplayedWhenStopped:"), ((true): bool) => ());
+        }
+        Ok(Self {
+            view: ViewActor::new(application, native),
+        })
+    }
+    /// Spins while `value` is `None`; otherwise shows `value` in `0.0..=1.0` as a bar.
+    pub fn set_value(&self, value: Option<f64>) -> Result<(), UiError> {
+        self.view.as_view().with(|indicator| {
+            // SAFETY: The live view is an NSProgressIndicator.
+            unsafe {
+                match value {
+                    None => {
+                        zpd_objc::msg_send!(indicator, zpd_objc::sel!("setStyle:"), ((Self::STYLE_SPINNING): u64) => ());
+                        zpd_objc::msg_send!(indicator, zpd_objc::sel!("setIndeterminate:"), ((true): bool) => ());
+                        zpd_objc::msg_send!(indicator, zpd_objc::sel!("startAnimation:"), ((zpd_objc::NIL): Id) => ());
+                    }
+                    Some(value) => {
+                        zpd_objc::msg_send!(indicator, zpd_objc::sel!("stopAnimation:"), ((zpd_objc::NIL): Id) => ());
+                        zpd_objc::msg_send!(indicator, zpd_objc::sel!("setStyle:"), ((Self::STYLE_BAR): u64) => ());
+                        zpd_objc::msg_send!(indicator, zpd_objc::sel!("setIndeterminate:"), ((false): bool) => ());
+                        zpd_objc::msg_send!(indicator, zpd_objc::sel!("setDoubleValue:"), ((value.clamp(0.0, 1.0)): f64) => ());
+                    }
+                }
+            }
+        })
+    }
+}
+
+/// A separator line drawn by an `NSBox`.
+pub struct Separator {
+    view: ViewActor,
+}
+impl Separator {
+    const BOX_SEPARATOR: u64 = 2;
+
+    pub fn new(application: &Application) -> Result<Self, UiError> {
+        let native = create(zpd_objc::class!("NSBox"))?;
+        // SAFETY: The retained object is an NSBox; separators draw a line along their longer side.
+        unsafe {
+            zpd_objc::msg_send!(native.as_ptr(), zpd_objc::sel!("setBoxType:"), ((Self::BOX_SEPARATOR): u64) => ());
+        }
+        Ok(Self {
+            view: ViewActor::new(application, native),
+        })
+    }
+}
 
 /// A native `NSSwitch`.
 pub struct Switch {
@@ -540,6 +604,13 @@ impl NumberField {
                 zpd_objc::msg_send!(formatter, zpd_objc::sel!("setMaximumFractionDigits:"), ((format.fraction_digits as u64): u64) => ());
             }
         })?;
+        Ok(())
+    }
+    /// Shows `text` over both the field and its stepper.
+    pub fn set_tool_tip(&self, text: Option<&str>) -> Result<(), UiError> {
+        for control in [&self.field, &self.stepper] {
+            ViewRef::from_actor(control).set_tool_tip(text)?;
+        }
         Ok(())
     }
     /// Enables or disables both the field and its stepper.

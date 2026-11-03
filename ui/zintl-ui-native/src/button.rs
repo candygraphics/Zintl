@@ -8,8 +8,8 @@ use zintl_ui_layout::{LayoutStyle, Size};
 
 use crate::attach::attachments;
 use crate::{
-    Attachments, BezelStyle, ButtonRole, ButtonType, Context, Element, Event, EventKind,
-    NativeView, RenderNode,
+    Attach, Attachments, BezelStyle, ButtonRole, ButtonType, Context, Element, Event, EventKind,
+    Menu, NativeView, RenderNode,
 };
 
 type Action = dyn for<'a> Fn(&mut Context<'a>);
@@ -30,6 +30,8 @@ pub struct Button {
     attachments: Attachments,
     action: Option<Rc<Action>>,
     state_action: Option<Rc<StateAction>>,
+    shows_menu: bool,
+    keeps_state: bool,
 }
 
 impl Button {
@@ -48,6 +50,8 @@ impl Button {
             attachments: Attachments::default(),
             action: None,
             state_action: None,
+            shows_menu: false,
+            keeps_state: false,
         }
     }
 
@@ -119,6 +123,25 @@ impl Button {
     }
 
     /// Schedules `action` when the user activates this button.
+    /// Shows `menu` below the button when clicked, like a pull-down button.
+    ///
+    /// The button then runs the chosen item's action instead of `on_click`.
+    pub fn menu(mut self, menu: impl Into<Menu>) -> Self {
+        self.shows_menu = true;
+        self.context_menu(menu)
+    }
+
+    /// Shows the button as selected, such as the chosen row number in a list.
+    ///
+    /// It draws in the on state; clicks report `on_click` and leave the
+    /// state to the next render.
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.button_type = ButtonType::PushOnPushOff;
+        self.on = selected;
+        self.keeps_state = true;
+        self
+    }
+
     pub fn on_click(mut self, action: impl for<'a> Fn(&mut Context<'a>) + 'static) -> Self {
         self.action = Some(Rc::new(action));
         self
@@ -153,11 +176,14 @@ impl NativeView for Button {
                 system_image: self.system_image.clone(),
                 key_equivalent,
                 destructive: self.role == ButtonRole::Destructive,
+                shows_menu: self.shows_menu,
+                keeps_state: self.keeps_state,
             }),
             layout: self.layout,
             id: self.id.clone(),
             enabled: self.enabled,
             title_bar_interactive: false,
+            help: None,
         });
         if let Some(action) = self.action.clone() {
             element = element.on_event(EventKind::Activated, move |cx, event| {

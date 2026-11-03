@@ -191,6 +191,7 @@ impl NativeView for TextField {
             id: self.id.clone(),
             enabled: true,
             title_bar_interactive: false,
+            help: None,
         });
         let element = TextChange::route(element, self.binding, self.action.clone());
         let Some(commit) = self.commit.clone() else {
@@ -293,6 +294,7 @@ impl NativeView for TextEditor {
             id: None,
             enabled: true,
             title_bar_interactive: false,
+            help: None,
         });
         let (store, action) = (self.binding, self.action.clone());
         if store.is_none() && action.is_none() {

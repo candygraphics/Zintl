@@ -137,3 +137,12 @@ The WinUI 3 backend ignores `RenderNode::Window::document`. Handle
 while `confirms_close` is set), close the window when `close_requests`
 increases, and show `edited` in the title. Ctrl+Z and Ctrl+Y should report
 `Event::Undo` and `Event::Redo` unless a focused `TextBox` can undo.
+
+## Tooltips, indicators, separators, and menu buttons on Windows
+
+The WinUI 3 backend ignores `RenderNode::View::help`, shows
+`ViewKind::ProgressIndicator` and `ViewKind::Separator` as empty panels, and
+ignores `Button::shows_menu` and `Button::keeps_state`. Set
+`ToolTipService.ToolTip`, use a `ProgressRing` (spinning) or `ProgressBar`, draw
+the separator as a 1-pixel `Rectangle`, attach the context menu as a
+`Button.Flyout`, and restore a kept toggle state after each click.

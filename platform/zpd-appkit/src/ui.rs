@@ -36,8 +36,8 @@ pub use commands::{
     CommandItem, CommandMenu, CommandModifier, CommandRole, CommandSet, MenuRole, WindowAppMenu,
 };
 pub use controls::{
-    ColorWell, ComboBox, NumberField, NumberFormat, PopUpButton, SearchField, SegmentedControl,
-    Slider, Switch,
+    ColorWell, ComboBox, NumberField, NumberFormat, PopUpButton, ProgressIndicator, SearchField,
+    SegmentedControl, Separator, Slider, Switch,
 };
 pub use dialogs::{
     AlertButton, AlertButtonRole, AlertConfig, AlertSheet, AlertStyle, ColorPanelSession,

@@ -5,6 +5,7 @@ mod button;
 mod canvas;
 mod containers;
 mod controls;
+mod indicators;
 mod list;
 mod menu;
 mod presentation;
@@ -24,6 +25,7 @@ pub use containers::{ScrollView, TabView, TabViewItem};
 pub use controls::{
     ColorWell, ComboBox, NumberField, PopUpButton, SearchField, SegmentedControl, Slider, Switch,
 };
+pub use indicators::{ProgressIndicator, Separator};
 pub use list::{List, ListRow, ListSection};
 pub use menu::{
     EnglishMenuLocalizer, JapaneseMenuLocalizer, MainMenu, Menu, MenuItem, MenuItemState,

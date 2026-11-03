@@ -30,8 +30,9 @@ pub use zintl_ui_layout::{
     Axis, ChildSizing, CrossAxisAlignment, LayoutDimension, LayoutStyle, MainAxisDistribution, Size,
 };
 pub use zintl_ui_native::graphics::{
-    AttributedText, FillRule, Font, FontWeight, GradientStop, Graphics2D, Image, LineCap, LineJoin,
-    Paint, ParagraphStyle, Path, Point, SpanStyle, StrokeStyle, TextMetrics, Transform,
+    AttributedText, FillRule, Font, FontWeight, GradientStop, Graphics2D, HorizontalAlign, Image,
+    LineCap, LineJoin, Paint, ParagraphStyle, Path, Point, SpanStyle, StrokeStyle, TextAlign,
+    TextMetrics, Transform, VerticalAlign,
 };
 pub use zintl_ui_native::{
     Alert, AlertButton, AlertStyle, Attach, Attachments, ButtonRole, Canvas2D, Canvas2DHandler,
@@ -39,11 +40,11 @@ pub use zintl_ui_native::{
     EnglishMenuLocalizer, Event, EventKind, FileDialog, Frame, GesturePhase, Invalidator,
     JapaneseMenuLocalizer, Key, KeyEvent, KeyPhase, List, ListFactory, ListRow, ListSection,
     ListStyle, MagnifyEvent, MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, Modifiers,
-    NamedKey, NativeView, PointerButton, PointerEvent, PointerPhase, Popover, PopoverEdge, Rect,
-    Redraw, RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, ScrollStatus, Shortcut, Sidebar,
-    SidebarItem, SidebarSection, StandardAction, StandardMenu, StandardText, StoreSender,
-    TextAlignment, TextColor, TextEditor, TitleBar, Toolbar, ToolbarItem, UndoHandler, ViewKind,
-    graphics, list,
+    NamedKey, NativeView, PointerButton, PointerEvent, PointerPhase, Popover, PopoverEdge,
+    ProgressIndicator, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent,
+    ScrollStatus, Separator, Shortcut, Sidebar, SidebarItem, SidebarSection, StandardAction,
+    StandardMenu, StandardText, StoreSender, TextAlignment, TextColor, TextEditor, TitleBar,
+    Toolbar, ToolbarItem, UndoHandler, ViewKind, graphics, list,
 };
 #[cfg(feature = "wgpu")]
 pub use zintl_ui_native::{
@@ -295,6 +296,18 @@ impl Button {
 
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.inner = self.inner.enabled(enabled);
+        self
+    }
+
+    /// Shows `menu` below the button when clicked, like a pull-down button.
+    pub fn menu(mut self, menu: impl Into<Menu>) -> Self {
+        self.inner = self.inner.menu(menu);
+        self
+    }
+
+    /// Shows the button as selected, such as the chosen row number in a list.
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.inner = self.inner.selected(selected);
         self
     }
 }
@@ -951,6 +964,7 @@ mod tests {
                 id: None,
                 enabled: true,
                 title_bar_interactive: false,
+                help: None,
             }
         );
         assert!(matches!(

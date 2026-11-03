@@ -5,8 +5,8 @@ use std::sync::Arc;
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
     AsView, Button, CanvasView, ColorWell, ComboBox, ListView, NumberField, PopUpButton,
-    ScrollView, SearchField, SegmentedControl, Slider, Switch, TabView, TextEditor, TextField,
-    UiError, View, ViewRef,
+    ProgressIndicator, ScrollView, SearchField, SegmentedControl, Separator, Slider, Switch,
+    TabView, TextEditor, TextField, UiError, View, ViewRef,
 };
 
 use zintl_ui_layout::Size;
@@ -34,6 +34,8 @@ pub(super) enum NativeNode {
     SegmentedControl(SegmentedControl),
     ComboBox(ComboBox),
     NumberField(NumberField),
+    ProgressIndicator(ProgressIndicator),
+    Separator(Separator),
     SearchField(SearchField),
     ColorWell(ColorWell),
     /// The offset waits until layout has sized the document.
@@ -65,6 +67,8 @@ impl NativeNode {
             Self::SegmentedControl(view) => view.as_view(),
             Self::ComboBox(view) => view.as_view(),
             Self::NumberField(view) => view.as_view(),
+            Self::ProgressIndicator(view) => view.as_view(),
+            Self::Separator(view) => view.as_view(),
             Self::SearchField(view) => view.as_view(),
             Self::ColorWell(view) => view.as_view(),
             Self::ScrollView(view, _) => view.as_view(),
@@ -105,6 +109,10 @@ impl NativeNode {
             }
             ViewKind::ComboBox { .. } => Self::ComboBox(ComboBox::new(application)?),
             ViewKind::NumberField { .. } => Self::NumberField(NumberField::new(application)?),
+            ViewKind::ProgressIndicator { .. } => {
+                Self::ProgressIndicator(ProgressIndicator::new(application)?)
+            }
+            ViewKind::Separator => Self::Separator(Separator::new(application)?),
             ViewKind::SearchField { .. } => Self::SearchField(SearchField::new(application)?),
             ViewKind::ColorWell { .. } => Self::ColorWell(ColorWell::new(application)?),
             ViewKind::ScrollView { .. } => {
@@ -167,6 +175,14 @@ impl NativeNode {
         ))
     }
 
+    /// Sets the tooltip on the view the pointer rests on.
+    pub(super) fn set_tool_tip(&self, text: Option<&str>) -> Result<(), UiError> {
+        match self {
+            Self::NumberField(field) => field.set_tool_tip(text),
+            _ => self.as_view().set_tool_tip(text),
+        }
+    }
+
     pub(super) fn set_enabled(&self, enabled: bool) -> Result<(), UiError> {
         match self {
             Self::NumberField(field) => field.set_enabled(enabled),
@@ -222,6 +238,8 @@ impl NativeNode {
                 if old.is_none_or(|old| old.destructive != button.destructive) {
                     native.set_destructive(button.destructive)?;
                 }
+                native.set_shows_menu(button.shows_menu);
+                native.set_keeps_state(button.keeps_state);
             }
             (
                 Self::TextField(field),
@@ -406,6 +424,13 @@ impl NativeNode {
                     field.set_value(*value)?;
                 }
             }
+            (Self::ProgressIndicator(indicator), ViewKind::ProgressIndicator { value }) => {
+                if !matches!(old, Some(ViewKind::ProgressIndicator { value: old }) if old == value)
+                {
+                    indicator.set_value(*value)?;
+                }
+            }
+            (Self::Separator(_), ViewKind::Separator) => {}
             (Self::SearchField(field), ViewKind::SearchField { value, placeholder }) => {
                 field.set_placeholder(placeholder.as_deref())?;
                 if field.string_value()? != *value {

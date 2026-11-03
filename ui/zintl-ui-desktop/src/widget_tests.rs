@@ -1435,3 +1435,92 @@ fn undo_events_run_the_window_history_and_update_menu_state() {
     assert_eq!(app.get(steps), 0);
     assert!(!document(&app).edited);
 }
+
+#[test]
+fn help_text_reaches_any_view() {
+    // Verifies the help modifier sets the tooltip on controls and containers alike.
+    let app = App::new(
+        VStack::new(list![
+            Button::new("Save").enabled(false).help("Nothing to save")
+        ])
+        .help("Tools"),
+    );
+    let tree = app.render_tree();
+    assert!(matches!(
+        &tree.value,
+        RenderNode::View { help: Some(help), .. } if help == "Tools"
+    ));
+    assert!(matches!(
+        &tree.children[0].value,
+        RenderNode::View { help: Some(help), enabled: false, .. } if help == "Nothing to save"
+    ));
+}
+
+#[test]
+fn menu_button_shows_its_menu_instead_of_activating() {
+    // Verifies a menu button marks itself for the native pull-down and carries the menu as an attachment.
+    let app = App::new(Button::new("Samples").menu(Menu::items([MenuItem::new("Load A")])));
+    let tree = app.render_tree();
+    assert!(matches!(
+        &tree.value,
+        RenderNode::View {
+            kind: ViewKind::Button(zintl_ui_backend_core::Button {
+                shows_menu: true,
+                ..
+            }),
+            ..
+        }
+    ));
+    assert!(matches!(
+        &tree.children[..],
+        [child] if matches!(child.value, RenderNode::ContextMenu { .. })
+    ));
+}
+
+#[test]
+fn selected_button_draws_in_the_on_state() {
+    // Verifies a selected button is a push-on-push-off button that shows its selection.
+    let app = App::new(Button::new("1").selected(true));
+    assert!(matches!(
+        app.render(),
+        RenderNode::View {
+            kind: ViewKind::Button(zintl_ui_backend_core::Button {
+                button_type: zintl_ui_native::ButtonType::PushOnPushOff,
+                on: true,
+                ..
+            }),
+            ..
+        }
+    ));
+}
+
+#[test]
+fn indicators_describe_their_kinds() {
+    // Verifies the spinner has no value, the bar keeps its fraction, and separators are thin lines.
+    let render = |view: Element<RenderNode>| App::new(view).render();
+    assert!(matches!(
+        render(ProgressIndicator::spinning().into_element()),
+        RenderNode::View {
+            kind: ViewKind::ProgressIndicator { value: None },
+            ..
+        }
+    ));
+    assert!(matches!(
+        render(ProgressIndicator::bar(0.25).into_element()),
+        RenderNode::View {
+            kind: ViewKind::ProgressIndicator { value: Some(0.25) },
+            ..
+        }
+    ));
+    assert!(matches!(
+        render(Separator::vertical().into_element()),
+        RenderNode::View {
+            kind: ViewKind::Separator,
+            layout: LayoutStyle {
+                width: LayoutDimension::Points(1.0),
+                ..
+            },
+            ..
+        }
+    ));
+}

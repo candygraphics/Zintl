@@ -109,6 +109,8 @@ impl NativeNode {
             ViewKind::NumberField { .. } => ControlKind::NumberBox,
             ViewKind::SearchField { .. } => ControlKind::AutoSuggestBox,
             ViewKind::ColorWell { .. } => ControlKind::ColorButton,
+            // TODO: Use a ProgressRing or ProgressBar, and a line; see TODO.md.
+            ViewKind::ProgressIndicator { .. } | ViewKind::Separator => ControlKind::Canvas,
             // TODO: Use a ListView with selection; see TODO.md.
             ViewKind::ScrollView { .. } | ViewKind::List { .. } => ControlKind::ScrollViewer,
             ViewKind::TabView { .. } => ControlKind::TabView,
@@ -233,7 +235,7 @@ impl NativeNode {
     pub(super) fn apply(&self, old: Option<&ViewKind>, new: &ViewKind) -> Result<(), AppError> {
         let control = &self.control;
         match new {
-            ViewKind::Container => {}
+            ViewKind::Container | ViewKind::ProgressIndicator { .. } | ViewKind::Separator => {}
             ViewKind::Button(button) => {
                 let old = match old {
                     Some(ViewKind::Button(old)) => Some(old),
