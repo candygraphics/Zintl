@@ -40,4 +40,13 @@ final class ControlsTests: ZintlUITestCase {
 
     XCTAssertTrue(app.activityIndicators["spinner"].waitForExistence(timeout: 2))
   }
+
+  /// Verifies an unbound color well shows its declared color.
+  func testColorWellShowsItsDeclaredColor() throws {
+    try launch(scenario: "controls")
+
+    let well = app.colorWells["declared-color"]
+    XCTAssertTrue(well.waitForExistence(timeout: 2))
+    XCTAssertEqual(well.value as? String, "rgb 1 0 0 1")
+  }
 }

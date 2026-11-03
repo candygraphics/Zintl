@@ -564,6 +564,12 @@ impl ColorWell {
         }
     }
 
+    /// Shows `color`; a bound Store takes precedence.
+    pub fn color(mut self, color: Color) -> Self {
+        self.inner = self.inner.color(color);
+        self
+    }
+
     pub fn bind(mut self, store: Store<Color>) -> Self {
         self.inner = self.inner.bind(store);
         self

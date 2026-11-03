@@ -372,6 +372,32 @@ fn slider_combo_box_search_and_color_write_their_stores() {
 }
 
 #[test]
+fn color_well_shows_its_declared_color_and_reports_changes() {
+    // Verifies an unbound color well shows `color` and passes picked colors to `on_change`.
+    let red = Color::rgba(1.0, 0.0, 0.0, 1.0);
+    let picked = Rc::new(Cell::new(None));
+    let mut app = App::new(VStack::new(list![ColorWell::new().color(red).on_change({
+        let picked = picked.clone();
+        move |_, color| picked.set(Some(color))
+    })]));
+    assert!(matches!(
+        app.render_tree().children[0].value,
+        RenderNode::View {
+            kind: ViewKind::ColorWell { color },
+            ..
+        } if color == red
+    ));
+
+    assert!(app.dispatch_at(
+        &[0, 0],
+        Event::ColorChanged {
+            color: Color::WHITE,
+        },
+    ));
+    assert_eq!(picked.get(), Some(Color::WHITE));
+}
+
+#[test]
 fn button_roles_and_styles_configure_nsbutton() {
     // Verifies roles become key equivalents or destructive styling and styles pick a bezel.
     let render = |button: Button| App::new(button).render();
