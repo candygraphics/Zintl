@@ -33,6 +33,7 @@ fn main() -> Result<(), AppError> {
         "hstack" => App::new(scenarios::hstack::MainView).run()?,
         "full-width-stack" => App::new(scenarios::full_width_stack::MainView).run()?,
         "full-size-sidebar" => App::new(scenarios::full_size_sidebar::MainView::default()).run()?,
+        "overflow" => App::new(scenarios::overflow::MainView).run()?,
         "perform-main" => App::new(scenarios::perform_main::MainView::new()).run()?,
         "scroll-status" => App::new(scenarios::scroll_status::MainView::default()).run()?,
         "window-close" => App::new(scenarios::window_close::MainView).run()?,

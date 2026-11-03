@@ -197,7 +197,7 @@ impl<N: LayoutNative> HostLayout<N> {
         let mut style = LayoutStyle::stack(Axis::Vertical, 0.0);
         style.width = width.map_or(LayoutDimension::Auto, LayoutDimension::Points);
         style.height = height.map_or(LayoutDimension::Auto, LayoutDimension::Points);
-        style.minimum_size = minimum;
+        style.minimum_size = Some(minimum);
         style.padding = padding;
         style.cross_axis_alignment = CrossAxisAlignment::Start;
         let child_nodes = built.iter().map(|child| child.layout).collect::<Vec<_>>();

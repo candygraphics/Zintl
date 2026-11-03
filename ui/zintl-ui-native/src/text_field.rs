@@ -85,7 +85,7 @@ impl TextField {
     fn restyle(mut self, update: impl FnOnce(&mut TextStyle)) -> Self {
         update(&mut self.style);
         if !self.editable {
-            self.layout.minimum_size = self.label_size();
+            self.layout.minimum_size = Some(self.label_size());
         }
         self
     }
@@ -157,7 +157,7 @@ impl TextField {
     }
 
     pub fn minimum_size(mut self, size: Size) -> Self {
-        self.layout.minimum_size = size;
+        self.layout.minimum_size = Some(size);
         self
     }
 }

@@ -95,7 +95,9 @@ pub struct GridCell {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LayoutStyle {
-    pub minimum_size: Size,
+    /// The smallest size along each axis; `None` keeps containers at least as
+    /// large as their content's minimum, so they do not shrink until it overlaps.
+    pub minimum_size: Option<Size>,
     pub axis: Option<Axis>,
     pub gap: f32,
     pub width: LayoutDimension,
@@ -122,7 +124,7 @@ pub struct LayoutStyle {
 impl LayoutStyle {
     pub const fn leaf(minimum_size: Size) -> Self {
         Self {
-            minimum_size,
+            minimum_size: Some(minimum_size),
             axis: None,
             gap: 0.0,
             width: LayoutDimension::Auto,
@@ -148,7 +150,7 @@ impl LayoutStyle {
 
     pub const fn stack(axis: Axis, gap: f32) -> Self {
         Self {
-            minimum_size: Size::new(0.0, 0.0),
+            minimum_size: None,
             axis: Some(axis),
             gap,
             width: LayoutDimension::Auto,
@@ -323,6 +325,10 @@ impl LayoutTree {
         if inner.along(cross) && size_along(&style, cross).is_auto() {
             style.align_self = Some(AlignItems::STRETCH);
         }
+        // A declared size holds even when siblings need more room than there is.
+        if size_along(&style, axis).into_option().is_some() {
+            style.flex_shrink = 0.0;
+        }
         self.tree.set_style(child, style)?;
         let mut expansion = Expansion::default();
         expansion.set(axis, declared_grow || inner.along(axis));
@@ -423,9 +429,12 @@ fn to_taffy_style(style: LayoutStyle) -> TaffyStyle {
         },
         flex_grow: style.grow,
         padding: taffy::geometry::Rect::length(style.padding),
-        min_size: TaffySize {
-            width: TaffyDimension::length(style.minimum_size.width),
-            height: TaffyDimension::length(style.minimum_size.height),
+        min_size: match style.minimum_size {
+            Some(size) => TaffySize {
+                width: TaffyDimension::length(size.width),
+                height: TaffyDimension::length(size.height),
+            },
+            None => TaffySize::auto(),
         },
         flex_direction: match style.axis.unwrap_or(Axis::Horizontal) {
             Axis::Horizontal => FlexDirection::Row,
@@ -751,5 +760,73 @@ mod tests {
 
         assert_eq!(tree.layout(column).unwrap().height, 50.0);
         assert_eq!(tree.layout(table).unwrap().height, 50.0);
+    }
+
+    #[test]
+    fn grid_cell_stacks_keep_their_content_width_when_space_is_short() {
+        // Verifies a stack in a grid cell does not shrink below its children, which would overlap the next column.
+        let mut tree = LayoutTree::new();
+        let first = tree
+            .create_node(LayoutStyle::leaf(Size::new(120.0, 22.0)), &[])
+            .unwrap();
+        let second = tree
+            .create_node(LayoutStyle::leaf(Size::new(120.0, 22.0)), &[])
+            .unwrap();
+        let cell = tree
+            .create_node(LayoutStyle::stack(Axis::Horizontal, 4.0), &[first, second])
+            .unwrap();
+        let after = tree
+            .create_node(LayoutStyle::leaf(Size::new(60.0, 20.0)), &[])
+            .unwrap();
+        let mut grid_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        grid_style.arrangement = Arrangement::Grid { columns: 2 };
+        let grid = tree.create_node(grid_style, &[cell, after]).unwrap();
+        let mut root_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        root_style.width = LayoutDimension::Points(200.0);
+        root_style.cross_axis_alignment = CrossAxisAlignment::Start;
+        let root = tree.create_node(root_style, &[grid]).unwrap();
+
+        tree.compute_fitting(root, Some(200.0), None).unwrap();
+
+        assert_eq!(tree.layout(cell).unwrap().width, 244.0);
+        assert_eq!(tree.layout(after).unwrap().x, 244.0);
+    }
+
+    #[test]
+    fn declared_sizes_do_not_shrink_for_wide_siblings() {
+        // Verifies a child with a declared width keeps it although its siblings overflow the row.
+        let mut tree = LayoutTree::new();
+        let mut pane_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        pane_style.width = LayoutDimension::Points(200.0);
+        let pane = tree.create_node(pane_style, &[]).unwrap();
+        let wide = tree
+            .create_node(LayoutStyle::leaf(Size::new(400.0, 20.0)), &[])
+            .unwrap();
+        let mut row_style = LayoutStyle::stack(Axis::Horizontal, 0.0);
+        row_style.width = LayoutDimension::Points(300.0);
+        let row = tree.create_node(row_style, &[pane, wide]).unwrap();
+
+        tree.compute(row, Size::new(300.0, 100.0)).unwrap();
+
+        assert_eq!(tree.layout(pane).unwrap().width, 200.0);
+    }
+
+    #[test]
+    fn explicit_zero_minimum_lets_stacks_shrink() {
+        // Verifies a stack with a declared zero minimum may still shrink below its content.
+        let mut tree = LayoutTree::new();
+        let content = tree
+            .create_node(LayoutStyle::leaf(Size::new(300.0, 20.0)), &[])
+            .unwrap();
+        let mut stack_style = LayoutStyle::stack(Axis::Horizontal, 0.0);
+        stack_style.minimum_size = Some(Size::new(0.0, 0.0));
+        let stack = tree.create_node(stack_style, &[content]).unwrap();
+        let mut row_style = LayoutStyle::stack(Axis::Horizontal, 0.0);
+        row_style.width = LayoutDimension::Points(100.0);
+        let row = tree.create_node(row_style, &[stack]).unwrap();
+
+        tree.compute(row, Size::new(100.0, 100.0)).unwrap();
+
+        assert_eq!(tree.layout(stack).unwrap().width, 100.0);
     }
 }

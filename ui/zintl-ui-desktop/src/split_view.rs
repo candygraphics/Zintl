@@ -87,6 +87,14 @@ impl SplitView {
         self
     }
 
+    /// Wraps a pane's content.
+    ///
+    /// Panes may be smaller than their content, which is clipped, so wide
+    /// content does not push the divider or the other pane aside.
+    fn pane(content: &ElementFactory<RenderNode>) -> VStack {
+        VStack::new(vec![content.clone()]).minimum_size(Size::new(0.0, 0.0))
+    }
+
     /// Moves the divider to follow a drag.
     ///
     /// The divider follows the pointer, so the pointer stays at the grab point
@@ -131,18 +139,18 @@ impl View for SplitView {
             .on_event(move |cx, event| split.drag(cx, event));
         match self.axis {
             Axis::Horizontal => HStack::new(list![
-                VStack::new(vec![self.first.clone()]).width(size),
+                Self::pane(&self.first).width(size),
                 divider.minimum_size(Size::new(Self::DIVIDER, 0.0)),
-                VStack::new(vec![self.second.clone()]).grow(),
+                Self::pane(&self.second).grow(),
             ])
             .spacing(0.0)
             .fill_width()
             .grow()
             .into_element(),
             Axis::Vertical => VStack::new(list![
-                VStack::new(vec![self.first.clone()]).height(size),
+                Self::pane(&self.first).height(size),
                 divider.minimum_size(Size::new(0.0, Self::DIVIDER)),
-                VStack::new(vec![self.second.clone()]).grow(),
+                Self::pane(&self.second).grow(),
             ])
             .spacing(0.0)
             .fill_width()

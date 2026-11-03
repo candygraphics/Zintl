@@ -29,6 +29,8 @@ pub(super) struct ScrollState {
     pub(super) restore: Cell<Option<(f64, f64)>>,
     /// The descendant to scroll into view.
     pub(super) reveal: RefCell<Option<crate::ScrollTarget>>,
+    /// Whether the content scrolls sideways, so it keeps its own width.
+    pub(super) horizontal: Cell<bool>,
 }
 
 /// A native view created for a [`ViewKind`].
@@ -473,6 +475,7 @@ impl NativeNode {
             ) => {
                 if !matches!(old, Some(ViewKind::ScrollView { axes: old, .. }) if old == axes) {
                     scroll.set_axes(axes.native())?;
+                    state.horizontal.set(axes.horizontal);
                 }
                 // Later offsets echo the user's scrolling, so only a new view restores one.
                 if old.is_none() {

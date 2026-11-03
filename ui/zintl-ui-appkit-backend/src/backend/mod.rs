@@ -656,8 +656,11 @@ impl AppKitBackend {
             .as_ref()
             .expect("materialized view nodes have native views")
             .clone();
-        style.minimum_size = native
-            .minimum_size(&kind, style.minimum_size)
+        // Containers without a declared minimum follow their content instead.
+        style.minimum_size = style
+            .minimum_size
+            .map(|declared| native.minimum_size(&kind, declared))
+            .transpose()
             .map_err(AppError::Ui)?;
         let content = self.content_snapshots(id)?;
         let (children, hosted) = match kind {
