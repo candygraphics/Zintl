@@ -117,6 +117,14 @@ impl TextField {
         self
     }
 
+    /// Shows `value`; a bound Store takes precedence.
+    ///
+    /// The field keeps typed text until `value` itself changes.
+    pub fn value(mut self, value: impl Into<String>) -> Self {
+        self.value = value.into();
+        self
+    }
+
     pub fn bind(mut self, store: Store<String>) -> Self {
         self.binding = Some(store);
         self

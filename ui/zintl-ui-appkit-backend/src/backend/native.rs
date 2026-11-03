@@ -263,7 +263,10 @@ impl NativeNode {
                     style,
                 },
             ) => {
-                if field.string_value()? != *value {
+                // Typed text stays until the value changes, so unbound fields keep edits.
+                let changed =
+                    !matches!(old, Some(ViewKind::TextField { value: old, .. }) if old == value);
+                if changed && field.string_value()? != *value {
                     field.set_string_value(value)?;
                 }
                 // Reapplying unchanged properties while editing would clear the typing undo history.
@@ -429,8 +432,14 @@ impl NativeNode {
                 if !matches!(old, Some(ViewKind::NumberField { text: old, .. }) if old == text) {
                     field.set_text(text.as_deref())?;
                 }
-                if field.value()? != *value || old.is_none() {
-                    field.set_value(*value)?;
+                // Typed numbers stay until the value changes, so unbound fields keep edits.
+                // Out-of-range input is always replaced, as it was clamped.
+                let shown = field.value()?;
+                let in_range = (format.minimum..=format.maximum).contains(&shown);
+                match old {
+                    Some(ViewKind::NumberField { value: old, .. }) if old == value && in_range => {}
+                    Some(_) if shown == *value => {}
+                    _ => field.set_value(*value)?,
                 }
             }
             (Self::ProgressIndicator(indicator), ViewKind::ProgressIndicator { value }) => {

@@ -53,7 +53,8 @@ impl ScrollView {
         self
     }
 
-    /// Scrolls the descendant with the view ID in `target` into view whenever it changes.
+    /// Scrolls the descendant with the view ID in `target` into view whenever
+    /// `target` is written, even with the same ID.
     ///
     /// Give the rows IDs with their `id` builders, such as the row of a selected item.
     pub fn scroll_to(mut self, target: Store<Option<String>>, alignment: ScrollAlignment) -> Self {
@@ -94,6 +95,7 @@ impl NativeView for ScrollView {
                     Some(ScrollTarget {
                         id: cx.get(target).clone()?,
                         alignment,
+                        revision: cx.revision(target),
                     })
                 }),
             },

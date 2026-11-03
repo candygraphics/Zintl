@@ -446,6 +446,14 @@ impl NumberField {
         }
     }
 
+    /// Shows `value`; a bound Store takes precedence.
+    ///
+    /// The field keeps typed text until `value` itself changes.
+    pub fn value(mut self, value: f64) -> Self {
+        self.inner = self.inner.value(value);
+        self
+    }
+
     pub fn bind(mut self, store: Store<f64>) -> Self {
         self.inner = self.inner.bind(store);
         self
@@ -610,7 +618,8 @@ impl ScrollView {
         self
     }
 
-    /// Scrolls the descendant with the view ID in `target` into view whenever it changes.
+    /// Scrolls the descendant with the view ID in `target` into view whenever
+    /// `target` is written, even with the same ID.
     pub fn scroll_to(mut self, target: Store<Option<String>>, alignment: ScrollAlignment) -> Self {
         self.inner = self.inner.scroll_to(target, alignment);
         self

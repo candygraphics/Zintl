@@ -77,16 +77,30 @@ impl StoreContext<'_> {
 
     pub fn get<'context, T: 'static>(&'context self, store: Store<T>) -> &'context T {
         let handle = store.handle();
-        if let Some(dependencies) = self.dependencies {
-            let mut dependencies = dependencies.borrow_mut();
-            if !dependencies.contains(&handle.hook_id) {
-                dependencies.push(handle.hook_id);
-            }
-        }
+        self.depend(handle.hook_id);
         let stores: &Arena = self.stores;
         stores
             .get(handle.id)
             .expect("store handle must belong to this composer")
+    }
+
+    /// Returns how many times `store` has been written, even with an equal value.
+    ///
+    /// Reading it rebuilds the reader on each write, like [`Self::get`].
+    pub fn revision<T: 'static>(&self, store: Store<T>) -> u64 {
+        let handle = store.handle();
+        self.depend(handle.hook_id);
+        self.stores.revision(handle.id)
+    }
+
+    /// Rebuilds the element being rendered when the hook's Store changes.
+    fn depend(&self, hook_id: HookId) {
+        if let Some(dependencies) = self.dependencies {
+            let mut dependencies = dependencies.borrow_mut();
+            if !dependencies.contains(&hook_id) {
+                dependencies.push(hook_id);
+            }
+        }
     }
 
     pub fn watch<T, F, E>(&self, store: Store<T>, render: F) -> StoreWatcher<T, F, E>
@@ -114,6 +128,7 @@ impl StoreContext<'_> {
             .get_mut(handle.id)
             .expect("store handle must belong to this composer");
         let result = update(value);
+        self.stores.bump_revision(handle.id);
         self.dirty_hooks.insert(handle.hook_id);
         result
     }
@@ -142,6 +157,10 @@ pub trait Context<'a> {
         E: IntoElement + 'static,
     {
         self.store_context().watch(store, render)
+    }
+
+    fn revision<T: 'static>(&self, store: Store<T>) -> u64 {
+        self.store_context().revision(store)
     }
 
     fn update<T: 'static, U>(&mut self, store: Store<T>, update: impl FnOnce(&mut T) -> U) -> U {
