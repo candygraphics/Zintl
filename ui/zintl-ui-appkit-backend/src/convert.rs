@@ -209,6 +209,17 @@ impl Shared for ui::NamedKey {
     }
 }
 
+impl Native for core::UndoState {
+    type Output = ui::UndoState;
+
+    fn native(&self) -> ui::UndoState {
+        ui::UndoState {
+            can_undo: self.can_undo,
+            can_redo: self.can_redo,
+        }
+    }
+}
+
 impl Native for core::Cursor {
     type Output = ui::Cursor;
 
@@ -617,6 +628,9 @@ impl Shared for zpd_appkit::actor::WindowEventKind {
             Native::DidResize => Shared::WindowDidResize,
             Native::WillClose => Shared::WindowWillClose,
             Native::DidClose => Shared::WindowDidClose,
+            Native::CloseRequested => Shared::WindowCloseRequested,
+            Native::Undo => Shared::Undo,
+            Native::Redo => Shared::Redo,
             Native::ButtonClicked => Shared::Activated,
             Native::TextChanged { value } => Shared::TextChanged { value },
             Native::TextCommitted { value } => Shared::TextCommitted { value },

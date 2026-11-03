@@ -184,6 +184,7 @@ pub enum RenderNode {
         toolbar: Option<Toolbar>,
         /// Saves the frame under this name and restores it on the next launch.
         autosave: Option<String>,
+        document: DocumentState,
     },
     View {
         kind: ViewKind,
@@ -271,6 +272,29 @@ impl zintl_ui::renderer::RenderNode for RenderNode {
             _ => std::mem::discriminant(self) == std::mem::discriminant(other),
         }
     }
+}
+
+/// How a window treats unsaved changes, closing, and Undo.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DocumentState {
+    /// Shows the unsaved-changes mark in the close button.
+    pub edited: bool,
+    /// Closing and quitting report [`Event::WindowCloseRequested`] instead of closing.
+    pub confirms_close: bool,
+    /// Each increase closes the window without asking again.
+    pub close_requests: u64,
+    /// The app's undo history; `None` leaves Undo to text editing alone.
+    pub undo: Option<UndoState>,
+}
+
+/// Whether the app's undo history can step back and forward.
+///
+/// While it is set and no text view is editing, Undo and Redo report
+/// [`Event::Undo`] and [`Event::Redo`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UndoState {
+    pub can_undo: bool,
+    pub can_redo: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

@@ -42,7 +42,7 @@ pub use zintl_ui_native::{
     NamedKey, NativeView, PointerButton, PointerEvent, PointerPhase, Popover, PopoverEdge, Rect,
     Redraw, RedrawPolicy, RenderNode, ScrollAxes, ScrollEvent, ScrollStatus, Shortcut, Sidebar,
     SidebarItem, SidebarSection, StandardAction, StandardMenu, StandardText, TextAlignment,
-    TextColor, TextEditor, TitleBar, Toolbar, ToolbarItem, ViewKind, graphics, list,
+    TextColor, TextEditor, TitleBar, Toolbar, ToolbarItem, UndoHandler, ViewKind, graphics, list,
 };
 #[cfg(feature = "wgpu")]
 pub use zintl_ui_native::{
@@ -98,6 +98,30 @@ impl Window {
     /// Runs after the user closes the window.
     pub fn on_close(mut self, action: impl for<'a> Fn(&mut Context<'a>) + 'static) -> Self {
         self.inner = self.inner.on_close(action);
+        self
+    }
+
+    /// Asks `request` before the close button or quitting closes the window.
+    ///
+    /// Returning `false` keeps it open, for example to present an [`Alert`];
+    /// close it later through [`Window::bind_open`].
+    pub fn on_close_request(
+        mut self,
+        request: impl for<'a> Fn(&mut Context<'a>) -> bool + 'static,
+    ) -> Self {
+        self.inner = self.inner.on_close_request(request);
+        self
+    }
+
+    /// Marks the window as having unsaved changes, shown in its close button.
+    pub fn edited(mut self, edited: bool) -> Self {
+        self.inner = self.inner.edited(edited);
+        self
+    }
+
+    /// Lets Undo and Redo step through the app's history while no text is being edited.
+    pub fn undo(mut self, handler: UndoHandler) -> Self {
+        self.inner = self.inner.undo(handler);
         self
     }
 
@@ -888,6 +912,7 @@ mod tests {
                 style: zintl_ui_native::WindowStyle::Normal,
                 toolbar: None,
                 autosave: None,
+                document: Default::default(),
             }
         );
     }

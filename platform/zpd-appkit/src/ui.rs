@@ -56,4 +56,4 @@ pub use text_editor::TextEditor;
 pub use text_field::{TextAlignment, TextColor, TextField};
 pub use toolbar::{Toolbar, ToolbarItem};
 pub use view::{AsView, View, ViewRef};
-pub use window::{TitleBar, Window, WindowStyle};
+pub use window::{TitleBar, UndoState, Window, WindowStyle};

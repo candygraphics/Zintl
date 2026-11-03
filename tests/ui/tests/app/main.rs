@@ -15,6 +15,7 @@ fn main() -> Result<(), AppError> {
 
     match scenario.as_str() {
         "canvas-action" => App::new(scenarios::canvas_action::MainView::new()).run()?,
+        "document" => App::new(scenarios::document::MainView::new()).run()?,
         "text-commit" => App::new(scenarios::text_commit::MainView::new()).run()?,
         "text-field" => App::new(scenarios::text_field::MainView::new()).run()?,
         "hstack" => App::new(scenarios::hstack::MainView).run()?,

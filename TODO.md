@@ -129,3 +129,11 @@ does not run, and it ignores `ViewKind::NumberField::text`. Report a commit from
 `text` in a `TextBox` next to the `NumberBox` spin buttons (or set
 `NumberBox.NumberFormatter` to an `INumberFormatter2` that calls back into Rust)
 and report the typed text as `Event::TextCommitted`.
+
+## Close requests, edited state, and app undo on Windows
+
+The WinUI 3 backend ignores `RenderNode::Window::document`. Handle
+`AppWindow.Closing` (set `Cancel` and report `Event::WindowCloseRequested`
+while `confirms_close` is set), close the window when `close_requests`
+increases, and show `edited` in the title. Ctrl+Z and Ctrl+Y should report
+`Event::Undo` and `Event::Redo` unless a focused `TextBox` can undo.

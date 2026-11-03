@@ -59,6 +59,12 @@ pub enum WindowEventKind {
     DidResize,
     WillClose,
     DidClose,
+    /// The close button or a quit asked a window that confirms closing to close.
+    CloseRequested,
+    /// Undo was chosen while the window's app history owns it.
+    Undo,
+    /// Redo was chosen while the window's app history owns it.
+    Redo,
     ButtonClicked,
     TextChanged {
         value: String,

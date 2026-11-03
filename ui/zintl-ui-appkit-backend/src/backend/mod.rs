@@ -105,6 +105,8 @@ struct WindowState {
     applied_sidebar: Option<Option<Sidebar>>,
     /// `None` until the toolbar declaration has been applied once.
     applied_toolbar: Option<Option<Toolbar>>,
+    /// The close request count already handled; a higher count closes the window.
+    applied_close_requests: u64,
     /// Set when the user closed the window; it is not recreated afterwards.
     closed: bool,
 }
@@ -301,6 +303,7 @@ impl AppKitBackend {
             style,
             toolbar,
             autosave,
+            document,
         } = self.kind(window_id)
         else {
             return Ok(());
@@ -344,6 +347,8 @@ impl AppKitBackend {
                 applied_title_bar: None,
                 applied_sidebar: None,
                 applied_toolbar: None,
+                // A window created after close requests starts with them handled.
+                applied_close_requests: document.close_requests,
                 closed: false,
             });
             self.opened_window = true;
@@ -362,6 +367,7 @@ impl AppKitBackend {
         let apply_sidebar = state.applied_sidebar.as_ref() != Some(&sidebar);
         // The sidebar decides whether the toolbar includes its toggle, so both reapply together.
         let apply_toolbar = apply_sidebar || state.applied_toolbar.as_ref() != Some(&toolbar);
+        let close = document.close_requests > state.applied_close_requests;
         cx.with_window(native_id, |window| -> Result<(), AppError> {
             window
                 .actor_ref()
@@ -388,9 +394,23 @@ impl AppKitBackend {
             if new_window && let Some(name) = &autosave {
                 window.set_frame_autosave_name(name)?;
             }
+            window.set_confirms_close(document.confirms_close);
+            window.set_document_edited(document.edited)?;
+            window.set_undo(document.undo.map(|undo| undo.native()));
             Ok(())
         })
         .ok_or(UiError::Closed)??;
+        if close {
+            self.state_mut(window_id)
+                .window
+                .as_mut()
+                .expect("a synchronized window has native state")
+                .applied_close_requests = document.close_requests;
+            // Closing reports WillClose and DidClose, which remove the window.
+            cx.with_window(native_id, |window| window.close())
+                .ok_or(UiError::Closed)??;
+            return Ok(());
+        }
         let state = self
             .state_mut(window_id)
             .window

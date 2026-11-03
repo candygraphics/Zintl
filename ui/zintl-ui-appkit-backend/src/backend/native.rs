@@ -239,11 +239,39 @@ impl NativeNode {
                 if field.string_value()? != *value {
                     field.set_string_value(value)?;
                 }
-                field.set_placeholder_string(placeholder.as_deref())?;
-                field.set_editable(*editable)?;
-                field.set_selectable(*selectable)?;
-                field.set_bordered(*bordered)?;
-                field.set_draws_background(*draws_background)?;
+                // Reapplying unchanged properties while editing would clear the typing undo history.
+                let old_field = match old {
+                    Some(ViewKind::TextField {
+                        placeholder,
+                        editable,
+                        selectable,
+                        bordered,
+                        draws_background,
+                        ..
+                    }) => Some((
+                        placeholder,
+                        editable,
+                        selectable,
+                        bordered,
+                        draws_background,
+                    )),
+                    _ => None,
+                };
+                if old_field.is_none_or(|old| old.0 != placeholder) {
+                    field.set_placeholder_string(placeholder.as_deref())?;
+                }
+                if old_field.is_none_or(|old| old.1 != editable) {
+                    field.set_editable(*editable)?;
+                }
+                if old_field.is_none_or(|old| old.2 != selectable) {
+                    field.set_selectable(*selectable)?;
+                }
+                if old_field.is_none_or(|old| old.3 != bordered) {
+                    field.set_bordered(*bordered)?;
+                }
+                if old_field.is_none_or(|old| old.4 != draws_background) {
+                    field.set_draws_background(*draws_background)?;
+                }
                 let old_style = match old {
                     Some(ViewKind::TextField {
                         multiline, style, ..

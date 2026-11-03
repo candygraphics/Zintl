@@ -33,6 +33,9 @@ pub enum EventKind {
     WindowDidResize,
     WindowWillClose,
     WindowDidClose,
+    WindowCloseRequested,
+    Undo,
+    Redo,
 }
 
 /// A user change or window lifecycle event reported by a native backend.
@@ -111,6 +114,12 @@ pub enum Event {
     WindowDidResize,
     WindowWillClose,
     WindowDidClose,
+    /// The user asked a window that confirms closing to close, or to quit.
+    WindowCloseRequested,
+    /// Undo was chosen while the window's app history owns it.
+    Undo,
+    /// Redo was chosen while the window's app history owns it.
+    Redo,
 }
 
 impl EventTrait for Event {
@@ -143,6 +152,9 @@ impl EventTrait for Event {
             Self::WindowDidResize => EventKind::WindowDidResize,
             Self::WindowWillClose => EventKind::WindowWillClose,
             Self::WindowDidClose => EventKind::WindowDidClose,
+            Self::WindowCloseRequested => EventKind::WindowCloseRequested,
+            Self::Undo => EventKind::Undo,
+            Self::Redo => EventKind::Redo,
         }
     }
 }

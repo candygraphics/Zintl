@@ -36,16 +36,17 @@ pub use text_field::{TextEditor, TextField};
 pub use toolbar::{Toolbar, ToolbarItem};
 pub use types::{ButtonRole, ScrollStatus};
 pub use view::View;
-pub use window::Window;
+pub use window::{UndoHandler, Window};
 pub use zintl_ui::element::{Element, IntoElement, ListFactory};
 pub use zintl_ui::list;
 pub use zintl_ui::store::Store;
 pub use zintl_ui_backend_core::{
     AlertStyle, BezelStyle, ButtonType, Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasId,
-    CanvasNode, CanvasSetup, Color, Cursor, Event, EventKind, Frame, GesturePhase, Invalidator,
-    Key, KeyEvent, KeyPhase, ListStyle, MagnifyEvent, Modifiers, NamedKey, NodeId, PointerButton,
-    PointerEvent, PointerPhase, PopoverEdge, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAxes,
-    ScrollEvent, TextAlignment, TextColor, TextStyle, TitleBar, ViewKind, WindowStyle, graphics,
+    CanvasNode, CanvasSetup, Color, Cursor, DocumentState, Event, EventKind, Frame, GesturePhase,
+    Invalidator, Key, KeyEvent, KeyPhase, ListStyle, MagnifyEvent, Modifiers, NamedKey, NodeId,
+    PointerButton, PointerEvent, PointerPhase, PopoverEdge, Rect, Redraw, RedrawPolicy, RenderNode,
+    ScrollAxes, ScrollEvent, TextAlignment, TextColor, TextStyle, TitleBar, UndoState, ViewKind,
+    WindowStyle, graphics,
 };
 #[cfg(feature = "wgpu")]
 pub use zintl_ui_backend_core::{

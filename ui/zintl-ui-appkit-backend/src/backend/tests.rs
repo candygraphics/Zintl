@@ -36,6 +36,7 @@ impl Nodes {
             style,
             toolbar: None,
             autosave: None,
+            document: Default::default(),
         }
     }
 }

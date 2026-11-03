@@ -1340,3 +1340,98 @@ fn sidebar_items_show_badges_and_route_their_menus() {
     assert!(app.dispatch_at(&[0], Event::MenuItemSelected { id }));
     assert_eq!(renames.count(), 1);
 }
+
+/// Counts close requests, undos, and redos; closing is allowed once `allow` is set.
+struct DocumentWindow {
+    allow: Store<bool>,
+    requests: Store<u32>,
+    steps: Store<i32>,
+    published: Rc<Cell<Option<(Store<bool>, Store<u32>, Store<i32>)>>>,
+}
+
+impl DocumentWindow {
+    fn mount() -> (App, Store<bool>, Store<u32>, Store<i32>) {
+        let published = Rc::new(Cell::new(None));
+        let app = App::new(Self {
+            allow: Store::default(),
+            requests: Store::default(),
+            steps: Store::default(),
+            published: published.clone(),
+        });
+        let (allow, requests, steps) = published.get().expect("mounting runs init");
+        (app, allow, requests, steps)
+    }
+}
+
+impl View for DocumentWindow {
+    type Output = RenderNode;
+
+    fn init(&mut self, cx: &mut Context<'_>) {
+        self.allow = cx.store(false);
+        self.requests = cx.store(0);
+        self.steps = cx.store(0);
+        self.published
+            .set(Some((self.allow, self.requests, self.steps)));
+    }
+
+    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
+        let (allow, requests, steps) = (self.allow, self.requests, self.steps);
+        let count = *cx.get(steps);
+        Window::new(Rect::new(0.0, 0.0, 300.0, 200.0), "Document")
+            .edited(count != 0)
+            .on_close_request(move |cx| {
+                cx.update(requests, |requests| *requests += 1);
+                *cx.get(allow)
+            })
+            .undo(
+                UndoHandler::new(count > 0, count < 0)
+                    .on_undo(move |cx| cx.update(steps, |steps| *steps -= 1))
+                    .on_redo(move |cx| cx.update(steps, |steps| *steps += 1)),
+            )
+    }
+}
+
+fn document(app: &App) -> zintl_ui_native::DocumentState {
+    match app.render() {
+        RenderNode::Window { document, .. } => document,
+        other => panic!("expected a window, got {other:?}"),
+    }
+}
+
+#[test]
+fn close_request_keeps_the_window_until_the_handler_allows_it() {
+    // Verifies a refused request leaves the close count alone and an allowed one asks the backend to close.
+    let (mut app, allow, requests, _) = DocumentWindow::mount();
+    assert!(document(&app).confirms_close);
+
+    app.dispatch_root_event(Event::WindowCloseRequested);
+    assert_eq!(app.get(requests), 1);
+    assert_eq!(document(&app).close_requests, 0);
+
+    app.set(allow, true);
+    app.dispatch_root_event(Event::WindowCloseRequested);
+    assert_eq!(document(&app).close_requests, 1);
+}
+
+#[test]
+fn undo_events_run_the_window_history_and_update_menu_state() {
+    // Verifies Undo and Redo reach the handler and the window reports its edited and enabled states.
+    let (mut app, _, _, steps) = DocumentWindow::mount();
+    assert_eq!(
+        document(&app).undo,
+        Some(zintl_ui_native::UndoState {
+            can_undo: false,
+            can_redo: false
+        })
+    );
+
+    app.dispatch_root_event(Event::Redo);
+    assert_eq!(app.get(steps), 1);
+    let state = document(&app);
+    assert!(state.edited);
+    assert_eq!(state.undo.map(|undo| undo.can_undo), Some(true));
+
+    app.dispatch_root_event(Event::Undo);
+    assert_eq!(app.get(steps), 0);
+    assert!(!document(&app).edited);
+}
