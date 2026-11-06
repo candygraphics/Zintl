@@ -66,6 +66,9 @@ fn main() {
     println!("cargo:rustc-link-lib=windowsapp");
     println!("cargo:rustc-link-lib=ole32");
     println!("cargo:rustc-link-lib=user32");
+    for library in ["comctl32", "advapi32", "d2d1", "d3d11", "dxgi", "dwrite"] {
+        println!("cargo:rustc-link-lib={library}");
+    }
 
     let profile_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is not set"))
         .ancestors()

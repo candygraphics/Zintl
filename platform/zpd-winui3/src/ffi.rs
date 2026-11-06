@@ -103,6 +103,8 @@ pub struct Event {
     pub flag: bool,
     pub text: StringRef,
     pub color: Color,
+    pub inset: f64,
+    pub rich: *const RichText,
 }
 
 #[repr(C)]
@@ -112,6 +114,9 @@ pub struct NavigationItem {
     pub id: StringRef,
     pub title: StringRef,
     pub glyph: StringRef,
+    pub badge: StringRef,
+    pub menu: *const MenuFlyoutItem,
+    pub menu_length: usize,
 }
 
 #[repr(C)]
@@ -390,4 +395,324 @@ unsafe extern "C" {
         completed: PathsFn,
         release: ReleaseFn,
     ) -> i32;
+}
+
+#[repr(C)]
+pub struct Draw {
+    _private: [u8; 0],
+}
+
+#[repr(C)]
+pub struct CanvasHandle {
+    _private: [u8; 0],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CanvasFrame {
+    pub width: f64,
+    pub height: f64,
+    pub scale: f64,
+    pub time: f64,
+    pub delta: f64,
+    pub title_bar_inset: f64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CanvasInput {
+    pub kind: i32,
+    pub x: f64,
+    pub y: f64,
+    pub button: i32,
+    pub modifiers: u32,
+    pub click_count: u32,
+    pub delta_x: f64,
+    pub delta_y: f64,
+    pub precise: bool,
+    pub key: u32,
+    pub code: u32,
+    pub character: u32,
+    pub repeat: bool,
+    pub text: StringRef,
+    pub flag: bool,
+}
+
+pub type CanvasDrawFn = unsafe extern "C" fn(*const c_void, *mut Draw, *const CanvasFrame);
+pub type CanvasInputFn = unsafe extern "C" fn(*const c_void, *const CanvasInput) -> bool;
+pub type CanvasHitFn = unsafe extern "C" fn(*const c_void, f64, f64) -> bool;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CanvasCallbacks {
+    pub draw: CanvasDrawFn,
+    pub input: CanvasInputFn,
+    pub title_bar_hit: CanvasHitFn,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct PathElement {
+    pub verb: i32,
+    pub points: [f64; 6],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Path {
+    pub elements: *const PathElement,
+    pub length: usize,
+    pub even_odd: bool,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GradientStop {
+    pub offset: f64,
+    pub color: Color,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Paint {
+    pub kind: i32,
+    pub color: Color,
+    pub x0: f64,
+    pub y0: f64,
+    pub x1: f64,
+    pub y1: f64,
+    pub radius: f64,
+    pub stops: *const GradientStop,
+    pub stops_length: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Stroke {
+    pub width: f64,
+    pub cap: i32,
+    pub join: i32,
+    pub miter_limit: f64,
+    pub dashes: *const f64,
+    pub dashes_length: usize,
+    pub dash_offset: f64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Font {
+    pub family: StringRef,
+    pub size: f64,
+    pub weight: i32,
+    pub italic: bool,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct TextMetrics {
+    pub width: f64,
+    pub ascent: f64,
+    pub descent: f64,
+    pub leading: f64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Transform {
+    pub a: f64,
+    pub b: f64,
+    pub c: f64,
+    pub d: f64,
+    pub tx: f64,
+    pub ty: f64,
+}
+
+unsafe extern "C" {
+    pub fn zpd_winui3_canvas_create(mode: i32) -> *mut Element;
+    pub fn zpd_winui3_canvas_set_callbacks(
+        canvas: *mut Element,
+        data: *const c_void,
+        callbacks: CanvasCallbacks,
+        release: ReleaseFn,
+    ) -> i32;
+    pub fn zpd_winui3_canvas_set_redraw(canvas: *mut Element, continuous: bool, fps: f64) -> i32;
+    pub fn zpd_winui3_canvas_set_focusable(canvas: *mut Element, focusable: bool) -> i32;
+    pub fn zpd_winui3_canvas_swap_chain_panel(canvas: *mut Element) -> *mut c_void;
+    pub fn zpd_winui3_canvas_handle_create(canvas: *const Element) -> *mut CanvasHandle;
+    pub fn zpd_winui3_canvas_handle_release(handle: *mut CanvasHandle);
+    pub fn zpd_winui3_canvas_handle_invalidate(handle: *const CanvasHandle);
+    pub fn zpd_winui3_canvas_handle_set_focus(handle: *const CanvasHandle, focused: bool);
+    pub fn zpd_winui3_canvas_handle_set_cursor(handle: *const CanvasHandle, cursor: i32);
+
+    pub fn zpd_winui3_draw_save(draw: *mut Draw);
+    pub fn zpd_winui3_draw_restore(draw: *mut Draw);
+    pub fn zpd_winui3_draw_concat(draw: *mut Draw, transform: Transform);
+    pub fn zpd_winui3_draw_set_alpha(draw: *mut Draw, alpha: f64);
+    pub fn zpd_winui3_draw_set_antialias(draw: *mut Draw, enabled: bool);
+    pub fn zpd_winui3_draw_clip(draw: *mut Draw, path: *const Path);
+    pub fn zpd_winui3_draw_clear(
+        draw: *mut Draw,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        color: Color,
+    );
+    pub fn zpd_winui3_draw_fill(draw: *mut Draw, path: *const Path, paint: *const Paint);
+    pub fn zpd_winui3_draw_stroke(
+        draw: *mut Draw,
+        path: *const Path,
+        paint: *const Paint,
+        stroke: *const Stroke,
+    );
+    pub fn zpd_winui3_draw_text(
+        draw: *mut Draw,
+        text: StringRef,
+        x: f64,
+        y: f64,
+        font: *const Font,
+        color: Color,
+    );
+    #[allow(clippy::too_many_arguments)]
+    pub fn zpd_winui3_draw_image(
+        draw: *mut Draw,
+        id: u64,
+        width: u32,
+        height: u32,
+        pixels: *const u8,
+        x: f64,
+        y: f64,
+        rect_width: f64,
+        rect_height: f64,
+    );
+    pub fn zpd_winui3_measure_text(
+        text: StringRef,
+        font: *const Font,
+        metrics: *mut TextMetrics,
+    ) -> i32;
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct TextStyle {
+    pub font: Font,
+    pub color: i32,
+    pub custom: Color,
+    pub alignment: i32,
+    pub max_lines: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct RichRun {
+    pub text: StringRef,
+    pub traits: u32,
+    pub link: StringRef,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct RichText {
+    pub runs: *const RichRun,
+    pub runs_length: usize,
+    pub paragraphs: *const i32,
+    pub paragraphs_length: usize,
+}
+
+pub type RichTextFn = unsafe extern "C" fn(*const c_void, *const RichText);
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ListEntry {
+    pub header: bool,
+    pub id: StringRef,
+    pub title: StringRef,
+    pub cells: *const *const Element,
+    pub cells_length: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ToolbarItem {
+    pub kind: i32,
+    pub id: StringRef,
+    pub label: StringRef,
+    pub glyph: StringRef,
+    pub enabled: bool,
+    pub value: StringRef,
+    pub placeholder: StringRef,
+}
+
+unsafe extern "C" {
+    pub fn zpd_winui3_control_set_text_style(control: *mut Element, style: *const TextStyle)
+    -> i32;
+    pub fn zpd_winui3_rich_text_set(control: *mut Element, text: *const RichText) -> i32;
+    pub fn zpd_winui3_rich_text_get(
+        control: *const Element,
+        data: *const c_void,
+        receive: RichTextFn,
+    ) -> i32;
+    pub fn zpd_winui3_list_set_entries(
+        list: *mut Element,
+        entries: *const ListEntry,
+        length: usize,
+    ) -> i32;
+    pub fn zpd_winui3_list_set_columns(
+        list: *mut Element,
+        titles: *const StringRef,
+        widths: *const f64,
+        length: usize,
+    ) -> i32;
+    pub fn zpd_winui3_list_set_row_heights(
+        list: *mut Element,
+        heights: *const f64,
+        length: usize,
+    ) -> i32;
+    pub fn zpd_winui3_list_select(list: *mut Element, id: StringRef) -> i32;
+    pub fn zpd_winui3_list_reveal(list: *mut Element, id: StringRef) -> i32;
+    pub fn zpd_winui3_element_measure(
+        element: *const Element,
+        available_width: f64,
+        available_height: f64,
+        width: *mut f64,
+        height: *mut f64,
+    ) -> i32;
+    pub fn zpd_winui3_element_set_tool_tip(element: *mut Element, text: StringRef) -> i32;
+    pub fn zpd_winui3_element_set_identifier(element: *mut Element, id: StringRef) -> i32;
+    pub fn zpd_winui3_element_focus(element: *mut Element) -> i32;
+    pub fn zpd_winui3_element_title_bar_inset(element: *const Element) -> f64;
+    pub fn zpd_winui3_scroll_viewer_reveal(
+        scroll_viewer: *mut Element,
+        id: StringRef,
+        alignment: i32,
+    ) -> i32;
+    pub fn zpd_winui3_window_set_event_handler(
+        window: *mut Window,
+        data: *const c_void,
+        invoke: EventFn,
+        release: ReleaseFn,
+    ) -> i32;
+    pub fn zpd_winui3_window_set_toolbar(
+        window: *mut Window,
+        items: *const ToolbarItem,
+        length: usize,
+    ) -> i32;
+    pub fn zpd_winui3_window_set_document(
+        window: *mut Window,
+        confirms_close: bool,
+        undo: bool,
+        can_undo: bool,
+        can_redo: bool,
+    ) -> i32;
+    pub fn zpd_winui3_window_set_autosave(window: *mut Window, name: StringRef) -> i32;
+    pub fn zpd_winui3_window_set_passthrough(
+        window: *mut Window,
+        elements: *const *const Element,
+        length: usize,
+    ) -> i32;
+    pub fn zpd_winui3_set_session_end_handler(
+        data: *const c_void,
+        invoke: InvokeFn,
+        release: ReleaseFn,
+    );
 }

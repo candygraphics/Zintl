@@ -33,9 +33,13 @@ pub(super) enum Message {
 
 pub(super) type MessageSender = DispatcherQueueSender<Message>;
 
+/// Runs `App::on_exit` once, when the loop ends or Windows ends the session.
+type ExitAction = Rc<RefCell<Option<Box<dyn FnOnce()>>>>;
+
 struct AppHandler {
     composer: Composer<RenderNode, WinUI3Backend>,
     error: Rc<RefCell<Option<AppError>>>,
+    exit: ExitAction,
 }
 
 impl AppHandler {
@@ -58,6 +62,12 @@ impl AppHandler {
 
 impl MessageLoopHandler<Message> for AppHandler {
     fn init(&mut self, cx: &MessageContext<'_, Message>) {
+        let exit = self.exit.clone();
+        cx.application().set_session_end_handler(move || {
+            if let Some(action) = exit.borrow_mut().take() {
+                action();
+            }
+        });
         let sender = cx.sender();
         self.composer.backend_mut().connect_main_tasks(move |task| {
             messageloop_dispatcherqueue::Sender::send(&sender, Message::PerformMain(task)).is_ok()
@@ -92,8 +102,23 @@ impl MessageLoopHandler<Message> for AppHandler {
                 self.synchronize(cx);
             }
             Message::Command { id, window } => match id.as_str() {
-                Menus::QUIT => cx.request_termination(),
-                Menus::CLOSE => self.composer.backend().close_window(window),
+                // Windows that confirm closing are asked first; they close by request.
+                Menus::QUIT => {
+                    let routes = self.composer.backend().confirming_windows();
+                    if routes.is_empty() {
+                        cx.request_termination();
+                    }
+                    for route in routes {
+                        self.dispatch(route, Event::WindowCloseRequested);
+                    }
+                    self.synchronize(cx);
+                }
+                Menus::CLOSE => {
+                    if let Some(route) = self.composer.backend().close_window(window) {
+                        self.dispatch(route, Event::WindowCloseRequested);
+                        self.synchronize(cx);
+                    }
+                }
                 _ => {
                     if let Some(route) = self.composer.backend().main_menu_route() {
                         self.dispatch(route, Event::MenuItemSelected { id });
@@ -106,24 +131,33 @@ impl MessageLoopHandler<Message> for AppHandler {
 }
 
 /// Runs `composer` in a WinUI application until its last normal window closes.
-/// Runs the app until its last window closes; `on_exit` runs once afterwards.
-// TODO: Also run `on_exit` when Windows ends the session; see TODO.md.
+///
+/// `on_exit` runs once: after the loop returns, or when Windows ends the session.
 pub fn run_composer(
     composer: Composer<RenderNode, WinUI3Backend>,
     on_exit: Box<dyn FnOnce()>,
 ) -> Result<(), AppError> {
     let application = Application::new().map_err(AppError::Application)?;
     let error = Rc::new(RefCell::new(None));
+    let gpu = composer.backend().gpu.clone();
+    let exit: ExitAction = Rc::new(RefCell::new(Some(Box::new(move || {
+        on_exit();
+        // GPU objects are released before thread-locals are destroyed.
+        gpu.release();
+    }))));
     let result = MessageLoopDispatcherQueue::new(
         application,
         AppHandler {
             composer,
             error: error.clone(),
+            exit: exit.clone(),
         },
     )
     .run()
     .map_err(AppError::MessageLoop);
-    on_exit();
+    if let Some(action) = exit.borrow_mut().take() {
+        action();
+    }
     result?;
     error.borrow_mut().take().map_or(Ok(()), Err)
 }

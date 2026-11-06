@@ -66,8 +66,19 @@ pub struct WgpuContext {
 impl WgpuContext {
     /// Requests the default adapter and a device with default limits, blocking until ready.
     pub fn new() -> Result<Self, WgpuError> {
-        let instance =
-            wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+        Self::with_descriptor(wgpu::InstanceDescriptor::new_without_display_handle_from_env())
+    }
+
+    /// Like [`WgpuContext::new`], limited to `backends`, such as the only one
+    /// whose surfaces a platform's views accept.
+    pub fn for_backends(backends: wgpu::Backends) -> Result<Self, WgpuError> {
+        let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle_from_env();
+        descriptor.backends = backends;
+        Self::with_descriptor(descriptor)
+    }
+
+    fn with_descriptor(descriptor: wgpu::InstanceDescriptor) -> Result<Self, WgpuError> {
+        let instance = wgpu::Instance::new(descriptor);
         let adapter =
             pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
                 .map_err(WgpuError::Adapter)?;

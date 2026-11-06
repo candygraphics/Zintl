@@ -39,6 +39,7 @@
       <RuntimeLibrary Condition="'$(Configuration)'=='Release'">MultiThreadedDLL</RuntimeLibrary>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <DisableSpecificWarnings>4251</DisableSpecificWarnings>
+      <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -47,6 +48,8 @@
     <ClCompile Include="src\zpd_winui3.cpp" />
     <ClCompile Include="src\controls.cpp" />
     <ClCompile Include="src\presentations.cpp" />
+    <ClCompile Include="src\canvas.cpp" />
+    <ClCompile Include="src\richtext.cpp" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />
     <PackageReference Include="Microsoft.Windows.CppWinRT" Version="2.0.250303.1" />
   </ItemGroup>
