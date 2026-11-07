@@ -48,7 +48,7 @@ struct ControlState {
   /* Number box formatting; `display` replaces the formatted value when set. */
   int32_t fraction_digits{2};
   std::wstring display;
-  /* Set while the document is replaced, so no change is reported. */
+  /* Set while a document or list rows are replaced, so no change is reported. */
   bool replacing{};
 
   /* Applies a pending offset once the extent allows it. */
@@ -649,7 +649,8 @@ FrameworkElement make_control(ControlElement*& element, int32_t kind) {
       element = new ControlElement(kind, list);
       list.SelectionChanged([state = weak(element)](IInspectable const& sender, SelectionChangedEventArgs const&) {
         auto locked = state.lock();
-        if (!locked) return;
+        // Clearing the rows deselects them, which the user did not choose.
+        if (!locked || locked->replacing) return;
         auto selected = sender.as<ListView>().SelectedItem();
         auto id = selected ? to_string(unbox_value_or<hstring>(selected.as<FrameworkElement>().Tag(), L"")) : std::string();
         if (id == locked->list_id) return;
@@ -1334,6 +1335,11 @@ int32_t zpd_winui3_list_set_entries(zpd_winui3_element* target, const zpd_winui3
   return status([&] {
     auto element = control(target);
     auto list = element->value.as<ListView>();
+    element->state->replacing = true;
+    struct Reset {
+      bool& value;
+      ~Reset() { value = false; }
+    } reset{element->state->replacing};
     // Cells move to new rows, so the old rows release them first. A removed row can outlive
     // this call (focus, pointer capture, automation), and `Parent()` does not report its panel.
     for (auto const& row : element->rows) {
