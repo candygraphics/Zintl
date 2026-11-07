@@ -606,7 +606,10 @@ impl WinUI3Backend {
             let navigation = Control::new(ControlKind::NavigationView)?;
             let (sender, route) = (sender.clone(), route.clone());
             navigation.set_event_handler(move |event| {
-                if let (Some(route), Some(event)) = (route.get(), NativeNode::event(event)) {
+                let Some(route) = route.get() else {
+                    return;
+                };
+                for event in NativeNode::events(event) {
                     let _ = sender.send(Message::Event { route, event });
                 }
             })?;
@@ -1084,8 +1087,10 @@ impl WinUI3Backend {
         picker.set_color(Self::native_color(color))?;
         let changed = report.clone();
         picker.set_event_handler(move |event| {
-            if let Some(event @ Event::ColorChanged { .. }) = NativeNode::event(event) {
-                changed(event);
+            for event in NativeNode::events(event) {
+                if let Event::ColorChanged { .. } = event {
+                    changed(event);
+                }
             }
         })?;
         window.set_content(Some(&picker))?;

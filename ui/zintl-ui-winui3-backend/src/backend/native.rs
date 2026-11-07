@@ -379,7 +379,10 @@ impl NativeNode {
                         }
                         return;
                     }
-                    if let (Some(route), Some(event)) = (event_route.get(), Self::event(event)) {
+                    let Some(route) = event_route.get() else {
+                        return;
+                    };
+                    for event in Self::events(event) {
                         let _ = sender.send(Message::Event { route, event });
                     }
                 })?;
@@ -402,9 +405,11 @@ impl NativeNode {
     }
 
     /// Converts a routed control event; size changes are handled locally.
-    pub(super) fn event(event: ControlEvent) -> Option<Event> {
-        Some(match event {
+    pub(super) fn events(event: ControlEvent) -> Vec<Event> {
+        vec![match event {
             ControlEvent::Clicked => Event::Activated,
+            // A toggle click is a click that also changes the state, as on macOS.
+            ControlEvent::Toggled(on) => return vec![Event::Activated, Event::StateChanged { on }],
             ControlEvent::TextChanged(value) => Event::TextChanged { value },
             ControlEvent::StateChanged(on) => Event::StateChanged { on },
             ControlEvent::ValueChanged(value) => Event::ValueChanged { value },
@@ -421,8 +426,8 @@ impl NativeNode {
             ControlEvent::ListSelectionChanged(id) => Event::ListSelectionChanged { id },
             ControlEvent::MenuSelected(id) => Event::MenuItemSelected { id },
             ControlEvent::TextCommitted(value) => Event::TextCommitted { value },
-            ControlEvent::SizeChanged { .. } => return None,
-        })
+            ControlEvent::SizeChanged { .. } => return Vec::new(),
+        }]
     }
 
     /// Converts attributed text to a RichEditBox document.

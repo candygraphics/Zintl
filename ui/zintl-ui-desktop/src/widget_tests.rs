@@ -1544,6 +1544,29 @@ fn selected_button_draws_in_the_on_state() {
 }
 
 #[test]
+fn selected_button_runs_on_click_and_keeps_its_state() {
+    // Verifies a click on a selected button runs `on_click` and leaves the drawn state to the view.
+    let clicks = Calls::default();
+    let mut app = App::new(Button::new("1").selected(false).on_click(clicks.action()));
+    app.render();
+
+    assert!(app.dispatch_at(&[0], Event::Activated));
+
+    assert_eq!(clicks.count(), 1);
+    assert!(matches!(
+        app.render(),
+        RenderNode::View {
+            kind: ViewKind::Button(zintl_ui_backend_core::Button {
+                on: false,
+                keeps_state: true,
+                ..
+            }),
+            ..
+        }
+    ));
+}
+
+#[test]
 fn indicators_describe_their_kinds() {
     // Verifies the spinner has no value, the bar keeps its fraction, and separators are thin lines.
     let render = |view: Element<RenderNode>| App::new(view).render();

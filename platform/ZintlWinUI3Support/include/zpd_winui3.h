@@ -164,7 +164,7 @@ enum zpd_winui3_bool_property {
   ZPD_WINUI3_BOOL_STRIPED = 16,
   /* A click shows the context menu below the button instead of reporting it. */
   ZPD_WINUI3_BOOL_SHOWS_MENU = 17,
-  /* Clicks report the toggled state but keep the declared one. */
+  /* Clicks are reported as CLICKED and keep the declared state. */
   ZPD_WINUI3_BOOL_KEEPS_STATE = 18,
 };
 
@@ -195,6 +195,8 @@ enum zpd_winui3_event_kind {
   ZPD_WINUI3_EVENT_WINDOW_CLOSE_REQUESTED = 16,
   ZPD_WINUI3_EVENT_UNDO = 17,
   ZPD_WINUI3_EVENT_REDO = 18,
+  /* A toggle button was clicked and changed; flag holds the new state. */
+  ZPD_WINUI3_EVENT_TOGGLED = 19,
 };
 
 /* A user change reported by a control; fields unused by `kind` are zero. */

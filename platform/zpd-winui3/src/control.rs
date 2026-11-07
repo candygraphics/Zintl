@@ -95,7 +95,7 @@ pub enum BoolProperty {
     Striped = 16,
     /// A click shows the context menu below the button instead of reporting it.
     ShowsMenu = 17,
-    /// Clicks report the toggled state but keep the declared one.
+    /// Clicks are reported as [`ControlEvent::Clicked`] and keep the declared state.
     KeepsState = 18,
 }
 
@@ -134,6 +134,8 @@ pub enum ControlEvent {
     Clicked,
     TextChanged(String),
     StateChanged(bool),
+    /// A toggle button was clicked and changed to this state.
+    Toggled(bool),
     ValueChanged(f64),
     SelectionChanged(usize),
     ColorChanged(Color),
@@ -189,6 +191,7 @@ impl ControlEvent {
             11 => Self::ListSelectionChanged(event.flag.then(text)),
             14 => Self::MenuSelected(text()),
             15 => Self::TextCommitted(text()),
+            19 => Self::Toggled(event.flag),
             _ => return None,
         })
     }
@@ -843,6 +846,7 @@ mod tests {
             Some(ControlEvent::TextChanged("hello".into()))
         );
         assert_eq!(convert(2, ""), Some(ControlEvent::StateChanged(true)));
+        assert_eq!(convert(19, ""), Some(ControlEvent::Toggled(true)));
         assert_eq!(convert(3, ""), Some(ControlEvent::ValueChanged(1.5)));
         assert_eq!(convert(4, ""), Some(ControlEvent::SelectionChanged(3)));
         assert_eq!(

@@ -420,16 +420,16 @@ fn labels_take_their_measured_width_unless_line_limited() {
 fn size_changes_stay_local_and_sidebar_events_are_routed() {
     // Verifies layout notifications never reach the Composer as user events.
     assert_eq!(
-        NativeNode::event(ControlEvent::SizeChanged {
+        NativeNode::events(ControlEvent::SizeChanged {
             width: 1.0,
             height: 2.0,
             inset: 0.0,
         }),
-        None
+        vec![]
     );
     assert_eq!(
-        NativeNode::event(ControlEvent::NavigationSelected("home".into())),
-        Some(Event::SidebarSelectionChanged { id: "home".into() })
+        NativeNode::events(ControlEvent::NavigationSelected("home".into())),
+        vec![Event::SidebarSelectionChanged { id: "home".into() }]
     );
 }
 
@@ -437,20 +437,34 @@ fn size_changes_stay_local_and_sidebar_events_are_routed() {
 fn list_menu_and_commit_events_map_to_view_events() {
     // Verifies the new control events reach views as their platform-neutral counterparts.
     assert_eq!(
-        NativeNode::event(ControlEvent::ListSelectionChanged(None)),
-        Some(Event::ListSelectionChanged { id: None })
+        NativeNode::events(ControlEvent::ListSelectionChanged(None)),
+        vec![Event::ListSelectionChanged { id: None }]
     );
     assert_eq!(
-        NativeNode::event(ControlEvent::MenuSelected("rename".into())),
-        Some(Event::MenuItemSelected {
+        NativeNode::events(ControlEvent::MenuSelected("rename".into())),
+        vec![Event::MenuItemSelected {
             id: "rename".into()
-        })
+        }]
     );
     assert_eq!(
-        NativeNode::event(ControlEvent::TextCommitted("42 kg".into())),
-        Some(Event::TextCommitted {
+        NativeNode::events(ControlEvent::TextCommitted("42 kg".into())),
+        vec![Event::TextCommitted {
             value: "42 kg".into()
-        })
+        }]
+    );
+}
+
+#[test]
+fn toggle_clicks_report_activation_before_the_new_state() {
+    // Verifies a toggle click runs `on_click` and then reports the new state, as on macOS.
+    assert_eq!(
+        NativeNode::events(ControlEvent::Toggled(true)),
+        vec![Event::Activated, Event::StateChanged { on: true }]
+    );
+    // A button that keeps its declared state reports only the click.
+    assert_eq!(
+        NativeNode::events(ControlEvent::Clicked),
+        vec![Event::Activated]
     );
 }
 

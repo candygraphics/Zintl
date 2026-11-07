@@ -458,13 +458,16 @@ FrameworkElement make_control(ControlElement*& element, int32_t kind) {
         auto locked = state.lock();
         if (!locked) return;
         auto toggle = sender.as<Primitives::ToggleButton>();
-        bool on = unbox_value_or<bool>(toggle.IsChecked(), false);
-        // A kept state reports the click but shows the declared state until the view changes it.
-        if (locked->keeps_state) toggle.IsChecked(box_value(locked->flag).as<IReference<bool>>());
-        else locked->flag = on;
         zpd_winui3_event event{};
-        event.kind = ZPD_WINUI3_EVENT_STATE_CHANGED;
-        event.flag = on;
+        if (locked->keeps_state) {
+          // A kept state shows the declared state until the view changes it; only the click is reported.
+          toggle.IsChecked(box_value(locked->flag).as<IReference<bool>>());
+          event.kind = ZPD_WINUI3_EVENT_CLICKED;
+        } else {
+          locked->flag = unbox_value_or<bool>(toggle.IsChecked(), false);
+          event.kind = ZPD_WINUI3_EVENT_TOGGLED;
+          event.flag = locked->flag;
+        }
         locked->emit(event);
       });
       return toggle;
