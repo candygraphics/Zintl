@@ -57,24 +57,12 @@ final class ControlsTests: ZintlUITestCase {
     let colored = app.buttons["colored-button"]
     let plain = app.buttons["plain-button"]
     XCTAssertTrue(colored.waitForExistence(timeout: 2))
-    XCTAssertGreaterThan(redPixels(in: colored.screenshot().image), 10)
-    XCTAssertEqual(redPixels(in: plain.screenshot().image), 0)
+    XCTAssertGreaterThan(pixelCount(in: colored, where: Self.isStronglyRed), 10)
+    XCTAssertEqual(pixelCount(in: plain, where: Self.isStronglyRed), 0)
   }
 
-  /// Counts strongly red pixels, which only a red title draws in a button.
-  private func redPixels(in image: NSImage) -> Int {
-    guard let data = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: data) else {
-      return 0
-    }
-    var count = 0
-    for y in 0..<bitmap.pixelsHigh {
-      for x in 0..<bitmap.pixelsWide {
-        guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
-        if color.redComponent > 0.7 && color.greenComponent < 0.35 && color.blueComponent < 0.35 {
-          count += 1
-        }
-      }
-    }
-    return count
+  /// Matches strongly red pixels, which only a red title draws in a button.
+  private static func isStronglyRed(_ color: NSColor) -> Bool {
+    color.redComponent > 0.7 && color.greenComponent < 0.35 && color.blueComponent < 0.35
   }
 }
