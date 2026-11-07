@@ -253,6 +253,13 @@ impl WinUI3Backend {
         }
     }
 
+    /// Releases every native window and control.
+    ///
+    /// Runs before WinUI shuts down: XAML objects released afterwards can crash in XAML itself.
+    fn release_native(&mut self) {
+        self.tree = NodeTree::new();
+    }
+
     /// Returns whether the app should end because its last normal window is gone.
     fn should_terminate(&self) -> bool {
         self.opened_window && !self.tree.has_normal_window(NodeState::is_closed_window)

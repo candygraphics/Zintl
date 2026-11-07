@@ -75,6 +75,10 @@ impl MessageLoopHandler<Message> for AppHandler {
         self.synchronize(cx);
     }
 
+    fn terminate(&mut self, _cx: &MessageContext<'_, Message>) {
+        self.composer.backend_mut().release_native();
+    }
+
     fn on(&mut self, cx: &MessageContext<'_, Message>, message: Message) {
         match message {
             Message::PerformMain(task) => {

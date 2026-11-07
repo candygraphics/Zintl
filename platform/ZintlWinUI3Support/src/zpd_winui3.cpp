@@ -631,7 +631,8 @@ void zpd_winui3_window_release(zpd_winui3_window* window) {
     window->event_invoke = nullptr;
     window->event_callback.reset();
     window->window.Closed(window->closed_token);
-    window->window.AppWindow().Closing(window->closing_token);
+    // A closed window has no AppWindow; calling through null is an access violation, not an exception.
+    if (auto app = window->window.AppWindow()) app.Closing(window->closing_token);
     window->shell.LayoutUpdated(window->layout_token);
     window->shell.KeyboardAccelerators().Clear();
     window->menu_bar.Items().Clear();
@@ -648,7 +649,11 @@ void zpd_winui3_window_release(zpd_winui3_window* window) {
   delete window;
 }
 int32_t zpd_winui3_window_set_title(zpd_winui3_window* window, zpd_winui3_string title) { return status([&] { window->window.Title(string_from(title)); }); }
-int32_t zpd_winui3_window_resize(zpd_winui3_window* window, int32_t width, int32_t height) { return status([&] { window->window.AppWindow().Resize({width, height}); }); }
+int32_t zpd_winui3_window_resize(zpd_winui3_window* window, int32_t width, int32_t height) {
+  return status([&] {
+    if (auto app = window->window.AppWindow()) app.Resize({width, height});
+  });
+}
 int32_t zpd_winui3_window_activate(zpd_winui3_window* window) { return status([&] { window->window.Activate(); }); }
 int32_t zpd_winui3_window_close(zpd_winui3_window* window) { return status([&] { if (!window->closed) window->window.Close(); }); }
 int32_t zpd_winui3_window_extend_content_into_title_bar(zpd_winui3_window* window, bool enabled) { return status([&] { window->window.ExtendsContentIntoTitleBar(enabled); }); }
@@ -659,8 +664,11 @@ int32_t zpd_winui3_window_move_and_resize(zpd_winui3_window* window, double x, d
     double scale = GetDpiForWindow(window->hwnd()) / 96.0;
     auto pixels = [scale](double value) { return static_cast<int32_t>(value * scale + 0.5); };
     // Declared bounds describe the content area, as on macOS.
-    window->window.AppWindow().Move({pixels(x), pixels(y)});
-    window->window.AppWindow().ResizeClient({pixels(width), pixels(height)});
+    // A closed window has no AppWindow to place.
+    auto app = window->window.AppWindow();
+    if (!app) return;
+    app.Move({pixels(x), pixels(y)});
+    app.ResizeClient({pixels(width), pixels(height)});
   });
 }
 

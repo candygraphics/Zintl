@@ -1334,7 +1334,12 @@ int32_t zpd_winui3_list_set_entries(zpd_winui3_element* target, const zpd_winui3
   return status([&] {
     auto element = control(target);
     auto list = element->value.as<ListView>();
-    for (auto const& row : element->rows) row.Content(nullptr);
+    // Cells move to new rows, so the old rows release them first. A removed row can outlive
+    // this call (focus, pointer capture, automation), and `Parent()` does not report its panel.
+    for (auto const& row : element->rows) {
+      if (auto cells = row.Content().try_as<Panel>()) cells.Children().Clear();
+      row.Content(nullptr);
+    }
     element->rows.clear();
     list.Items().Clear();
     for (size_t index = 0; index < length; ++index) {
