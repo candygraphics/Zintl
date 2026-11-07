@@ -33,6 +33,6 @@ pub(super) struct ContextMenu {
 
 impl Drop for ContextMenu {
     fn drop(&mut self) {
-        let _ = self.anchor.control.clear_context_menu();
+        let _ = self.anchor.view.clear_context_menu();
     }
 }

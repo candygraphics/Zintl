@@ -2,13 +2,20 @@
 
 #![cfg(target_os = "windows")]
 
+mod canvas;
 mod control;
 mod ffi;
 mod presentation;
 
+pub use canvas::{
+    Canvas, CanvasDelegate, CanvasFrame, CanvasHandle, CanvasInput, CanvasMode, Cursor,
+    DrawContext, Font, GradientStop, ImageData, LineCap, LineJoin, Modifiers, Paint, Path,
+    PathElement, PointerPhase, Rect, Stroke, TextMetrics, Transform, measure_text,
+};
 pub use control::{
-    BoolProperty, Color, Control, ControlEvent, ControlKind, NavigationItem, NumberProperty,
-    TextProperty,
+    BoolProperty, Color, Control, ControlEvent, ControlKind, LIST_ROW_INSET, ListEntry,
+    NavigationItem, NumberProperty, ParagraphStyle, RichRun, RichText, ScrollAlignment, TextColor,
+    TextProperty, TextStyle, TextStyleAlignment, TextTraits,
 };
 pub use presentation::{
     Dialog, DialogConfig, DialogResult, FileDialogMode, FileDialogOptions, Placement, Popover,
@@ -180,6 +187,28 @@ impl ApplicationContext {
             raw: NonNull::new(raw).ok_or(Error(-1))?,
             _main_thread: PhantomData,
         })
+    }
+
+    /// Runs `callback` once if Windows ends the session while the app runs.
+    pub fn set_session_end_handler<F: FnOnce() + 'static>(&self, callback: F) {
+        fn install<F: FnMut() + 'static>(callback: F) {
+            let callback = Rc::into_raw(Rc::new(RefCell::new(callback)));
+            // SAFETY: Native code takes ownership of one Rc strong reference.
+            unsafe {
+                ffi::zpd_winui3_set_session_end_handler(
+                    callback.cast(),
+                    invoke_unit::<F>,
+                    release_callback::<F>,
+                );
+            }
+        }
+
+        let mut callback = Some(callback);
+        install(move || {
+            if let Some(callback) = callback.take() {
+                callback();
+            }
+        });
     }
 
     pub fn exit(&self) -> Result<()> {
@@ -453,6 +482,115 @@ impl Window {
         })
     }
 
+    /// Installs the handler for toolbar, close request, and undo events.
+    pub fn set_event_handler<F: FnMut(WindowEvent) + 'static>(&self, callback: F) -> Result<()> {
+        unsafe extern "C" fn invoke<F: FnMut(WindowEvent)>(
+            data: *const c_void,
+            event: *const ffi::Event,
+        ) {
+            abort_on_panic(|| {
+                // SAFETY: Native code passes a live event for this synchronous call.
+                let Some(event) = (unsafe { WindowEvent::from_native(&*event) }) else {
+                    return;
+                };
+                // SAFETY: This callback was installed with an Rc-backed state of type F.
+                let callback = unsafe { clone_callback::<F>(data) };
+                if let Ok(mut callback) = callback.try_borrow_mut() {
+                    callback(event);
+                }
+            });
+        }
+
+        let callback = Rc::into_raw(Rc::new(RefCell::new(callback)));
+        // SAFETY: Native code takes ownership of one Rc strong reference.
+        check(unsafe {
+            ffi::zpd_winui3_window_set_event_handler(
+                self.raw.as_ptr(),
+                callback.cast(),
+                invoke::<F>,
+                release_callback::<F>,
+            )
+        })
+    }
+
+    /// Shows `items` in a command bar above the content; no items hide it.
+    pub fn set_toolbar(&self, items: &[ToolbarItem<'_>]) -> Result<()> {
+        let empty = ffi::StringRef::new("");
+        let raw: Vec<_> = items
+            .iter()
+            .map(|item| match *item {
+                ToolbarItem::Button {
+                    id,
+                    label,
+                    glyph,
+                    enabled,
+                } => ffi::ToolbarItem {
+                    kind: 0,
+                    id: ffi::StringRef::new(id),
+                    label: ffi::StringRef::new(label),
+                    glyph: ffi::StringRef::new(glyph.unwrap_or("")),
+                    enabled,
+                    value: empty,
+                    placeholder: empty,
+                },
+                ToolbarItem::Search { value, placeholder } => ffi::ToolbarItem {
+                    kind: 1,
+                    id: empty,
+                    label: empty,
+                    glyph: empty,
+                    enabled: true,
+                    value: ffi::StringRef::new(value),
+                    placeholder: ffi::StringRef::new(placeholder),
+                },
+                ToolbarItem::FlexibleSpace => ffi::ToolbarItem {
+                    kind: 2,
+                    id: empty,
+                    label: empty,
+                    glyph: empty,
+                    enabled: true,
+                    value: empty,
+                    placeholder: empty,
+                },
+            })
+            .collect();
+        // SAFETY: The window is live and the item strings outlive the call.
+        check(unsafe {
+            ffi::zpd_winui3_window_set_toolbar(self.raw.as_ptr(), raw.as_ptr(), raw.len())
+        })
+    }
+
+    /// Sets whether closing asks first, and the app's undo history as `(can_undo, can_redo)`.
+    pub fn set_document(&self, confirms_close: bool, undo: Option<(bool, bool)>) -> Result<()> {
+        let (can_undo, can_redo) = undo.unwrap_or_default();
+        // SAFETY: The window is live on the UI thread.
+        check(unsafe {
+            ffi::zpd_winui3_window_set_document(
+                self.raw.as_ptr(),
+                confirms_close,
+                undo.is_some(),
+                can_undo,
+                can_redo,
+            )
+        })
+    }
+
+    /// Restores the placement saved under `name`, and saves it when the window closes.
+    pub fn set_autosave(&self, name: &str) -> Result<()> {
+        // SAFETY: The window is live and the name is borrowed for this call.
+        check(unsafe {
+            ffi::zpd_winui3_window_set_autosave(self.raw.as_ptr(), ffi::StringRef::new(name))
+        })
+    }
+
+    /// Lets clicks under the title bar reach `elements` instead of moving the window.
+    pub fn set_title_bar_passthrough(&self, elements: &[ElementRef<'_>]) -> Result<()> {
+        let raw: Vec<_> = elements.iter().map(ElementRef::as_ptr).collect();
+        // SAFETY: Every element is live; native code keeps weak references.
+        check(unsafe {
+            ffi::zpd_winui3_window_set_passthrough(self.raw.as_ptr(), raw.as_ptr(), raw.len())
+        })
+    }
+
     /// Returns whether a dialog or file picker is open on this window.
     #[must_use]
     pub fn has_sheet(&self) -> bool {
@@ -594,6 +732,66 @@ pub trait AsElement {
     fn clear_context_menu(&self) -> Result<()> {
         // SAFETY: The element is live on the UI thread.
         check(unsafe { ffi::zpd_winui3_element_clear_context_menu(self.as_element().raw.as_ptr()) })
+    }
+
+    /// Measures the size the element wants within the available size; infinite axes stay open.
+    fn measure(&self, available_width: f64, available_height: f64) -> Result<(f64, f64)> {
+        let (mut width, mut height) = (0.0, 0.0);
+        // SAFETY: The element is live and both outputs outlive the call.
+        check(unsafe {
+            ffi::zpd_winui3_element_measure(
+                self.as_element().raw.as_ptr(),
+                available_width,
+                available_height,
+                &raw mut width,
+                &raw mut height,
+            )
+        })?;
+        Ok((width, height))
+    }
+
+    /// Shows `text` while the pointer rests on the element; `None` removes it.
+    fn set_tool_tip(&self, text: Option<&str>) -> Result<()> {
+        // SAFETY: The element is live and the text is borrowed for this call.
+        check(unsafe {
+            ffi::zpd_winui3_element_set_tool_tip(
+                self.as_element().raw.as_ptr(),
+                ffi::StringRef::new(text.unwrap_or("")),
+            )
+        })
+    }
+
+    /// Sets the automation id that scroll viewers reveal elements by.
+    fn set_identifier(&self, id: Option<&str>) -> Result<()> {
+        // SAFETY: The element is live and the id is borrowed for this call.
+        check(unsafe {
+            ffi::zpd_winui3_element_set_identifier(
+                self.as_element().raw.as_ptr(),
+                ffi::StringRef::new(id.unwrap_or("")),
+            )
+        })
+    }
+
+    /// Moves keyboard focus to the element.
+    fn focus(&self) -> Result<()> {
+        // SAFETY: The element is live on the UI thread.
+        check(unsafe { ffi::zpd_winui3_element_focus(self.as_element().raw.as_ptr()) })
+    }
+
+    /// Returns the height of the element's top part under the window's title bar.
+    fn title_bar_inset(&self) -> f64 {
+        // SAFETY: The element is live on the UI thread.
+        unsafe { ffi::zpd_winui3_element_title_bar_inset(self.as_element().raw.as_ptr()) }
+    }
+}
+
+impl AsElement for ElementRef<'_> {
+    fn as_element(&self) -> ElementRef<'_> {
+        ElementRef {
+            raw: self.raw,
+            _element: PhantomData,
+            _main_thread: PhantomData,
+        }
     }
 }
 
@@ -955,6 +1153,69 @@ pub enum MenuItemRole {
     Undo = 5,
     Redo = 6,
     Delete = 7,
+    /// Rich text formatting applied to the focused RichEditBox.
+    Bold = 8,
+    Italic = 9,
+    Underline = 10,
+    TitleStyle = 11,
+    HeadingStyle = 12,
+    SubheadingStyle = 13,
+    BodyStyle = 14,
+    MonospacedStyle = 15,
+    BulletedList = 16,
+    DashedList = 17,
+    NumberedList = 18,
+    Checklist = 19,
+}
+
+/// An item of a window's toolbar.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolbarItem<'a> {
+    /// Clicks report [`WindowEvent::ToolbarClicked`] with `id`.
+    Button {
+        id: &'a str,
+        label: &'a str,
+        /// A Segoe Fluent Icons glyph.
+        glyph: Option<&'a str>,
+        enabled: bool,
+    },
+    /// Edits report [`WindowEvent::ToolbarSearchChanged`].
+    Search {
+        value: &'a str,
+        placeholder: &'a str,
+    },
+    /// Moves the following items to the trailing edge.
+    FlexibleSpace,
+}
+
+/// A request a window reports on its own behalf.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WindowEvent {
+    ToolbarClicked(String),
+    ToolbarSearchChanged(String),
+    /// The user tried to close a window that confirms closing.
+    CloseRequested,
+    Undo,
+    Redo,
+}
+
+impl WindowEvent {
+    /// Converts a native event; other kinds belong to controls.
+    ///
+    /// # Safety
+    /// `event.text` must point to valid UTF-8 for the duration of the call.
+    unsafe fn from_native(event: &ffi::Event) -> Option<Self> {
+        // SAFETY: The caller guarantees the text buffer for this synchronous call.
+        let text = || unsafe { string_from_ref(event.text) };
+        Some(match event.kind {
+            12 => Self::ToolbarClicked(text()),
+            13 => Self::ToolbarSearchChanged(text()),
+            16 => Self::CloseRequested,
+            17 => Self::Undo,
+            18 => Self::Redo,
+            _ => return None,
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -11,27 +11,30 @@ use zintl_ui::view::StoreContext;
 use zintl_ui_backend_core::layout::{HostLayout, LayoutSnapshot};
 use zintl_ui_backend_core::tree::{ErrorSlot, MainTasks, NodeTree};
 use zintl_ui_backend_core::{
-    AlertButtonRole, AlertConfig, Color, CommandSet, Context, Event, FileDialogConfig,
-    FileDialogMode, MainTask, NodeId, PopoverEdge, Rect, RenderNode, Sidebar, TitleBar, ViewKind,
-    WindowStyle,
+    AlertButtonRole, AlertConfig, Color, CommandSet, Context, DocumentState, Event,
+    FileDialogConfig, FileDialogMode, MainTask, NodeId, PopoverEdge, Rect, RenderNode, Sidebar,
+    TitleBar, Toolbar, ToolbarItem, ViewKind, WindowStyle,
 };
 use zintl_ui_layout::{LayoutError, Size};
 use zpd_winui3::{
     ApplicationContext, ApplicationCreateError, AsElement, BoolProperty, Control, ControlEvent,
-    ControlKind, DialogConfig, DialogResult, FileDialogOptions, MenuBar, NavigationItem, Placement,
-    Popover, Window,
+    ControlKind, DialogConfig, DialogResult, FileDialogOptions, ListEntry, MenuBar, NavigationItem,
+    Placement, Popover, Window, WindowEvent,
 };
 
 mod app;
 mod attachment;
+mod canvas;
 mod menu;
 mod native;
+#[cfg(feature = "wgpu")]
+mod wgpu;
 
 pub use app::run_composer;
 use app::{Message, MessageSender};
 use attachment::{Attachment, ContextMenu};
 use menu::Menus;
-use native::{CanvasHost, Glyph, HostContent, NativeNode, RouteCell};
+use native::{CanvasHost, Environment, Glyph, HostContent, NativeNode, NativeView, RouteCell};
 
 /// Inset between a popover's edge and its content.
 const POPOVER_PADDING: f32 = 12.0;
@@ -46,6 +49,9 @@ pub enum AppError {
     },
     Layout(LayoutError),
     MessageLoop(MessageLoopError),
+    /// A wgpu canvas could not reach the GPU; it stays blank.
+    #[cfg(feature = "wgpu")]
+    Wgpu(zintl_ui_backend_core::WgpuError),
     NoWindow,
     InvalidTree,
 }
@@ -58,6 +64,8 @@ impl fmt::Display for AppError {
             Self::WinUI { error, message } => write!(formatter, "{error}: {message}"),
             Self::Layout(error) => error.fmt(formatter),
             Self::MessageLoop(error) => error.fmt(formatter),
+            #[cfg(feature = "wgpu")]
+            Self::Wgpu(error) => error.fmt(formatter),
             Self::NoWindow => formatter.write_str("the rendered tree does not contain a window"),
             Self::InvalidTree => formatter.write_str("a window cannot be nested in a view"),
         }
@@ -71,6 +79,8 @@ impl Error for AppError {
             Self::WinUI { error, .. } => Some(error),
             Self::Layout(error) => Some(error),
             Self::MessageLoop(error) => Some(error),
+            #[cfg(feature = "wgpu")]
+            Self::Wgpu(error) => Some(error),
             Self::NoWindow | Self::InvalidTree => None,
         }
     }
@@ -91,6 +101,24 @@ impl From<LayoutError> for AppError {
     }
 }
 
+/// GPU objects every wgpu canvas of the app shares.
+///
+/// The app owns them instead of a thread-local, so they are released while the
+/// app exits rather than while thread-locals are destroyed.
+#[derive(Clone, Default)]
+pub(super) struct GpuSlot {
+    #[cfg(feature = "wgpu")]
+    context: Rc<std::cell::RefCell<Option<zintl_ui_backend_core::WgpuContext>>>,
+}
+
+impl GpuSlot {
+    /// Drops the app's reference; canvases that are still mounted keep theirs.
+    pub(super) fn release(&self) {
+        #[cfg(feature = "wgpu")]
+        drop(self.context.borrow_mut().take());
+    }
+}
+
 /// Native state of a rendered Window node.
 struct WindowState {
     native: Window,
@@ -105,7 +133,14 @@ struct WindowState {
     applied_title_bar: Option<TitleBar>,
     /// `None` until the sidebar declaration has been applied once.
     applied_sidebar: Option<Option<Sidebar>>,
+    /// `None` until the toolbar declaration has been applied once.
+    applied_toolbar: Option<Option<Toolbar>>,
+    applied_document: Option<DocumentState>,
+    /// The close request count already handled; a higher count closes the window.
+    applied_close_requests: u64,
     applied_menu: Option<u64>,
+    /// Whether closing reports a close request instead.
+    confirms_close: Rc<Cell<bool>>,
     /// Set when the window closed; it is not recreated afterwards.
     closed: Rc<Cell<bool>>,
 }
@@ -141,6 +176,7 @@ pub struct WinUI3Backend {
     /// Increments whenever `menu_bar` changes.
     menu_version: u64,
     opened_window: bool,
+    gpu: GpuSlot,
 }
 
 impl Default for WinUI3Backend {
@@ -162,6 +198,7 @@ impl WinUI3Backend {
             menu_bar: MenuBar::default(),
             menu_version: 0,
             opened_window: false,
+            gpu: GpuSlot::default(),
         }
     }
 
@@ -216,22 +253,48 @@ impl WinUI3Backend {
         }
     }
 
+    /// Releases every native window and control.
+    ///
+    /// Runs before WinUI shuts down: XAML objects released afterwards can crash in XAML itself.
+    fn release_native(&mut self) {
+        self.tree = NodeTree::new();
+    }
+
     /// Returns whether the app should end because its last normal window is gone.
     fn should_terminate(&self) -> bool {
         self.opened_window && !self.tree.has_normal_window(NodeState::is_closed_window)
     }
 
-    fn close_window(&self, window: NodeId) {
-        if let Some(state) = self
-            .tree
+    fn window_state(&self, window: NodeId) -> Option<&WindowState> {
+        self.tree
             .contains(window)
             .then(|| self.state(window).window.as_ref())
             .flatten()
-        {
-            if let Err(error) = state.native.close() {
-                self.pending_error.record(error.into());
-            }
+    }
+
+    /// Closes `window`, or returns its route when it reports a close request instead.
+    fn close_window(&self, window: NodeId) -> Option<EventRouteId> {
+        let state = self.window_state(window)?;
+        if state.confirms_close.get() {
+            return self.event_route(window);
         }
+        if let Err(error) = state.native.close() {
+            self.pending_error.record(error.into());
+        }
+        None
+    }
+
+    /// Returns the routes of open windows that confirm closing, which quitting asks first.
+    fn confirming_windows(&self) -> Vec<EventRouteId> {
+        self.tree
+            .window_ids(NodeState::is_closed_window)
+            .into_iter()
+            .filter(|window| {
+                self.window_state(*window)
+                    .is_some_and(|state| state.confirms_close.get())
+            })
+            .filter_map(|window| self.event_route(window))
+            .collect()
     }
 
     fn main_menu_route(&self) -> Option<EventRouteId> {
@@ -269,6 +332,7 @@ impl WinUI3Backend {
         sender: &MessageSender,
         route: &RouteCell,
         style: WindowStyle,
+        close_requests: u64,
     ) -> Result<WindowState, AppError> {
         let native = application.create_styled_window(match style {
             WindowStyle::Normal => zpd_winui3::WindowStyle::Normal,
@@ -278,11 +342,29 @@ impl WinUI3Backend {
         let host = CanvasHost::new(self.pending_error.clone());
         let resized = host.clone();
         canvas.set_event_handler(move |event| {
-            if let ControlEvent::SizeChanged { width, height } = event {
-                resized.resize(Size::new(width as f32, height as f32));
+            if let ControlEvent::SizeChanged {
+                width,
+                height,
+                inset,
+            } = event
+            {
+                resized.resize(Size::new(width as f32, height as f32), inset as f32);
             }
         })?;
         native.set_content(Some(&canvas))?;
+        let (events, event_route) = (sender.clone(), route.clone());
+        native.set_event_handler(move |event| {
+            let event = match event {
+                WindowEvent::ToolbarClicked(id) => Event::ToolbarItemClicked { id },
+                WindowEvent::ToolbarSearchChanged(value) => Event::ToolbarSearchChanged { value },
+                WindowEvent::CloseRequested => Event::WindowCloseRequested,
+                WindowEvent::Undo => Event::Undo,
+                WindowEvent::Redo => Event::Redo,
+            };
+            if let Some(route) = event_route.get() {
+                let _ = events.send(Message::Event { route, event });
+            }
+        })?;
         let closed = Rc::new(Cell::new(false));
         let (closed_flag, route, sender) = (closed.clone(), route.clone(), sender.clone());
         native.set_closed(move || {
@@ -299,9 +381,23 @@ impl WinUI3Backend {
             applied_title: None,
             applied_title_bar: None,
             applied_sidebar: None,
+            applied_toolbar: None,
+            applied_document: None,
+            // A window created after close requests starts with them handled.
+            applied_close_requests: close_requests,
             applied_menu: None,
+            confirms_close: Rc::new(Cell::new(false)),
             closed,
         })
+    }
+
+    /// The window title, marked while the document has unsaved changes.
+    fn displayed_title(title: &str, document: &DocumentState) -> String {
+        if document.edited {
+            format!("*{title}")
+        } else {
+            title.to_owned()
+        }
     }
 
     fn synchronize_window(
@@ -317,6 +413,9 @@ impl WinUI3Backend {
             title_bar,
             sidebar,
             style,
+            toolbar,
+            autosave,
+            document,
             ..
         } = self.kind(window_id)
         else {
@@ -336,7 +435,8 @@ impl WinUI3Backend {
         if new_window {
             let route = self.state(window_id).route.clone();
             route.set(self.event_route(window_id));
-            let state = self.create_window(application, sender, &route, style)?;
+            let state =
+                self.create_window(application, sender, &route, style, document.close_requests)?;
             self.state_mut(window_id).window = Some(state);
             self.opened_window = true;
         }
@@ -354,6 +454,11 @@ impl WinUI3Backend {
                 .move_and_resize(bounds.x, bounds.y, bounds.width, bounds.height)?;
             state.applied_bounds = Some(bounds);
         }
+        // A saved placement replaces the declared bounds on a new window.
+        if new_window && let Some(name) = &autosave {
+            state.native.set_autosave(name)?;
+        }
+        let title = Self::displayed_title(&title, &document);
         if state.applied_title.as_ref() != Some(&title) {
             state.native.set_title(&title)?;
             state.applied_title = Some(title);
@@ -362,11 +467,24 @@ impl WinUI3Backend {
             state
                 .native
                 .set_extends_content_into_title_bar(title_bar != TitleBar::Standard)?;
+            state.host.set_inset(state.canvas.title_bar_inset() as f32);
             state.applied_title_bar = Some(title_bar);
         }
         if state.applied_sidebar.as_ref() != Some(&sidebar) {
             Self::apply_sidebar(state, sidebar.as_ref(), sender, &route)?;
             state.applied_sidebar = Some(sidebar);
+        }
+        if state.applied_toolbar.as_ref() != Some(&toolbar) {
+            Self::apply_toolbar(&state.native, toolbar.as_ref())?;
+            state.applied_toolbar = Some(toolbar);
+        }
+        if state.applied_document != Some(document) {
+            state.native.set_document(
+                document.confirms_close,
+                document.undo.map(|undo| (undo.can_undo, undo.can_redo)),
+            )?;
+            state.confirms_close.set(document.confirms_close);
+            state.applied_document = Some(document);
         }
         if let Some(menu_bar) = menu_bar
             && state.applied_menu != Some(menu_version)
@@ -383,6 +501,14 @@ impl WinUI3Backend {
                 })?;
             }
             state.applied_menu = Some(menu_version);
+        }
+        if document.close_requests > state.applied_close_requests {
+            state.applied_close_requests = document.close_requests;
+            // A requested close does not ask again; closing reports the window as closed.
+            state.native.set_document(false, None)?;
+            state.confirms_close.set(false);
+            state.native.close()?;
+            return Ok(());
         }
 
         let recreated = self.materialize_children(sender, window_id)?;
@@ -402,6 +528,14 @@ impl WinUI3Backend {
                 padding: 0.0,
             }));
             self.pending_error.take()?;
+            // Views that take clicks under the title bar are collected again after each layout.
+            let mut passthrough = Vec::new();
+            self.title_bar_views(window_id, &mut passthrough);
+            let elements = passthrough
+                .iter()
+                .map(|native| native.view.as_element())
+                .collect::<Vec<_>>();
+            state.native.set_title_bar_passthrough(&elements)?;
         }
         if new_window {
             state.native.activate()?;
@@ -414,6 +548,45 @@ impl WinUI3Backend {
             rebuild_structure,
             update_layout,
         )
+    }
+
+    /// Collects views below `id` that take clicks under the title bar; canvases decide per point.
+    fn title_bar_views(&self, id: NodeId, views: &mut Vec<Rc<NativeNode>>) {
+        for child in self.children(id) {
+            if let Some(native) = &self.state(*child).native
+                && (native.title_bar_interactive.get()
+                    || matches!(native.view, NativeView::Canvas { .. }))
+            {
+                views.push(native.clone());
+            }
+            self.title_bar_views(*child, views);
+        }
+    }
+
+    fn apply_toolbar(window: &Window, toolbar: Option<&Toolbar>) -> Result<(), AppError> {
+        let items = toolbar.map_or(&[][..], |toolbar| &toolbar.items);
+        let items = items
+            .iter()
+            .map(|item| match item {
+                ToolbarItem::Button {
+                    id,
+                    label,
+                    system_image,
+                    enabled,
+                } => zpd_winui3::ToolbarItem::Button {
+                    id,
+                    label,
+                    glyph: Glyph::of(system_image),
+                    enabled: *enabled,
+                },
+                ToolbarItem::Search { value, placeholder } => zpd_winui3::ToolbarItem::Search {
+                    value,
+                    placeholder: placeholder.as_deref().unwrap_or(""),
+                },
+                ToolbarItem::FlexibleSpace => zpd_winui3::ToolbarItem::FlexibleSpace,
+            })
+            .collect::<Vec<_>>();
+        Ok(window.set_toolbar(&items)?)
     }
 
     fn apply_sidebar(
@@ -433,7 +606,10 @@ impl WinUI3Backend {
             let navigation = Control::new(ControlKind::NavigationView)?;
             let (sender, route) = (sender.clone(), route.clone());
             navigation.set_event_handler(move |event| {
-                if let (Some(route), Some(event)) = (route.get(), NativeNode::event(event)) {
+                let Some(route) = route.get() else {
+                    return;
+                };
+                for event in NativeNode::events(event) {
                     let _ = sender.send(Message::Event { route, event });
                 }
             })?;
@@ -458,6 +634,8 @@ impl WinUI3Backend {
                             .as_deref()
                             .and_then(Glyph::of)
                             .map(str::to_owned),
+                        badge: item.badge.clone(),
+                        menu: Menus::items(&item.menu),
                     }
                 }))
             })
@@ -481,13 +659,33 @@ impl WinUI3Backend {
     ) -> Result<bool, AppError> {
         let mut created = false;
         for child in self.children(parent).to_vec() {
-            if let RenderNode::View { kind, enabled, .. } = self.kind(child)
+            if let RenderNode::View {
+                kind,
+                id,
+                enabled,
+                title_bar_interactive,
+                help,
+                ..
+            } = self.kind(child)
                 && self.state(child).native.is_none()
             {
-                let native = NativeNode::create(&kind, sender, &self.pending_error)?;
+                let environment = Environment {
+                    sender,
+                    errors: &self.pending_error,
+                    main_tasks: self.main_tasks.shared_sender(),
+                    gpu: &self.gpu,
+                };
+                let native = NativeNode::create(&kind, &environment)?;
+                if id.is_some() {
+                    native.view.set_identifier(id.as_deref())?;
+                }
                 if !enabled {
                     native.set_enabled(false)?;
                 }
+                if help.is_some() {
+                    native.view.set_tool_tip(help.as_deref())?;
+                }
+                native.title_bar_interactive.set(title_bar_interactive);
                 native.route.set(self.event_route(child));
                 self.state_mut(child).native = Some(Rc::new(native));
                 created = true;
@@ -507,20 +705,73 @@ impl WinUI3Backend {
 
     fn attach_children(&self, parent: &Control, parent_id: NodeId) -> Result<(), AppError> {
         let children = self.view_children(parent_id);
+        if parent.kind() == ControlKind::ListView {
+            return self.attach_rows(parent, parent_id, &children);
+        }
         let elements = children
             .iter()
-            .map(|(_, native)| native.control.as_element())
+            .map(|(_, native)| native.view.as_element())
             .collect::<Vec<_>>();
         parent.set_children(&elements)?;
-        for (child, native) in &children {
-            if matches!(
-                native.control.kind(),
-                ControlKind::Canvas | ControlKind::ScrollViewer | ControlKind::TabView
-            ) {
-                self.attach_children(&native.control, *child)?;
+        self.attach_contents(&children)
+    }
+
+    /// Attaches the children of views that host their own children.
+    fn attach_contents(&self, children: &[(NodeId, Rc<NativeNode>)]) -> Result<(), AppError> {
+        for (child, native) in children {
+            if let Some(control) = native.control()
+                && matches!(
+                    control.kind(),
+                    ControlKind::Canvas
+                        | ControlKind::ScrollViewer
+                        | ControlKind::TabView
+                        | ControlKind::ListView
+                )
+            {
+                self.attach_children(control, *child)?;
             }
         }
         Ok(())
+    }
+
+    /// Fills a list with section headers and rows, or a table with rows of cells.
+    fn attach_rows(
+        &self,
+        list: &Control,
+        list_id: NodeId,
+        children: &[(NodeId, Rc<NativeNode>)],
+    ) -> Result<(), AppError> {
+        let kind = self.kind(list_id);
+        let mut cells = children.iter().map(|(_, native)| native.view.as_element());
+        let mut entries = Vec::new();
+        match &kind {
+            RenderNode::View {
+                kind: ViewKind::List { sections, .. },
+                ..
+            } => {
+                for section in sections {
+                    if let Some(title) = &section.title {
+                        entries.push(ListEntry::Header(title));
+                    }
+                    for id in &section.ids {
+                        let cells = cells.next().into_iter().collect();
+                        entries.push(ListEntry::Row { id, cells });
+                    }
+                }
+            }
+            RenderNode::View {
+                kind: ViewKind::Table { columns, rows, .. },
+                ..
+            } => {
+                for id in rows {
+                    let cells = cells.by_ref().take(columns.len().max(1)).collect();
+                    entries.push(ListEntry::Row { id, cells });
+                }
+            }
+            _ => return Err(AppError::InvalidTree),
+        }
+        list.set_list_entries(&entries)?;
+        self.attach_contents(children)
     }
 
     fn content_snapshots(
@@ -543,16 +794,17 @@ impl WinUI3Backend {
         else {
             return Err(AppError::InvalidTree);
         };
-        // Containers without a declared minimum follow their content instead.
-        style.minimum_size = style
-            .minimum_size
-            .map(|declared| NativeNode::minimum_size(&kind, declared));
         let native = self
             .state(id)
             .native
             .as_ref()
             .expect("materialized view nodes have native views")
             .clone();
+        // Containers without a declared minimum follow their content instead.
+        style.minimum_size = style
+            .minimum_size
+            .map(|declared| native.minimum_size(&kind, declared));
+        style.content_size = native.content_size(&kind, style.content_size);
         let content = self.content_snapshots(id)?;
         let (children, hosted) = match kind {
             ViewKind::ScrollView { .. }
@@ -630,7 +882,7 @@ impl WinUI3Backend {
                     // Drop the old menu first so its teardown cannot clear the new one.
                     self.state_mut(id).attachment = None;
                     anchor
-                        .control
+                        .view
                         .set_context_menu(&Menus::items(items), move |id| {
                             report(Event::MenuItemSelected { id: id.into() });
                         })?;
@@ -682,10 +934,10 @@ impl WinUI3Backend {
                     content.set_width(f64::from(fitted.width))?;
                     content.set_height(f64::from(fitted.height))?;
                     host.set_content(HostContent::Host(layout));
-                    host.resize(fitted);
+                    host.resize(fitted, 0.0);
                 }
                 if *presented && (created || !was_presented) && !popover.is_open() {
-                    popover.show(&anchor.control, Self::placement(*edge))?;
+                    popover.show(&anchor.view, Self::placement(*edge))?;
                 } else if !*presented && popover.is_open() {
                     popover.hide()?;
                 }
@@ -835,8 +1087,10 @@ impl WinUI3Backend {
         picker.set_color(Self::native_color(color))?;
         let changed = report.clone();
         picker.set_event_handler(move |event| {
-            if let Some(event @ Event::ColorChanged { .. }) = NativeNode::event(event) {
-                changed(event);
+            for event in NativeNode::events(event) {
+                if let Event::ColorChanged { .. } = event {
+                    changed(event);
+                }
             }
         })?;
         window.set_content(Some(&picker))?;
@@ -871,6 +1125,28 @@ impl WinUI3Backend {
     }
 
     /// Applies a changed declaration; a different control kind is recreated.
+    /// Returns whether a list's sections or a table's rows or columns changed.
+    fn rows_changed(old: &ViewKind, new: &ViewKind) -> bool {
+        match (old, new) {
+            (ViewKind::List { sections: old, .. }, ViewKind::List { sections: new, .. }) => {
+                old != new
+            }
+            (
+                ViewKind::Table {
+                    columns: old_columns,
+                    rows: old_rows,
+                    ..
+                },
+                ViewKind::Table {
+                    columns: new_columns,
+                    rows: new_rows,
+                    ..
+                },
+            ) => old_columns != new_columns || old_rows != new_rows,
+            _ => false,
+        }
+    }
+
     fn update_native(
         &mut self,
         id: NodeId,
@@ -883,12 +1159,18 @@ impl WinUI3Backend {
         let (
             RenderNode::View {
                 kind: old_kind,
+                id: old_id,
                 enabled: old_enabled,
+                title_bar_interactive: old_interactive,
+                help: old_help,
                 ..
             },
             RenderNode::View {
                 kind: new_kind,
+                id: new_id,
                 enabled: new_enabled,
+                title_bar_interactive: new_interactive,
+                help: new_help,
                 ..
             },
         ) = (old, new)
@@ -900,8 +1182,18 @@ impl WinUI3Backend {
             self.structure_dirty = true;
             return Ok(());
         }
+        if old_id != new_id {
+            native.view.set_identifier(new_id.as_deref())?;
+        }
         if old_enabled != new_enabled {
             native.set_enabled(*new_enabled)?;
+        }
+        if old_help != new_help {
+            native.view.set_tool_tip(new_help.as_deref())?;
+        }
+        if old_interactive != new_interactive {
+            native.title_bar_interactive.set(*new_interactive);
+            self.layout_dirty = true;
         }
         native.apply(Some(old_kind), new_kind)
     }
@@ -930,6 +1222,13 @@ impl RenderBackend<RenderNode> for WinUI3Backend {
         new.adopt_canvas(&old);
         if let Err(error) = self.update_native(id, &old, &new) {
             self.pending_error.record(error);
+        }
+        // List sections and table rows and columns are applied together with their rows.
+        if let (RenderNode::View { kind: old_kind, .. }, RenderNode::View { kind: new_kind, .. }) =
+            (&old, &new)
+            && Self::rows_changed(old_kind, new_kind)
+        {
+            self.structure_dirty = true;
         }
         self.tree.node_mut(id).value = Some(new);
         self.layout_dirty = true;

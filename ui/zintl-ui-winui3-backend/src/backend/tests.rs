@@ -276,9 +276,25 @@ fn glyph_table_is_sorted_for_lookup() {
     assert_eq!(Glyph::of("not.a.symbol"), None);
 }
 
+fn label(line_limit: Option<usize>) -> ViewKind {
+    ViewKind::TextField {
+        value: "Hello".into(),
+        placeholder: None,
+        editable: false,
+        selectable: false,
+        bordered: false,
+        draws_background: false,
+        multiline: false,
+        style: zintl_ui_backend_core::TextStyle {
+            line_limit,
+            ..Default::default()
+        },
+    }
+}
+
 #[test]
 fn view_kinds_choose_matching_controls() {
-    // Verifies labels, fields, and two-state buttons use distinct WinUI controls.
+    // Verifies labels, fields, editors, indicators, and two-state buttons use distinct WinUI controls.
     let field = |editable| ViewKind::TextField {
         value: String::new(),
         placeholder: None,
@@ -289,10 +305,13 @@ fn view_kinds_choose_matching_controls() {
         multiline: false,
         style: Default::default(),
     };
-    assert_eq!(NativeNode::control_kind(&field(true)), ControlKind::TextBox);
+    assert_eq!(
+        NativeNode::control_kind(&field(true)),
+        Some(ControlKind::TextBox)
+    );
     assert_eq!(
         NativeNode::control_kind(&field(false)),
-        ControlKind::TextBlock
+        Some(ControlKind::TextBlock)
     );
     let button = |button_type| {
         ViewKind::Button(Button {
@@ -305,16 +324,59 @@ fn view_kinds_choose_matching_controls() {
             destructive: false,
             shows_menu: false,
             keeps_state: false,
+            title_color: None,
         })
     };
     assert_eq!(
         NativeNode::control_kind(&button(ButtonType::Checkbox)),
-        ControlKind::CheckBox
+        Some(ControlKind::CheckBox)
     );
     assert_eq!(
         NativeNode::control_kind(&button(ButtonType::PushOnPushOff)),
-        ControlKind::ToggleButton
+        Some(ControlKind::ToggleButton)
     );
+    let editor = ViewKind::TextEditor {
+        text: Default::default(),
+        focus: 0,
+    };
+    assert_eq!(
+        NativeNode::control_kind(&editor),
+        Some(ControlKind::RichEditBox)
+    );
+    assert_eq!(
+        NativeNode::control_kind(&ViewKind::ProgressIndicator { value: None }),
+        Some(ControlKind::ProgressRing)
+    );
+    assert_eq!(
+        NativeNode::control_kind(&ViewKind::ProgressIndicator { value: Some(0.5) }),
+        Some(ControlKind::ProgressBar)
+    );
+    assert_eq!(
+        NativeNode::control_kind(&ViewKind::Separator),
+        Some(ControlKind::Separator)
+    );
+}
+
+#[test]
+fn canvases_have_no_control_kind() {
+    // Verifies canvases are created as SwapChainPanels rather than controls.
+    #[derive(Clone)]
+    struct Blank;
+    impl zintl_ui_backend_core::Canvas2DHandler for Blank {
+        fn draw(
+            &mut self,
+            _g: &mut zintl_ui_backend_core::graphics::Graphics2D<'_>,
+            _frame: &zintl_ui_backend_core::Frame,
+        ) {
+        }
+    }
+    let canvas = ViewKind::Canvas2D {
+        canvas: zintl_ui_backend_core::CanvasNode::new(Blank),
+        redraw: Default::default(),
+        focusable: false,
+        reports_input: false,
+    };
+    assert_eq!(NativeNode::control_kind(&canvas), None);
 }
 
 #[test]
@@ -322,12 +384,35 @@ fn control_minimums_fit_winui_templates() {
     // Verifies AppKit-sized leaves grow to WinUI's control heights but keep larger sizes.
     let switch = ViewKind::Switch { on: false };
     assert_eq!(
-        NativeNode::minimum_size(&switch, Size::new(38.0, 22.0)),
+        NativeNode::minimum_for(&switch, Size::new(38.0, 22.0), None),
         Size::new(44.0, 28.0)
     );
     assert_eq!(
-        NativeNode::minimum_size(&ViewKind::Container, Size::new(10.0, 10.0)),
+        NativeNode::minimum_for(&ViewKind::Container, Size::new(10.0, 10.0), None),
         Size::new(10.0, 10.0)
+    );
+}
+
+#[test]
+fn labels_take_their_measured_width_unless_line_limited() {
+    // Verifies a label grows to its measured text, while a line-limited one keeps its declared
+    // minimum and prefers the measured width as its content size so it can truncate.
+    let declared = Size::new(10.0, 16.0);
+    assert_eq!(
+        NativeNode::minimum_for(&label(None), declared, Some(37.0)),
+        Size::new(37.0, 20.0)
+    );
+    assert_eq!(
+        NativeNode::minimum_for(&label(Some(1)), declared, Some(37.0)),
+        Size::new(10.0, 20.0)
+    );
+    assert_eq!(
+        NativeNode::content_for(&label(Some(1)), Some(Size::new(80.0, 16.0)), Some(37.0)),
+        Some(Size::new(37.0, 16.0))
+    );
+    assert_eq!(
+        NativeNode::content_for(&label(None), Some(Size::new(80.0, 16.0)), Some(37.0)),
+        Some(Size::new(80.0, 16.0))
     );
 }
 
@@ -335,34 +420,139 @@ fn control_minimums_fit_winui_templates() {
 fn size_changes_stay_local_and_sidebar_events_are_routed() {
     // Verifies layout notifications never reach the Composer as user events.
     assert_eq!(
-        NativeNode::event(
-            ControlEvent::SizeChanged {
-                width: 1.0,
-                height: 2.0
-            },
-            false
-        ),
-        None
+        NativeNode::events(ControlEvent::SizeChanged {
+            width: 1.0,
+            height: 2.0,
+            inset: 0.0,
+        }),
+        vec![]
     );
     assert_eq!(
-        NativeNode::event(ControlEvent::NavigationSelected("home".into()), false),
-        Some(Event::SidebarSelectionChanged { id: "home".into() })
+        NativeNode::events(ControlEvent::NavigationSelected("home".into())),
+        vec![Event::SidebarSelectionChanged { id: "home".into() }]
     );
 }
 
 #[test]
-fn editor_text_changes_are_reported_as_rich_text() {
-    // Verifies a TextEditor's plain TextBox edits reach the rich binding as body text.
+fn list_menu_and_commit_events_map_to_view_events() {
+    // Verifies the new control events reach views as their platform-neutral counterparts.
     assert_eq!(
-        NativeNode::event(ControlEvent::TextChanged("Hi\nthere".into()), true),
-        Some(Event::RichTextChanged {
-            text: "Hi\nthere".into()
-        })
+        NativeNode::events(ControlEvent::ListSelectionChanged(None)),
+        vec![Event::ListSelectionChanged { id: None }]
     );
     assert_eq!(
-        NativeNode::event(ControlEvent::TextChanged("Hi".into()), false),
-        Some(Event::TextChanged { value: "Hi".into() })
+        NativeNode::events(ControlEvent::MenuSelected("rename".into())),
+        vec![Event::MenuItemSelected {
+            id: "rename".into()
+        }]
     );
+    assert_eq!(
+        NativeNode::events(ControlEvent::TextCommitted("42 kg".into())),
+        vec![Event::TextCommitted {
+            value: "42 kg".into()
+        }]
+    );
+}
+
+#[test]
+fn toggle_clicks_report_activation_before_the_new_state() {
+    // Verifies a toggle click runs `on_click` and then reports the new state, as on macOS.
+    assert_eq!(
+        NativeNode::events(ControlEvent::Toggled(true)),
+        vec![Event::Activated, Event::StateChanged { on: true }]
+    );
+    // A button that keeps its declared state reports only the click.
+    assert_eq!(
+        NativeNode::events(ControlEvent::Clicked),
+        vec![Event::Activated]
+    );
+}
+
+#[test]
+fn rich_text_round_trips_through_the_native_document() {
+    // Verifies runs, traits, links, and every paragraph style survive the RichEditBox conversion.
+    use zintl_ui_backend_core::graphics::{AttributedText, ParagraphStyle, SpanStyle};
+    let bold = SpanStyle {
+        bold: true,
+        link: Some("https://example.com".into()),
+        ..SpanStyle::default()
+    };
+    let text = AttributedText::from_segments([
+        ("Title\n", SpanStyle::default(), ParagraphStyle::Title),
+        ("bold", bold, ParagraphStyle::Checklist { done: true }),
+        (
+            " plain\n",
+            SpanStyle::default(),
+            ParagraphStyle::Checklist { done: true },
+        ),
+        ("", SpanStyle::default(), ParagraphStyle::Body),
+    ]);
+    let mut text = text;
+    // An empty last paragraph keeps its own style.
+    text.set_paragraph(2, ParagraphStyle::Numbered);
+    let native = NativeNode::rich_text(&text);
+    assert_eq!(
+        native.paragraphs,
+        [
+            zpd_winui3::ParagraphStyle::Title,
+            zpd_winui3::ParagraphStyle::ChecklistDone,
+            zpd_winui3::ParagraphStyle::Numbered,
+        ]
+    );
+    assert_eq!(NativeNode::attributed(&native), text);
+}
+
+#[test]
+fn table_columns_share_the_width_left_by_fixed_ones() {
+    // Verifies fixed columns keep their width and the others split the rest, but not below 40.
+    let column = |width| zintl_ui_backend_core::TableColumn {
+        title: String::new(),
+        width,
+    };
+    assert_eq!(NativeNode::column_widths(&[], 300.0), [300.0]);
+    assert_eq!(
+        NativeNode::column_widths(&[column(Some(100.0)), column(None), column(None)], 300.0),
+        [100.0, 100.0, 100.0]
+    );
+    assert_eq!(
+        NativeNode::column_widths(&[column(Some(290.0)), column(None)], 300.0),
+        [290.0, 40.0]
+    );
+}
+
+#[test]
+fn edited_documents_mark_the_title() {
+    // Verifies unsaved changes show in the window title.
+    let edited = zintl_ui_backend_core::DocumentState {
+        edited: true,
+        ..Default::default()
+    };
+    assert_eq!(Backend::displayed_title("Notes", &edited), "*Notes");
+    assert_eq!(
+        Backend::displayed_title("Notes", &Default::default()),
+        "Notes"
+    );
+}
+
+#[test]
+fn list_sections_and_table_rows_rebuild_the_structure() {
+    // Verifies only row-defining changes re-attach list rows; selection changes do not.
+    let list = |ids: &[&str], selected: Option<&str>| ViewKind::List {
+        sections: vec![zintl_ui_backend_core::ListSection {
+            title: None,
+            ids: ids.iter().map(|id| id.to_string()).collect(),
+        }],
+        selected: selected.map(str::to_owned),
+        style: Default::default(),
+    };
+    assert!(Backend::rows_changed(
+        &list(&["a"], None),
+        &list(&["a", "b"], None)
+    ));
+    assert!(!Backend::rows_changed(
+        &list(&["a"], None),
+        &list(&["a"], Some("a"))
+    ));
 }
 
 #[test]
@@ -377,4 +567,29 @@ fn colors_match_after_eight_bit_round_trips() {
         color,
         Color::rgba(0.3, 0.4, 0.6, 1.0)
     ));
+}
+
+#[test]
+fn formatting_roles_apply_to_the_focused_rich_editor() {
+    // Verifies paragraph style and font trait items stay in WinUI menus as editing roles.
+    let items = Menus::items(&[
+        role("Bold", CommandRole::Bold),
+        role("Title", CommandRole::TitleStyle),
+        role("Checklist", CommandRole::Checklist),
+    ]);
+    let roles = items
+        .iter()
+        .map(|item| match item {
+            MenuFlyoutItemBase::Item(item) => item.role,
+            _ => MenuItemRole::None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        roles,
+        [
+            MenuItemRole::Bold,
+            MenuItemRole::TitleStyle,
+            MenuItemRole::Checklist
+        ]
+    );
 }

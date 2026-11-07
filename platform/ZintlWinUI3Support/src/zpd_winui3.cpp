@@ -8,6 +8,13 @@
 #include <mutex>
 #include <vector>
 
+#include <commctrl.h>
+
+#include <winrt/Microsoft.UI.Content.h>
+#include <winrt/Microsoft.UI.Input.h>
+#include <winrt/Microsoft.UI.Interop.h>
+#include <winrt/Microsoft.UI.Text.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Microsoft.UI.Xaml.Hosting.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
 #include <winrt/Microsoft.UI.Xaml.XamlTypeInfo.h>
@@ -28,6 +35,36 @@ Media::SolidColorBrush brush_from(zpd_winui3_color color) {
   };
   return Media::SolidColorBrush(Windows::UI::Color{
       channel(color.alpha), channel(color.red), channel(color.green), channel(color.blue)});
+}
+
+double title_bar_height(UIElement const& element) {
+  auto root = element.XamlRoot();
+  if (!root) return 0;
+  auto environment = root.ContentIslandEnvironment();
+  if (!environment) return 0;
+  auto window = Windowing::AppWindow::GetFromWindowId(environment.AppWindowId());
+  if (!window || !window.TitleBar().ExtendsContentIntoTitleBar()) return 0;
+  return window.TitleBar().Height() / root.RasterizationScale();
+}
+
+double title_bar_inset(UIElement const& element) {
+  double height = title_bar_height(element);
+  if (height <= 0) return 0;
+  auto origin = element.TransformToVisual(nullptr).TransformPoint({0, 0});
+  return std::max(0.0, height - origin.Y);
+}
+
+Media::Brush theme_brush(wchar_t const* key) {
+  auto value = Application::Current().Resources().TryLookup(box_value(key));
+  return value ? value.try_as<Media::Brush>() : nullptr;
+}
+
+HWND window_handle(UIElement const& element) {
+  auto root = element.XamlRoot();
+  if (!root) return nullptr;
+  auto environment = root.ContentIslandEnvironment();
+  if (!environment) return nullptr;
+  return GetWindowFromWindowId(environment.AppWindowId());
 }
 
 Windows::System::VirtualKey key_from(zpd_winui3_string key) {
@@ -61,21 +98,43 @@ void configure_accelerator(MenuFlyoutItem const& item, zpd_winui3_menu_item cons
   item.KeyboardAccelerators().Append(accelerator);
 }
 
-/* Applies a standard editing action to the focused text box. */
-void perform_role(int32_t role, XamlRoot const& root) {
-  if (!root) return;
-  auto box = Xaml::Input::FocusManager::GetFocusedElement(root).try_as<TextBox>();
-  if (!box) return;
-  switch (role) {
-    case ZPD_WINUI3_MENU_ROLE_CUT: box.CutSelectionToClipboard(); break;
-    case ZPD_WINUI3_MENU_ROLE_COPY: box.CopySelectionToClipboard(); break;
-    case ZPD_WINUI3_MENU_ROLE_PASTE: box.PasteFromClipboard(); break;
-    case ZPD_WINUI3_MENU_ROLE_SELECT_ALL: box.SelectAll(); break;
-    case ZPD_WINUI3_MENU_ROLE_UNDO: box.Undo(); break;
-    case ZPD_WINUI3_MENU_ROLE_REDO: box.Redo(); break;
-    case ZPD_WINUI3_MENU_ROLE_DELETE: box.SelectedText(L""); break;
-    default: break;
+/* Applies a standard editing or formatting action to the focused text control; returns whether one took it. */
+bool perform_role(int32_t role, XamlRoot const& root) {
+  if (!root) return false;
+  auto focused = Xaml::Input::FocusManager::GetFocusedElement(root);
+  if (auto box = focused.try_as<TextBox>()) {
+    switch (role) {
+      case ZPD_WINUI3_MENU_ROLE_CUT: box.CutSelectionToClipboard(); return true;
+      case ZPD_WINUI3_MENU_ROLE_COPY: box.CopySelectionToClipboard(); return true;
+      case ZPD_WINUI3_MENU_ROLE_PASTE: box.PasteFromClipboard(); return true;
+      case ZPD_WINUI3_MENU_ROLE_SELECT_ALL: box.SelectAll(); return true;
+      case ZPD_WINUI3_MENU_ROLE_UNDO: box.Undo(); return true;
+      case ZPD_WINUI3_MENU_ROLE_REDO: box.Redo(); return true;
+      case ZPD_WINUI3_MENU_ROLE_DELETE: box.SelectedText(L""); return true;
+      default: return false;
+    }
   }
+  if (auto box = focused.try_as<RichEditBox>()) {
+    auto selection = box.Document().Selection();
+    switch (role) {
+      case ZPD_WINUI3_MENU_ROLE_CUT: selection.Cut(); return true;
+      case ZPD_WINUI3_MENU_ROLE_COPY: selection.Copy(); return true;
+      case ZPD_WINUI3_MENU_ROLE_PASTE: selection.Paste(0); return true;
+      case ZPD_WINUI3_MENU_ROLE_SELECT_ALL: selection.Expand(winrt::Microsoft::UI::Text::TextRangeUnit::Story); return true;
+      case ZPD_WINUI3_MENU_ROLE_UNDO: box.Document().Undo(); return true;
+      case ZPD_WINUI3_MENU_ROLE_REDO: box.Document().Redo(); return true;
+      case ZPD_WINUI3_MENU_ROLE_DELETE: selection.Delete(winrt::Microsoft::UI::Text::TextRangeUnit::Character, 0); return true;
+      default: return apply_rich_role(box, role);
+    }
+  }
+  return false;
+}
+
+/* Whether keyboard focus is in a text control, which handles its own Undo. */
+bool editing_text(XamlRoot const& root) {
+  if (!root) return false;
+  auto focused = Xaml::Input::FocusManager::GetFocusedElement(root);
+  return focused.try_as<TextBox>() || focused.try_as<RichEditBox>();
 }
 
 void append_menu_items(
@@ -105,11 +164,12 @@ void append_menu_items(
     auto role = source.role;
     std::weak_ptr<MenuTarget> weak = menu_target;
     item.Click([weak, id = std::move(id), role](Windows::Foundation::IInspectable const& sender, RoutedEventArgs const&) {
+      auto target = weak.lock();
       if (role != ZPD_WINUI3_MENU_ROLE_NONE) {
-        perform_role(role, sender.as<UIElement>().XamlRoot());
+        if (!perform_role(role, sender.as<UIElement>().XamlRoot()) && target && target->role_fallback) target->role_fallback(role);
         return;
       }
-      if (auto target = weak.lock()) target->select(id);
+      if (target) target->select(id);
     });
     target.Append(item);
   }
@@ -177,20 +237,87 @@ struct TextBoxElement final : zpd_winui3_element {
   }
 };
 
+namespace {
+
+/* Runs once when Windows ends the session; any window may report it. */
+struct SessionEnd {
+  Callback callback;
+  zpd_winui3_invoke_fn invoke{};
+
+  void run() {
+    auto invoke_once = std::exchange(invoke, nullptr);
+    if (invoke_once && callback.data) invoke_once(callback.data);
+    callback.reset();
+  }
+};
+
+SessionEnd& session_end() {
+  static SessionEnd value;
+  return value;
+}
+
+constexpr UINT_PTR SESSION_SUBCLASS = 0x5a504457;
+
+LRESULT CALLBACK session_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR, DWORD_PTR) {
+  if (message == WM_ENDSESSION && wparam) session_end().run();
+  return DefSubclassProc(window, message, wparam, lparam);
+}
+
+/* The registry key that keeps window placements, named after the executable. */
+std::wstring placement_key() {
+  wchar_t path[MAX_PATH]{};
+  GetModuleFileNameW(nullptr, path, MAX_PATH);
+  std::wstring name(path);
+  auto slash = name.find_last_of(L"\\/");
+  if (slash != std::wstring::npos) name = name.substr(slash + 1);
+  auto dot = name.find_last_of(L'.');
+  if (dot != std::wstring::npos) name = name.substr(0, dot);
+  return L"Software\\" + name + L"\\Window Placements";
+}
+
+}  // namespace
+
 zpd_winui3_window::zpd_winui3_window(int32_t style) {
   window = Window();
   shell = Grid();
   menu_bar = MenuBar();
+  toolbar = CommandBar();
 
-  RowDefinition menu_row;
-  menu_row.Height(GridLengthHelper::Auto());
-  RowDefinition content_row;
-  content_row.Height(GridLengthHelper::FromValueAndType(1.0, GridUnitType::Star));
-  shell.RowDefinitions().Append(menu_row);
-  shell.RowDefinitions().Append(content_row);
+  // Rows: menu bar, toolbar, content.
+  for (int row = 0; row < 3; ++row) {
+    RowDefinition definition;
+    definition.Height(row < 2 ? GridLengthHelper::Auto() : GridLengthHelper::FromValueAndType(1.0, GridUnitType::Star));
+    shell.RowDefinitions().Append(definition);
+  }
   shell.Children().Append(menu_bar);
   menu_bar.Visibility(Visibility::Collapsed);
+  toolbar.DefaultLabelPosition(CommandBarDefaultLabelPosition::Right);
+  toolbar.IsDynamicOverflowEnabled(true);
+  toolbar.OverflowButtonVisibility(CommandBarOverflowButtonVisibility::Auto);
+  toolbar.Background(Media::SolidColorBrush(Windows::UI::Colors::Transparent()));
+  toolbar.Visibility(Visibility::Collapsed);
+  Grid::SetRow(toolbar, 1);
+  shell.Children().Append(toolbar);
   window.Content(shell);
+
+  // Undo and Redo go to the app's history unless a text control is editing.
+  shell.KeyboardAcceleratorPlacementMode(Xaml::Input::KeyboardAcceleratorPlacementMode::Hidden);
+  auto add_undo = [this](Windows::System::VirtualKey key, Windows::System::VirtualKeyModifiers modifiers, bool redo) {
+    Xaml::Input::KeyboardAccelerator accelerator;
+    accelerator.Key(key);
+    accelerator.Modifiers(modifiers);
+    accelerator.Invoked([this, redo](auto&&, Xaml::Input::KeyboardAcceleratorInvokedEventArgs const& args) {
+      if (editing_text(xaml_root())) return;
+      args.Handled(perform_undo(redo));
+    });
+    shell.KeyboardAccelerators().Append(accelerator);
+  };
+  using Windows::System::VirtualKey;
+  using Windows::System::VirtualKeyModifiers;
+  add_undo(VirtualKey::Z, VirtualKeyModifiers::Control, false);
+  add_undo(VirtualKey::Y, VirtualKeyModifiers::Control, true);
+  add_undo(VirtualKey::Z, VirtualKeyModifiers::Control | VirtualKeyModifiers::Shift, true);
+  layout_token = shell.LayoutUpdated([this](auto&&, auto&&) { update_passthrough(); });
 
   if (style == ZPD_WINUI3_WINDOW_PANEL) {
     auto presenter = Windowing::OverlappedPresenter::Create();
@@ -200,10 +327,77 @@ zpd_winui3_window::zpd_winui3_window(int32_t style) {
     window.AppWindow().SetPresenter(presenter);
     window.AppWindow().IsShownInSwitchers(false);
   }
+  closing_token = window.AppWindow().Closing([this](Windowing::AppWindow const&, Windowing::AppWindowClosingEventArgs const& args) {
+    if (!confirms_close) return;
+    args.Cancel(true);
+    emit(ZPD_WINUI3_EVENT_WINDOW_CLOSE_REQUESTED);
+  });
   closed_token = window.Closed([this](auto&&, auto&&) {
+    save_placement();
     closed = true;
     if (closed_invoke && closed_callback.data) closed_invoke(closed_callback.data);
   });
+  subclassed = hwnd();
+  SetWindowSubclass(subclassed, session_proc, SESSION_SUBCLASS, 0);
+}
+
+void zpd_winui3_window::emit(int32_t kind, std::string const& text) const {
+  if (!event_invoke || !event_callback.data) return;
+  zpd_winui3_event event{};
+  event.kind = kind;
+  event.text = {reinterpret_cast<uint8_t const*>(text.data()), text.size()};
+  event_invoke(event_callback.data, &event);
+}
+
+bool zpd_winui3_window::perform_undo(bool redo) const {
+  if (!undo || !(redo ? can_redo : can_undo)) return false;
+  emit(redo ? ZPD_WINUI3_EVENT_REDO : ZPD_WINUI3_EVENT_UNDO);
+  return true;
+}
+
+void zpd_winui3_window::update_passthrough() {
+  if (closed) return;
+  std::vector<Windows::Graphics::RectInt32> rects;
+  double height = title_bar_height(shell);
+  auto root = shell.XamlRoot();
+  if (height > 0 && root) {
+    double scale = root.RasterizationScale();
+    // Menus and commands take clicks; the bars' empty space keeps moving the window.
+    std::vector<FrameworkElement> elements;
+    for (auto const& item : menu_bar.Items()) elements.push_back(item);
+    if (auto leading = toolbar.Content().try_as<FrameworkElement>()) elements.push_back(leading);
+    for (auto const& command : toolbar.PrimaryCommands()) {
+      if (auto element = command.try_as<FrameworkElement>()) elements.push_back(element);
+    }
+    for (auto const& weak : passthrough) {
+      if (auto element = weak.get()) elements.push_back(element);
+    }
+    for (auto const& element : elements) {
+      if (element.Visibility() != Visibility::Visible || !element.IsLoaded()) continue;
+      auto bounds = element.TransformToVisual(nullptr).TransformBounds({0, 0, static_cast<float>(element.ActualWidth()), static_cast<float>(element.ActualHeight())});
+      // Only the part under the title bar matters.
+      double bottom = std::min<double>(bounds.Y + bounds.Height, height);
+      if (bounds.Y >= height || bottom <= bounds.Y || bounds.Width <= 0) continue;
+      rects.push_back({static_cast<int32_t>(bounds.X * scale), static_cast<int32_t>(bounds.Y * scale),
+                       static_cast<int32_t>(std::ceil(bounds.Width * scale)), static_cast<int32_t>(std::ceil((bottom - bounds.Y) * scale))});
+    }
+  }
+  auto same = rects.size() == passthrough_rects.size() &&
+              std::equal(rects.begin(), rects.end(), passthrough_rects.begin(), [](auto const& a, auto const& b) {
+                return a.X == b.X && a.Y == b.Y && a.Width == b.Width && a.Height == b.Height;
+              });
+  if (same) return;
+  passthrough_rects = rects;
+  auto source = winrt::Microsoft::UI::Input::InputNonClientPointerSource::GetForWindowId(window.AppWindow().Id());
+  source.SetRegionRects(winrt::Microsoft::UI::Input::NonClientRegionKind::Passthrough, rects);
+}
+
+void zpd_winui3_window::save_placement() const {
+  if (autosave.empty() || !subclassed || !IsWindow(subclassed)) return;
+  WINDOWPLACEMENT placement{sizeof(WINDOWPLACEMENT)};
+  if (GetWindowPlacement(subclassed, &placement)) {
+    RegSetKeyValueW(HKEY_CURRENT_USER, placement_key().c_str(), autosave.c_str(), REG_BINARY, &placement, sizeof(placement));
+  }
 }
 
 HWND zpd_winui3_window::hwnd() const {
@@ -434,16 +628,32 @@ void zpd_winui3_window_release(zpd_winui3_window* window) {
   try {
     window->closed_invoke = nullptr;
     window->closed_callback.reset();
+    window->event_invoke = nullptr;
+    window->event_callback.reset();
     window->window.Closed(window->closed_token);
+    // A closed window has no AppWindow; calling through null is an access violation, not an exception.
+    if (auto app = window->window.AppWindow()) app.Closing(window->closing_token);
+    window->shell.LayoutUpdated(window->layout_token);
+    window->shell.KeyboardAccelerators().Clear();
     window->menu_bar.Items().Clear();
+    window->toolbar.PrimaryCommands().Clear();
+    window->toolbar.Content(nullptr);
     window->menu_target.reset();
-    if (!window->closed) window->window.Close();
+    if (window->subclassed && IsWindow(window->subclassed)) RemoveWindowSubclass(window->subclassed, session_proc, SESSION_SUBCLASS);
+    if (!window->closed) {
+      window->save_placement();
+      window->window.Close();
+    }
   } catch (...) {
   }
   delete window;
 }
 int32_t zpd_winui3_window_set_title(zpd_winui3_window* window, zpd_winui3_string title) { return status([&] { window->window.Title(string_from(title)); }); }
-int32_t zpd_winui3_window_resize(zpd_winui3_window* window, int32_t width, int32_t height) { return status([&] { window->window.AppWindow().Resize({width, height}); }); }
+int32_t zpd_winui3_window_resize(zpd_winui3_window* window, int32_t width, int32_t height) {
+  return status([&] {
+    if (auto app = window->window.AppWindow()) app.Resize({width, height});
+  });
+}
 int32_t zpd_winui3_window_activate(zpd_winui3_window* window) { return status([&] { window->window.Activate(); }); }
 int32_t zpd_winui3_window_close(zpd_winui3_window* window) { return status([&] { if (!window->closed) window->window.Close(); }); }
 int32_t zpd_winui3_window_extend_content_into_title_bar(zpd_winui3_window* window, bool enabled) { return status([&] { window->window.ExtendsContentIntoTitleBar(enabled); }); }
@@ -454,8 +664,11 @@ int32_t zpd_winui3_window_move_and_resize(zpd_winui3_window* window, double x, d
     double scale = GetDpiForWindow(window->hwnd()) / 96.0;
     auto pixels = [scale](double value) { return static_cast<int32_t>(value * scale + 0.5); };
     // Declared bounds describe the content area, as on macOS.
-    window->window.AppWindow().Move({pixels(x), pixels(y)});
-    window->window.AppWindow().ResizeClient({pixels(width), pixels(height)});
+    // A closed window has no AppWindow to place.
+    auto app = window->window.AppWindow();
+    if (!app) return;
+    app.Move({pixels(x), pixels(y)});
+    app.ResizeClient({pixels(width), pixels(height)});
   });
 }
 
@@ -476,7 +689,7 @@ int32_t zpd_winui3_window_set_content(zpd_winui3_window* window, const zpd_winui
     }
     window->content = element ? element->value : nullptr;
     if (window->content) {
-      Grid::SetRow(window->content, 1);
+      Grid::SetRow(window->content, 2);
       window->shell.Children().Append(window->content);
     }
   });
@@ -505,6 +718,9 @@ int32_t zpd_winui3_window_set_menu_bar(zpd_winui3_window* window, const zpd_winu
     auto target = std::make_shared<MenuTarget>();
     target->callback = Callback(data, release);
     target->invoke = invoke;
+    target->role_fallback = [window](int32_t role) {
+      if (role == ZPD_WINUI3_MENU_ROLE_UNDO || role == ZPD_WINUI3_MENU_ROLE_REDO) window->perform_undo(role == ZPD_WINUI3_MENU_ROLE_REDO);
+    };
     window->menu_target = target;
     for (size_t index = 0; index < length; ++index) {
       MenuBarItem menu;
@@ -581,4 +797,151 @@ int32_t zpd_winui3_element_clear_context_menu(zpd_winui3_element* element) {
   return status([&] { element->value.ContextFlyout(nullptr); });
 }
 
+
+int32_t zpd_winui3_window_set_event_handler(zpd_winui3_window* window, const void* data, zpd_winui3_event_fn invoke, zpd_winui3_release_fn release) {
+  Callback callback(data, release);
+  return status([&] {
+    window->event_invoke = nullptr;
+    window->event_callback = std::move(callback);
+    window->event_invoke = invoke;
+  });
+}
+
+int32_t zpd_winui3_window_set_toolbar(zpd_winui3_window* window, const zpd_winui3_toolbar_item* items, size_t length) {
+  return status([&] {
+    auto toolbar = window->toolbar;
+    toolbar.PrimaryCommands().Clear();
+    toolbar.Content(nullptr);
+    toolbar.Visibility(length ? Visibility::Visible : Visibility::Collapsed);
+    if (!length) return;
+    // Items before the first flexible space sit at the leading edge; the rest trail.
+    StackPanel leading;
+    leading.Orientation(Orientation::Horizontal);
+    leading.VerticalAlignment(VerticalAlignment::Center);
+    leading.Spacing(4);
+    bool trailing{};
+    for (size_t index = 0; index < length; ++index) {
+      auto const& item = items[index];
+      if (item.kind == ZPD_WINUI3_TOOLBAR_FLEXIBLE_SPACE) {
+        trailing = true;
+        continue;
+      }
+      FrameworkElement control{nullptr};
+      if (item.kind == ZPD_WINUI3_TOOLBAR_SEARCH) {
+        AutoSuggestBox search;
+        search.Width(220);
+        search.VerticalAlignment(VerticalAlignment::Center);
+        search.QueryIcon(SymbolIcon(Symbol::Find));
+        search.Text(string_from(item.value));
+        search.PlaceholderText(string_from(item.placeholder));
+        search.TextChanged([window](AutoSuggestBox const& sender, AutoSuggestBoxTextChangedEventArgs const& args) {
+          if (args.Reason() == AutoSuggestionBoxTextChangeReason::UserInput) window->emit(ZPD_WINUI3_EVENT_TOOLBAR_SEARCH_CHANGED, to_string(sender.Text()));
+        });
+        control = search;
+      } else {
+        AppBarButton button;
+        button.Label(string_from(item.label));
+        ToolTipService::SetToolTip(button, box_value(string_from(item.label)));
+        if (item.glyph.length) {
+          FontIcon icon;
+          icon.Glyph(string_from(item.glyph));
+          button.Icon(icon);
+        }
+        button.IsEnabled(item.enabled);
+        button.Click([window, id = std::string(bytes(item.id))](auto&&, auto&&) { window->emit(ZPD_WINUI3_EVENT_TOOLBAR_CLICKED, id); });
+        control = button;
+      }
+      if (!trailing) {
+        leading.Children().Append(control);
+      } else if (auto command = control.try_as<ICommandBarElement>()) {
+        toolbar.PrimaryCommands().Append(command);
+      } else {
+        AppBarElementContainer container;
+        container.Content(control);
+        container.VerticalContentAlignment(VerticalAlignment::Center);
+        toolbar.PrimaryCommands().Append(container);
+      }
+    }
+    toolbar.Content(leading);
+  });
+}
+
+int32_t zpd_winui3_window_set_document(zpd_winui3_window* window, bool confirms_close, bool undo, bool can_undo, bool can_redo) {
+  return status([&] {
+    window->confirms_close = confirms_close;
+    window->undo = undo;
+    window->can_undo = can_undo;
+    window->can_redo = can_redo;
+  });
+}
+
+int32_t zpd_winui3_window_set_autosave(zpd_winui3_window* window, zpd_winui3_string name) {
+  return status([&] {
+    window->autosave = string_from(name);
+    if (window->autosave.empty()) return;
+    WINDOWPLACEMENT placement{};
+    DWORD size = sizeof(placement);
+    if (RegGetValueW(HKEY_CURRENT_USER, placement_key().c_str(), window->autosave.c_str(), RRF_RT_REG_BINARY, nullptr, &placement, &size) != ERROR_SUCCESS ||
+        size != sizeof(placement) || placement.length != sizeof(placement)) {
+      return;
+    }
+    // A window closed while minimized reopens normally.
+    if (placement.showCmd == SW_SHOWMINIMIZED || placement.showCmd == SW_MINIMIZE) placement.showCmd = SW_SHOWNORMAL;
+    // The window shows itself when activated.
+    if (placement.showCmd != SW_SHOWMAXIMIZED) placement.showCmd = SW_HIDE;
+    SetWindowPlacement(window->hwnd(), &placement);
+  });
+}
+
+int32_t zpd_winui3_window_set_passthrough(zpd_winui3_window* window, const zpd_winui3_element* const* elements, size_t length) {
+  return status([&] {
+    window->passthrough.clear();
+    for (size_t index = 0; index < length; ++index) window->passthrough.push_back(make_weak(elements[index]->value));
+    window->update_passthrough();
+  });
+}
+
+void zpd_winui3_set_session_end_handler(const void* data, zpd_winui3_invoke_fn invoke, zpd_winui3_release_fn release) {
+  auto& handler = session_end();
+  handler.invoke = nullptr;
+  handler.callback = Callback(data, release);
+  handler.invoke = invoke;
+}
+
+int32_t zpd_winui3_element_measure(const zpd_winui3_element* element, double available_width, double available_height, double* width, double* height) {
+  return status([&] {
+    auto value = element->value;
+    // Frames set explicit sizes, which measuring would echo, so they are cleared meanwhile.
+    double explicit_width = value.Width();
+    double explicit_height = value.Height();
+    value.Width(NAN);
+    value.Height(NAN);
+    value.Measure({static_cast<float>(available_width), static_cast<float>(available_height)});
+    auto desired = value.DesiredSize();
+    value.Width(explicit_width);
+    value.Height(explicit_height);
+    *width = desired.Width;
+    *height = desired.Height;
+  });
+}
+
+int32_t zpd_winui3_element_set_tool_tip(zpd_winui3_element* element, zpd_winui3_string text) {
+  return status([&] { ToolTipService::SetToolTip(element->value, text.length ? box_value(string_from(text)) : nullptr); });
+}
+
+int32_t zpd_winui3_element_set_identifier(zpd_winui3_element* element, zpd_winui3_string id) {
+  return status([&] { Automation::AutomationProperties::SetAutomationId(element->value, string_from(id)); });
+}
+
+int32_t zpd_winui3_element_focus(zpd_winui3_element* element) {
+  return status([&] { element->value.Focus(FocusState::Programmatic); });
+}
+
+double zpd_winui3_element_title_bar_inset(const zpd_winui3_element* element) {
+  try {
+    return title_bar_inset(element->value);
+  } catch (...) {
+    return 0;
+  }
+}
 } // extern "C"

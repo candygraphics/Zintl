@@ -90,6 +90,18 @@ impl Menus {
             Some(CommandRole::Undo) => (None, MenuItemRole::Undo),
             Some(CommandRole::Redo) => (None, MenuItemRole::Redo),
             Some(CommandRole::Delete) => (None, MenuItemRole::Delete),
+            Some(CommandRole::Bold) => (None, MenuItemRole::Bold),
+            Some(CommandRole::Italic) => (None, MenuItemRole::Italic),
+            Some(CommandRole::Underline) => (None, MenuItemRole::Underline),
+            Some(CommandRole::TitleStyle) => (None, MenuItemRole::TitleStyle),
+            Some(CommandRole::HeadingStyle) => (None, MenuItemRole::HeadingStyle),
+            Some(CommandRole::SubheadingStyle) => (None, MenuItemRole::SubheadingStyle),
+            Some(CommandRole::BodyStyle) => (None, MenuItemRole::BodyStyle),
+            Some(CommandRole::MonospacedStyle) => (None, MenuItemRole::MonospacedStyle),
+            Some(CommandRole::BulletedList) => (None, MenuItemRole::BulletedList),
+            Some(CommandRole::DashedList) => (None, MenuItemRole::DashedList),
+            Some(CommandRole::NumberedList) => (None, MenuItemRole::NumberedList),
+            Some(CommandRole::Checklist) => (None, MenuItemRole::Checklist),
             // macOS window and app management have no Windows counterpart.
             Some(_) => return None,
         };
