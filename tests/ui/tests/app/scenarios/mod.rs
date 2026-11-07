@@ -16,9 +16,14 @@ macro_rules! scenarios {
             /// Runs the scenario called `name`, or returns `None` when there is none.
             pub fn run(name: &str, options: &LaunchOptions) -> Option<Result<(), AppError>> {
                 match name {
-                    $($name => Some(App::new(($make)(options)).run()),)*
+                    $($name => Some(App::new(Self::build(options, $make)).run()),)*
                     _ => None,
                 }
+            }
+
+            /// Calls `make`, which lets each scenario's closure infer its parameter type.
+            fn build<V>(options: &LaunchOptions, make: impl FnOnce(&LaunchOptions) -> V) -> V {
+                make(options)
             }
         }
     };
@@ -26,6 +31,7 @@ macro_rules! scenarios {
 
 scenarios! {
     arrangements => "arrangements": |_| arrangements::MainView::new(),
+    buttons => "buttons": |_| buttons::MainView::new(),
     canvas_action => "canvas-action": |_| canvas_action::MainView::new(),
     controls => "controls": |_| controls::MainView::new(),
     document => "document": |_| document::MainView::new(),
@@ -33,12 +39,16 @@ scenarios! {
     full_width_stack => "full-width-stack": |_| full_width_stack::MainView,
     hstack => "hstack": |_| hstack::MainView,
     overflow => "overflow": |_| overflow::MainView,
+    pickers => "pickers": |_| pickers::MainView::new(),
     perform_main => "perform-main": |_| perform_main::MainView::new(),
     scroll_status => "scroll-status": |_| scroll_status::MainView::default(),
+    sliders => "sliders": |_| sliders::MainView::new(),
     store_sender => "store-sender": |_| store_sender::MainView::new(),
     table => "table": |_| table::MainView::new(),
     text_commit => "text-commit": |_| text_commit::MainView::new(),
     text_field => "text-field": |_| text_field::MainView::new(),
+    text_inputs => "text-inputs": |_| text_inputs::MainView::new(),
+    toggles => "toggles": |_| toggles::MainView::new(),
     truncation => "truncation": |_| truncation::MainView,
     wgpu_first_frame => "wgpu-first-frame": |_| wgpu_first_frame::MainView::new(),
     window_close => "window-close": |_| window_close::MainView,

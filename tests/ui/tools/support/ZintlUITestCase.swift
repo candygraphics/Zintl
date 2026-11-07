@@ -91,7 +91,7 @@ class ZintlUITestCase: XCTestCase {
     by offset: CGVector
   ) {
     let origin = element.coordinate(withNormalizedOffset: start)
-    origin.press(forDuration: 0.2, thenDragTo: origin.withOffset(offset))
+    origin.click(forDuration: 0.2, thenDragTo: origin.withOffset(offset))
   }
 
   /// Counts the pixels in a screenshot of `element` whose sRGB color satisfies `matches`.
