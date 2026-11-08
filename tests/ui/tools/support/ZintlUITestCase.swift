@@ -1,3 +1,4 @@
+import Carbon
 import XCTest
 
 @MainActor
@@ -6,6 +7,20 @@ class ZintlUITestCase: XCTestCase {
 
   override func setUpWithError() throws {
     continueAfterFailure = false
+    useASCIIKeyboard()
+  }
+
+  /// Selects an ASCII keyboard for the test and restores the previous input source afterwards.
+  ///
+  /// An input method such as Japanese changes typed characters and shows a mode
+  /// indicator that XCUITest treats as an interrupting dialog.
+  private func useASCIIKeyboard() {
+    let previous = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
+    let ascii = TISCopyCurrentASCIICapableKeyboardLayoutInputSource().takeRetainedValue()
+    TISSelectInputSource(ascii)
+    addTeardownBlock { @MainActor in
+      TISSelectInputSource(previous)
+    }
   }
 
   func launch(
@@ -46,6 +61,117 @@ class ZintlUITestCase: XCTestCase {
     let predicate = NSPredicate(format: "value == %@", value)
     let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
     return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+  }
+
+  /// Returns the element with the accessibility identifier `id`, whatever its type.
+  func element(_ id: String) -> XCUIElement {
+    app.descendants(matching: .any)[id]
+  }
+
+  /// Asserts that the label `id` shows `value`, waiting for the app to update it.
+  ///
+  /// Scenarios echo their Stores in labels, so this proves native input reached Rust.
+  func assertLabel(
+    _ id: String,
+    _ value: String,
+    timeout: TimeInterval = 2,
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) {
+    let label = app.staticTexts[id]
+    XCTAssertTrue(
+      waitForValue(label, value, timeout: timeout),
+      "Label \(id) shows \(String(describing: label.value)) instead of \(value)",
+      file: file,
+      line: line
+    )
+  }
+
+  /// Polls the UI until `condition` holds or `timeout` passes, and returns whether it held.
+  func waitUntil(timeout: TimeInterval = 2, _ condition: () -> Bool) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+      if condition() {
+        return true
+      }
+      RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+    }
+    return condition()
+  }
+
+  /// Presses `element` at the normalized point `start` and drags it by `offset` points.
+  func drag(
+    _ element: XCUIElement,
+    from start: CGVector = CGVector(dx: 0.5, dy: 0.5),
+    by offset: CGVector
+  ) {
+    let origin = element.coordinate(withNormalizedOffset: start)
+    origin.click(forDuration: 0.2, thenDragTo: origin.withOffset(offset))
+  }
+
+  /// Counts the pixels in a screenshot of `element` whose sRGB color satisfies `matches`.
+  func pixelCount(in element: XCUIElement, where matches: (NSColor) -> Bool) -> Int {
+    guard let data = element.screenshot().image.tiffRepresentation,
+      let bitmap = NSBitmapImageRep(data: data)
+    else {
+      return 0
+    }
+    var count = 0
+    for y in 0..<bitmap.pixelsHigh {
+      for x in 0..<bitmap.pixelsWide {
+        guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+        if matches(color) {
+          count += 1
+        }
+      }
+    }
+    return count
+  }
+
+  /// Replaces the text of the focused `field` with `text` through the pasteboard.
+  ///
+  /// Typing goes through the input source, which may change characters such as
+  /// `/`; pasting does not. The previous pasteboard text comes back afterwards.
+  func paste(_ text: String, into field: XCUIElement) {
+    let pasteboard = NSPasteboard.general
+    let previous = pasteboard.string(forType: .string)
+    addTeardownBlock { @MainActor in
+      pasteboard.clearContents()
+      if let previous {
+        pasteboard.setString(previous, forType: .string)
+      }
+    }
+    pasteboard.clearContents()
+    pasteboard.setString(text, forType: .string)
+    field.typeKey("a", modifierFlags: .command)
+    field.typeKey("v", modifierFlags: .command)
+  }
+
+  /// Returns the sRGB color that a screenshot of `element` shows at the screen point `point`.
+  func pixelColor(in element: XCUIElement, at point: CGPoint) -> NSColor? {
+    let frame = element.frame
+    guard let data = element.screenshot().image.tiffRepresentation,
+      let bitmap = NSBitmapImageRep(data: data), frame.width > 0, frame.height > 0
+    else {
+      return nil
+    }
+    let x = Int((point.x - frame.minX) * CGFloat(bitmap.pixelsWide) / frame.width)
+    let y = Int((point.y - frame.minY) * CGFloat(bitmap.pixelsHigh) / frame.height)
+    guard (0..<bitmap.pixelsWide).contains(x), (0..<bitmap.pixelsHigh).contains(y) else {
+      return nil
+    }
+    return bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+  }
+
+  /// Creates an empty directory for files the app writes; the test removes it afterwards.
+  func makeTemporaryDirectory() throws -> URL {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("zintl-ui-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    addTeardownBlock {
+      try? FileManager.default.removeItem(at: directory)
+    }
+    return directory
   }
 
   private var defaultAppPath: String {

@@ -250,7 +250,6 @@ impl WindowToolbar {
                         zpd_objc::msg_send!(item.as_ptr(), zpd_objc::sel!("setImage:"), ((image): Id) => ());
                         zpd_objc::msg_send!(item.as_ptr(), zpd_objc::sel!("setBordered:"), ((true): bool) => ());
                         zpd_objc::msg_send!(item.as_ptr(), zpd_objc::sel!("setAutovalidates:"), ((false): bool) => ());
-                        zpd_objc::msg_send!(item.as_ptr(), zpd_objc::sel!("setEnabled:"), ((*enabled): bool) => ());
                         item
                     };
                     let actor = tree.insert_child(&root, item.clone())?;
@@ -259,6 +258,11 @@ impl WindowToolbar {
                     callback::install_action(&actor, move |_| {
                         emit(WindowEventKind::ToolbarItemClicked { id: id.clone() })
                     })?;
+                    // Setting an action enables the item, so the state is applied afterwards.
+                    // SAFETY: The item is live and retained by `item`.
+                    unsafe {
+                        zpd_objc::msg_send!(item.as_ptr(), zpd_objc::sel!("setEnabled:"), ((*enabled): bool) => ());
+                    }
                     natives.push(Some(actor));
                     item
                 }

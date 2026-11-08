@@ -743,6 +743,22 @@ fn main() {
     assert!(!unsafe { zpd_objc::msg_send!(item, zpd_objc::sel!("isEnabled"), () => bool) });
     window.set_toolbar(None).unwrap();
 
+    // Verifies a button installed disabled stays disabled once its action is set.
+    window.set_toolbar(Some(&declared(false))).unwrap();
+    // SAFETY: The window owns its toolbar and the items it lists.
+    let enabled = unsafe {
+        let toolbar = Checks::windows()
+            .iter()
+            .map(|window| zpd_objc::msg_send!(*window, zpd_objc::sel!("toolbar"), () => Id))
+            .find(|toolbar| !toolbar.is_null())
+            .expect("the window shows a toolbar");
+        let items = zpd_objc::msg_send!(toolbar, zpd_objc::sel!("items"), () => Id);
+        let item = zpd_objc::msg_send!(items, zpd_objc::sel!("objectAtIndex:"), ((2): u64) => Id);
+        zpd_objc::msg_send!(item, zpd_objc::sel!("isEnabled"), () => bool)
+    };
+    assert!(!enabled);
+    window.set_toolbar(None).unwrap();
+
     // Verifies the will-terminate hook runs when AppKit announces that it is exiting.
     let exited = Rc::new(std::cell::Cell::new(0));
     let count = exited.clone();
