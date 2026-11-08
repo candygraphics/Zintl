@@ -26,7 +26,10 @@ final class FileDialogTests: ZintlUITestCase {
     app.buttons["save"].click()
     XCTAssertTrue(sheet.waitForExistence(timeout: 5))
     assertLabel("saving-value", "Saving: true")
-    XCTAssertEqual(sheet.textFields.firstMatch.value as? String, "route.txt")
+    // The panel hides the extension when Finder hides filename extensions.
+    let name = sheet.textFields.firstMatch.value as? String
+    XCTAssertTrue(
+      ["route.txt", "route"].contains(name), "The name field shows \(String(describing: name))")
 
     sheet.buttons["Save"].click()
     assertLabel("result", "Saved: \(directory.lastPathComponent)/route.txt", timeout: 5)
