@@ -42,12 +42,14 @@ final class WindowsTests: ZintlUITestCase {
     app.staticTexts["\(id)-top"].frame.minY - app.windows[id].frame.minY
   }
 
-  /// Verifies standard content starts below the title bar, while overlay content extends under it.
+  /// Verifies content starts below the title bar by default, even with an overlay title bar,
+  /// and extends under overlay and hidden title bars once it ignores the safe area.
   func testTitleBarStylesPlaceContent() throws {
     try launch(scenario: "windows")
 
-    XCTAssertTrue(app.windows["overlay-window"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.windows["overlay-safe-window"].waitForExistence(timeout: 2))
     XCTAssertGreaterThan(contentInset("main-window"), 20)
+    XCTAssertGreaterThan(contentInset("overlay-safe-window"), 20)
     XCTAssertLessThan(contentInset("overlay-window"), 10)
     XCTAssertLessThan(contentInset("hidden-window"), 10)
   }

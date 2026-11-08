@@ -74,7 +74,7 @@ impl View for MainView {
                         // The app dismisses the alert itself while it is shown.
                         let sender = cx.sender(timed);
                         thread::spawn(move || {
-                            thread::sleep(Duration::from_millis(800));
+                            thread::sleep(Duration::from_millis(3000));
                             sender.set(false);
                         });
                     }),

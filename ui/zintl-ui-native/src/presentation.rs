@@ -128,7 +128,8 @@ impl AlertButton {
 
 /// An alert shown on its window while its bound Store is `true`.
 ///
-/// The first button answers Return. An OK button is added when none is given.
+/// The first button answers Return, except on macOS when it is destructive, so
+/// Return never destroys data by accident. An OK button is added when none is given.
 #[derive(Clone)]
 pub struct Alert {
     title: String,

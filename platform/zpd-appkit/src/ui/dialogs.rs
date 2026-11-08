@@ -39,7 +39,7 @@ pub struct AlertConfig {
     pub style: AlertStyle,
     pub title: String,
     pub message: Option<String>,
-    /// Buttons from right to left; the first answers Return.
+    /// Buttons from right to left; the first answers Return unless it is destructive.
     pub buttons: Vec<AlertButton>,
 }
 

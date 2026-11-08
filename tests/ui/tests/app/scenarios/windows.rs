@@ -25,11 +25,18 @@ impl View for MainView {
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let (inspector, closes) = (self.inspector, self.closes);
-        let titled = |id: &'static str, x: f64, y: f64, title_bar: TitleBar| {
+        // `extends` lets the content extend under the title bar instead of starting below it.
+        let titled = |id: &'static str, x: f64, y: f64, title_bar: TitleBar, extends: bool| {
+            let content = VStack::new(list![Text::new("Top").id(format!("{id}-top"))]);
+            let content = if extends {
+                content.ignores_safe_area()
+            } else {
+                content
+            };
             Window::new(Rect::new(x, y, 300.0, 200.0), format!("Zintl {id}"))
                 .id(id)
                 .title_bar(title_bar)
-                .content(Text::new("Top").id(format!("{id}-top")))
+                .content(content)
         };
         list![
             Window::new(Rect::new(100.0, 100.0, 480.0, 320.0), "Zintl Windows UI Test")
@@ -55,8 +62,9 @@ impl View for MainView {
                 .bind_open(inspector)
                 .on_close(move |cx| cx.update(closes, |closes| *closes += 1))
                 .content(Text::new("Inspector content").id("inspector-content")),
-            titled("overlay-window", 700.0, 100.0, TitleBar::Overlay),
-            titled("hidden-window", 700.0, 360.0, TitleBar::Hidden),
+            titled("overlay-window", 700.0, 100.0, TitleBar::Overlay, true),
+            titled("hidden-window", 700.0, 360.0, TitleBar::Hidden, true),
+            titled("overlay-safe-window", 1020.0, 100.0, TitleBar::Overlay, false),
         ]
     }
 }

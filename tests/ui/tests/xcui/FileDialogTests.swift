@@ -46,15 +46,20 @@ final class FileDialogTests: ZintlUITestCase {
     XCTAssertTrue(waitUntil { !self.sheet.exists })
   }
 
-  /// Verifies the open dialog lists the starting directory and reports the opened file.
+  /// Verifies the open dialog reports the chosen file and clears the Store.
   func testOpenReportsTheChosenFile() throws {
     try launchWithDirectory()
 
     app.buttons["open"].click()
     XCTAssertTrue(sheet.waitForExistence(timeout: 5))
-    let file = sheet.staticTexts["existing.txt"]
-    XCTAssertTrue(file.waitForExistence(timeout: 5))
-    file.click()
+    // The file browser may scroll its columns out of view, so the path is typed instead.
+    sheet.typeKey("g", modifierFlags: [.command, .shift])
+    let goTo = sheet.sheets["GoToWindow"]
+    let field = goTo.textFields["PathTextField"]
+    XCTAssertTrue(field.waitForExistence(timeout: 5))
+    paste(directory.appendingPathComponent("existing.txt").path, into: field)
+    field.typeKey(.return, modifierFlags: [])
+    XCTAssertTrue(waitUntil(timeout: 5) { !goTo.exists })
     sheet.buttons["Open"].click()
     assertLabel("result", "Opened: \(directory.lastPathComponent)/existing.txt", timeout: 5)
     assertLabel("opening-value", "Opening: false")

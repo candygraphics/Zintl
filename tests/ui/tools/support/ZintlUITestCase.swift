@@ -1,3 +1,4 @@
+import Carbon
 import XCTest
 
 @MainActor
@@ -6,6 +7,20 @@ class ZintlUITestCase: XCTestCase {
 
   override func setUpWithError() throws {
     continueAfterFailure = false
+    useASCIIKeyboard()
+  }
+
+  /// Selects an ASCII keyboard for the test and restores the previous input source afterwards.
+  ///
+  /// An input method such as Japanese changes typed characters and shows a mode
+  /// indicator that XCUITest treats as an interrupting dialog.
+  private func useASCIIKeyboard() {
+    let previous = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
+    let ascii = TISCopyCurrentASCIICapableKeyboardLayoutInputSource().takeRetainedValue()
+    TISSelectInputSource(ascii)
+    addTeardownBlock { @MainActor in
+      TISSelectInputSource(previous)
+    }
   }
 
   func launch(
@@ -111,6 +126,41 @@ class ZintlUITestCase: XCTestCase {
       }
     }
     return count
+  }
+
+  /// Replaces the text of the focused `field` with `text` through the pasteboard.
+  ///
+  /// Typing goes through the input source, which may change characters such as
+  /// `/`; pasting does not. The previous pasteboard text comes back afterwards.
+  func paste(_ text: String, into field: XCUIElement) {
+    let pasteboard = NSPasteboard.general
+    let previous = pasteboard.string(forType: .string)
+    addTeardownBlock { @MainActor in
+      pasteboard.clearContents()
+      if let previous {
+        pasteboard.setString(previous, forType: .string)
+      }
+    }
+    pasteboard.clearContents()
+    pasteboard.setString(text, forType: .string)
+    field.typeKey("a", modifierFlags: .command)
+    field.typeKey("v", modifierFlags: .command)
+  }
+
+  /// Returns the sRGB color that a screenshot of `element` shows at the screen point `point`.
+  func pixelColor(in element: XCUIElement, at point: CGPoint) -> NSColor? {
+    let frame = element.frame
+    guard let data = element.screenshot().image.tiffRepresentation,
+      let bitmap = NSBitmapImageRep(data: data), frame.width > 0, frame.height > 0
+    else {
+      return nil
+    }
+    let x = Int((point.x - frame.minX) * CGFloat(bitmap.pixelsWide) / frame.width)
+    let y = Int((point.y - frame.minY) * CGFloat(bitmap.pixelsHigh) / frame.height)
+    guard (0..<bitmap.pixelsWide).contains(x), (0..<bitmap.pixelsHigh).contains(y) else {
+      return nil
+    }
+    return bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
   }
 
   /// Creates an empty directory for files the app writes; the test removes it afterwards.

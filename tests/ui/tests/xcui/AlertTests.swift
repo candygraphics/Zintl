@@ -42,17 +42,29 @@ final class AlertTests: ZintlUITestCase {
     assertLabel("log", "Log: delete,keep")
   }
 
-  /// Verifies Return chooses the first button and Escape chooses the cancel button.
-  func testReturnAndEscapeChooseTheirButtons() throws {
+  /// Verifies Return chooses a plain first button.
+  func testReturnChoosesThePlainFirstButton() throws {
+    try launch(scenario: "alert")
+
+    app.buttons["show-timed"].click()
+    XCTAssertTrue(sheet.waitForExistence(timeout: 2))
+    sheet.typeKey(.return, modifierFlags: [])
+    assertLabel("log", "Log: wait")
+    XCTAssertTrue(waitUntil { !self.sheet.exists })
+  }
+
+  /// Verifies Return leaves a destructive first button alone and Escape chooses the cancel button.
+  func testReturnSkipsDestructiveButtonAndEscapeCancels() throws {
     try launch(scenario: "alert")
 
     showConfirmation()
     sheet.typeKey(.return, modifierFlags: [])
-    assertLabel("log", "Log: delete")
+    // The alert stays open without running the destructive action.
+    XCTAssertFalse(waitUntil(timeout: 1) { !self.sheet.exists })
+    assertLabel("log", "Log: ")
 
-    showConfirmation()
     sheet.typeKey(.escape, modifierFlags: [])
-    assertLabel("log", "Log: delete,keep")
+    assertLabel("log", "Log: keep")
     assertLabel("confirm-value", "false")
   }
 
@@ -61,9 +73,10 @@ final class AlertTests: ZintlUITestCase {
     try launch(scenario: "alert")
 
     app.buttons["show-timed"].click()
+    // The app closes the alert 3 seconds after showing it.
     XCTAssertTrue(sheet.waitForExistence(timeout: 2))
     XCTAssertTrue(sheet.staticTexts["Closing soon"].exists)
-    XCTAssertTrue(waitUntil(timeout: 5) { !self.sheet.exists })
+    XCTAssertTrue(waitUntil(timeout: 8) { !self.sheet.exists })
     assertLabel("timed-value", "false")
     assertLabel("log", "Log: ")
   }
