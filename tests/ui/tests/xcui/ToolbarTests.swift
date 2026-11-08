@@ -7,7 +7,7 @@ final class ToolbarTests: ZintlUITestCase {
     try launch(scenario: "toolbar")
 
     let add = app.toolbars.buttons["Add"]
-    XCTAssertTrue(add.waitForExistence(timeout: 2))
+    XCTAssertTrue(add.waitToExist(timeout: 2))
     add.click()
     add.click()
     assertLabel("count", "Count: 2")
@@ -21,7 +21,7 @@ final class ToolbarTests: ZintlUITestCase {
     try launch(scenario: "toolbar")
 
     let remove = app.toolbars.buttons["Remove"]
-    XCTAssertTrue(remove.waitForExistence(timeout: 2))
+    XCTAssertTrue(remove.waitToExist(timeout: 2))
     remove.click()
     app.toolbars.buttons["Add"].click()
     assertLabel("count", "Count: 1")
@@ -41,7 +41,7 @@ final class ToolbarTests: ZintlUITestCase {
     try launch(scenario: "toolbar")
 
     let search = app.toolbars.searchFields.firstMatch
-    XCTAssertTrue(search.waitForExistence(timeout: 2))
+    XCTAssertTrue(search.waitToExist(timeout: 2))
     search.click()
     search.typeText("Kyoto")
     assertLabel("query-value", "Query: Kyoto")

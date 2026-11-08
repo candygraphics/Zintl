@@ -8,7 +8,7 @@ final class HelpTests: ZintlUITestCase {
   private func helpTagAppears(at point: XCUICoordinate, timeout: TimeInterval = 5) -> Bool {
     point.hover()
     let tag = app.helpTags.firstMatch
-    guard tag.waitForExistence(timeout: timeout) else {
+    guard tag.waitToExist(timeout: timeout) else {
       return false
     }
     let pointer = point.screenPoint

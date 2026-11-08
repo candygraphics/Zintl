@@ -13,21 +13,21 @@ final class FullSizeSidebarTests: ZintlUITestCase {
     let window = app.windows["main-window"]
     let selection = app.staticTexts["selected-item"]
     let initialSize = window.frame.size
-    XCTAssertTrue(selection.waitForExistence(timeout: 2))
+    XCTAssertTrue(selection.waitToExist(timeout: 2))
     XCTAssertEqual(selection.value as? String, "Selected: home")
 
     // These first two selections exercise the launch-size contract. Waiting for the bound label
     // proves that each click reached Rust, updated the Store, and completed native synchronization
     // before the frame is measured; otherwise a size check could race the Sidebar replacement.
     let settings = app.staticTexts["Settings"]
-    XCTAssertTrue(settings.waitForExistence(timeout: 2))
+    XCTAssertTrue(settings.waitToExist(timeout: 2))
     settings.click()
     XCTAssertEqual(selection.value as? String, "Selected: settings")
     XCTAssertEqual(window.frame.width, initialSize.width, accuracy: 1)
     XCTAssertEqual(window.frame.height, initialSize.height, accuracy: 1)
 
     let library = app.staticTexts["Library"]
-    XCTAssertTrue(library.waitForExistence(timeout: 2))
+    XCTAssertTrue(library.waitToExist(timeout: 2))
     library.click()
     XCTAssertEqual(selection.value as? String, "Selected: library")
     XCTAssertEqual(window.frame.width, initialSize.width, accuracy: 1)
@@ -50,7 +50,7 @@ final class FullSizeSidebarTests: ZintlUITestCase {
     // resize. The frame must remain at the user-selected size rather than returning to Window::new's
     // declared 640x400 bounds or adopting AppKit's split-view fitting size.
     let home = app.staticTexts["Home"]
-    XCTAssertTrue(home.waitForExistence(timeout: 2))
+    XCTAssertTrue(home.waitToExist(timeout: 2))
     home.click()
     XCTAssertEqual(selection.value as? String, "Selected: home")
     XCTAssertEqual(window.frame.width, resizedSize.width, accuracy: 1)

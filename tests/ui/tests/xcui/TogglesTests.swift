@@ -57,7 +57,7 @@ final class TogglesTests: ZintlUITestCase {
     try launch(scenario: "toggles")
 
     let locked = element("disabled-checkbox")
-    XCTAssertTrue(locked.waitForExistence(timeout: 2))
+    XCTAssertTrue(locked.waitToExist(timeout: 2))
     XCTAssertFalse(locked.isEnabled)
     XCTAssertTrue(isOn("disabled-checkbox"))
 

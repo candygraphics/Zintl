@@ -7,12 +7,12 @@ final class TextFieldTests: ZintlUITestCase {
     try launch(scenario: "text-field")
 
     let input = app.textFields["text-input"]
-    XCTAssertTrue(input.waitForExistence(timeout: 2))
+    XCTAssertTrue(input.waitToExist(timeout: 2))
     input.click()
     input.typeText("typed value")
 
     let output = app.staticTexts["stored-value"]
-    XCTAssertTrue(output.waitForExistence(timeout: 2))
+    XCTAssertTrue(output.waitToExist(timeout: 2))
     XCTAssertEqual(output.value as? String, #"Stored value: "typed value""#)
   }
 
@@ -21,7 +21,7 @@ final class TextFieldTests: ZintlUITestCase {
     try launch(scenario: "text-field")
 
     let input = app.textFields["multiline-input"]
-    XCTAssertTrue(input.waitForExistence(timeout: 2))
+    XCTAssertTrue(input.waitToExist(timeout: 2))
     input.click()
     input.typeText("first line")
     input.typeKey(.return, modifierFlags: .option)
@@ -29,7 +29,7 @@ final class TextFieldTests: ZintlUITestCase {
 
     XCTAssertEqual(input.value as? String, "first line\nsecond line")
     let output = app.staticTexts["stored-multiline-value"]
-    XCTAssertTrue(output.waitForExistence(timeout: 2))
+    XCTAssertTrue(output.waitToExist(timeout: 2))
     XCTAssertEqual(
       output.value as? String,
       #"Stored multiline value: "first line\nsecond line""#

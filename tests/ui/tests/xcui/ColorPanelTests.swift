@@ -12,7 +12,7 @@ final class ColorPanelTests: ZintlUITestCase {
     try launch(scenario: "color-panel")
 
     let well = app.colorWells["well"]
-    XCTAssertTrue(well.waitForExistence(timeout: 2))
+    XCTAssertTrue(well.waitToExist(timeout: 2))
     XCTAssertEqual(well.value as? String, "rgb 1 0 0 1")
 
     app.buttons["set-blue"].click()
@@ -26,7 +26,7 @@ final class ColorPanelTests: ZintlUITestCase {
     try launch(scenario: "color-panel")
 
     app.buttons["show-colors"].click()
-    XCTAssertTrue(panel.waitForExistence(timeout: 5))
+    XCTAssertTrue(panel.waitToExist(timeout: 5))
     assertLabel("panel-shown", "Panel shown: true")
 
     panel.buttons[XCUIIdentifierCloseWindow].click()
@@ -39,7 +39,7 @@ final class ColorPanelTests: ZintlUITestCase {
     try launch(scenario: "color-panel")
 
     app.buttons["show-colors"].click()
-    XCTAssertTrue(panel.waitForExistence(timeout: 5))
+    XCTAssertTrue(panel.waitToExist(timeout: 5))
     try pick(hex: "00FF00")
     assertLabel("panel-value", "Panel: 0.00 1.00 0.00", timeout: 5)
   }
@@ -49,7 +49,7 @@ final class ColorPanelTests: ZintlUITestCase {
     try launch(scenario: "color-panel")
 
     app.colorWells["well"].click()
-    XCTAssertTrue(panel.waitForExistence(timeout: 5))
+    XCTAssertTrue(panel.waitToExist(timeout: 5))
     try pick(hex: "0000FF")
     assertLabel("well-value", "Well: 0.00 0.00 1.00", timeout: 5)
     XCTAssertTrue(waitForValue(app.colorWells["well"], "rgb 0 0 1 1"))
@@ -66,7 +66,7 @@ final class ColorPanelTests: ZintlUITestCase {
     }
     let field = panel.textFields.matching(NSPredicate(format: "value MATCHES '[0-9A-Fa-f]{6}'"))
       .firstMatch
-    XCTAssertTrue(field.waitForExistence(timeout: 2), "The panel shows no hex field")
+    XCTAssertTrue(field.waitToExist(timeout: 2), "The panel shows no hex field")
     field.doubleClick()
     field.typeKey("a", modifierFlags: .command)
     field.typeText("\(hex)\r")

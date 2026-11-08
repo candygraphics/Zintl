@@ -12,12 +12,13 @@ final class WindowCloseTests: ZintlUITestCase {
 
     try launch(
       scenario: "window-close",
-      environment: ["ZINTL_UI_TEST_EXIT_MARKER": marker.path]
+      environment: ["ZINTL_UI_TEST_EXIT_MARKER": marker.path],
+      exitsOnItsOwn: true
     )
 
     let window = app.windows["main-window"]
     let closeButton = window.buttons[XCUIIdentifierCloseWindow]
-    XCTAssertTrue(closeButton.waitForExistence(timeout: 2))
+    XCTAssertTrue(closeButton.waitToExist(timeout: 2))
     closeButton.click()
 
     XCTAssertTrue(app.wait(for: .notRunning, timeout: 5))

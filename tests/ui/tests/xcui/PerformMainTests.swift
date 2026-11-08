@@ -7,15 +7,15 @@ final class PerformMainTests: ZintlUITestCase {
     try launch(scenario: "perform-main")
 
     let schedule = app.buttons["schedule-main-task"]
-    XCTAssertTrue(schedule.waitForExistence(timeout: 2))
+    XCTAssertTrue(schedule.waitToExist(timeout: 2))
     schedule.click()
 
     let observe = app.buttons["observe-main-task"]
-    XCTAssertTrue(observe.waitForExistence(timeout: 2))
+    XCTAssertTrue(observe.waitToExist(timeout: 2))
     observe.click()
 
     let status = app.staticTexts["main-task-status"]
-    XCTAssertTrue(status.waitForExistence(timeout: 2))
+    XCTAssertTrue(status.waitToExist(timeout: 2))
     XCTAssertEqual(status.value as? String, "Performed")
   }
 }

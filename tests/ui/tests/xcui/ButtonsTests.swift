@@ -29,7 +29,7 @@ final class ButtonsTests: ZintlUITestCase {
 
     let save = app.buttons["save"]
     let plain = app.buttons["plain"]
-    XCTAssertTrue(save.waitForExistence(timeout: 2))
+    XCTAssertTrue(save.waitToExist(timeout: 2))
     XCTAssertGreaterThan(pixelCount(in: save, where: Self.isSaturated), 50)
     XCTAssertEqual(pixelCount(in: plain, where: Self.isSaturated), 0)
   }

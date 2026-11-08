@@ -7,7 +7,7 @@ final class WgpuFirstFrameTests: ZintlUITestCase {
     try launch(scenario: "wgpu-first-frame")
 
     let status = app.staticTexts["render-status"]
-    XCTAssertTrue(status.waitForExistence(timeout: 2))
+    XCTAssertTrue(status.waitToExist(timeout: 2))
     XCTAssertTrue(waitForValue(status, "Rendered", timeout: 5))
   }
 }

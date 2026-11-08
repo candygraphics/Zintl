@@ -5,7 +5,7 @@ final class MainMenuTests: ZintlUITestCase {
   /// Opens the menu bar item titled `title`.
   private func openMenu(_ title: String) {
     let item = app.menuBars.menuBarItems[title]
-    XCTAssertTrue(item.waitForExistence(timeout: 2), "Menu \(title) is missing")
+    XCTAssertTrue(item.waitToExist(timeout: 2), "Menu \(title) is missing")
     item.click()
   }
 
@@ -14,7 +14,7 @@ final class MainMenuTests: ZintlUITestCase {
     try launch(scenario: "main-menu")
 
     let expected = ["File", "Edit", "View", "Route", "Window", "Help"]
-    XCTAssertTrue(app.menuBars.menuBarItems["Help"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.menuBars.menuBarItems["Help"].waitToExist(timeout: 2))
     let titles = app.menuBars.menuBarItems.allElementsBoundByIndex.map(\.title)
     XCTAssertEqual(titles.filter(expected.contains), expected)
   }
@@ -61,7 +61,7 @@ final class MainMenuTests: ZintlUITestCase {
   func testJapaneseLocalizerTranslatesStandardMenus() throws {
     try launch(scenario: "main-menu", environment: ["ZINTL_UI_TEST_MENU_LANGUAGE": "ja"])
 
-    XCTAssertTrue(app.menuBars.menuBarItems["ファイル"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.menuBars.menuBarItems["ファイル"].waitToExist(timeout: 2))
     XCTAssertTrue(app.menuBars.menuBarItems["編集"].exists)
     XCTAssertTrue(app.menuBars.menuBarItems["Route"].exists)
     XCTAssertFalse(app.menuBars.menuBarItems["File"].exists)

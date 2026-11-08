@@ -4,7 +4,7 @@ import XCTest
 final class DocumentWindowTests: ZintlUITestCase {
   /// Verifies the close button asks the view first and closes only once the view allows it.
   func testCloseButtonAsksBeforeClosing() throws {
-    try launch(scenario: "document")
+    try launch(scenario: "document", exitsOnItsOwn: true)
 
     let window = app.windows["main-window"]
     let requests = app.staticTexts["close-requests"]
@@ -19,7 +19,7 @@ final class DocumentWindowTests: ZintlUITestCase {
 
   /// Verifies ⌘Q asks a window that confirms closing instead of quitting at once.
   func testQuitAsksTheWindowFirst() throws {
-    try launch(scenario: "document")
+    try launch(scenario: "document", exitsOnItsOwn: true)
 
     let requests = app.staticTexts["close-requests"]
     app.typeKey("q", modifierFlags: .command)

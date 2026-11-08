@@ -32,7 +32,8 @@ final class WgpuExitTests: ZintlUITestCase {
     }
     try launch(
       scenario: "wgpu-first-frame",
-      environment: ["ZINTL_UI_TEST_PANIC_MARKER": marker.path]
+      environment: ["ZINTL_UI_TEST_PANIC_MARKER": marker.path],
+      exitsOnItsOwn: true
     )
     XCTAssertTrue(
       waitForValue(app.staticTexts["render-status"], "Rendered", timeout: 5), file: file, line: line
@@ -40,7 +41,7 @@ final class WgpuExitTests: ZintlUITestCase {
 
     app.buttons["remove-canvas"].click()
     XCTAssertTrue(
-      app.buttons["remove-canvas"].waitForExistence(timeout: 2), file: file, line: line)
+      app.buttons["remove-canvas"].waitToExist(timeout: 2), file: file, line: line)
 
     quit(app)
 

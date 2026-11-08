@@ -9,7 +9,7 @@ final class ControlsTests: ZintlUITestCase {
     let loaded = app.staticTexts["loaded"]
     app.buttons["samples"].click()
     let item = app.menuItems["Load B"]
-    XCTAssertTrue(item.waitForExistence(timeout: 2))
+    XCTAssertTrue(item.waitToExist(timeout: 2))
     item.click()
     XCTAssertTrue(waitForValue(loaded, "Loaded B"))
   }
@@ -38,7 +38,7 @@ final class ControlsTests: ZintlUITestCase {
   func testSpinnerIsShown() throws {
     try launch(scenario: "controls")
 
-    XCTAssertTrue(app.activityIndicators["spinner"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.activityIndicators["spinner"].waitToExist(timeout: 2))
   }
 
   /// Verifies an unbound color well shows its declared color.
@@ -46,7 +46,7 @@ final class ControlsTests: ZintlUITestCase {
     try launch(scenario: "controls")
 
     let well = app.colorWells["declared-color"]
-    XCTAssertTrue(well.waitForExistence(timeout: 2))
+    XCTAssertTrue(well.waitToExist(timeout: 2))
     XCTAssertEqual(well.value as? String, "rgb 1 0 0 1")
   }
 
@@ -56,7 +56,7 @@ final class ControlsTests: ZintlUITestCase {
 
     let colored = app.buttons["colored-button"]
     let plain = app.buttons["plain-button"]
-    XCTAssertTrue(colored.waitForExistence(timeout: 2))
+    XCTAssertTrue(colored.waitToExist(timeout: 2))
     XCTAssertGreaterThan(pixelCount(in: colored, where: Self.isStronglyRed), 10)
     XCTAssertEqual(pixelCount(in: plain, where: Self.isStronglyRed), 0)
   }

@@ -8,7 +8,7 @@ final class OverflowTests: ZintlUITestCase {
 
     let window = app.windows["main-window"]
     let detail = app.staticTexts["detail"]
-    XCTAssertTrue(detail.waitForExistence(timeout: 2))
+    XCTAssertTrue(detail.waitToExist(timeout: 2))
     // The first pane is 200 points wide, followed by a 6-point divider.
     XCTAssertEqual(detail.frame.minX - window.frame.minX, 206, accuracy: 1)
   }
@@ -21,7 +21,7 @@ final class OverflowTests: ZintlUITestCase {
       let first = app.popUpButtons["first-picker-\(row)"]
       let second = app.popUpButtons["second-picker-\(row)"]
       let after = app.staticTexts["after-\(row)"]
-      XCTAssertTrue(after.waitForExistence(timeout: 2))
+      XCTAssertTrue(after.waitToExist(timeout: 2))
       XCTAssertLessThanOrEqual(first.frame.maxX, second.frame.minX, "row \(row)")
       XCTAssertLessThanOrEqual(second.frame.maxX, after.frame.minX, "row \(row)")
     }
@@ -33,7 +33,7 @@ final class OverflowTests: ZintlUITestCase {
 
     let scrollView = app.scrollViews["table-scroll"]
     let after = app.staticTexts["after-1"]
-    XCTAssertTrue(after.waitForExistence(timeout: 2))
+    XCTAssertTrue(after.waitToExist(timeout: 2))
     // The scroll view stays in its pane although the toolbar above it is wider.
     XCTAssertLessThanOrEqual(scrollView.frame.maxX, app.windows["main-window"].frame.maxX)
     XCTAssertGreaterThan(after.frame.maxX, scrollView.frame.maxX)

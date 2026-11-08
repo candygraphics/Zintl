@@ -6,7 +6,7 @@ final class PopoverTests: ZintlUITestCase {
   private func openPopover(file: StaticString = #filePath, line: UInt = #line) {
     app.buttons["info"].click()
     XCTAssertTrue(
-      app.popovers.firstMatch.waitForExistence(timeout: 2), "The popover did not open",
+      app.popovers.firstMatch.waitToExist(timeout: 2), "The popover did not open",
       file: file, line: line)
     assertLabel("shown-value", "Shown: true", file: file, line: line)
   }

@@ -14,7 +14,7 @@ final class FindMenuTests: ZintlUITestCase {
     app.textViews.firstMatch.click()
     XCTAssertFalse(findField.exists)
     app.typeKey("f", modifierFlags: .command)
-    XCTAssertTrue(findField.waitForExistence(timeout: 2))
+    XCTAssertTrue(findField.waitToExist(timeout: 2))
   }
 
   /// Verifies Edit > Find > Find… shows the find bar of the focused editor.
@@ -25,6 +25,6 @@ final class FindMenuTests: ZintlUITestCase {
     app.menuBars.menuBarItems["Edit"].click()
     app.menuItems["Find"].click()
     app.menuItems["Find…"].click()
-    XCTAssertTrue(findField.waitForExistence(timeout: 2))
+    XCTAssertTrue(findField.waitToExist(timeout: 2))
   }
 }

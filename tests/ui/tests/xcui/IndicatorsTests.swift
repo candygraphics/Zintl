@@ -11,7 +11,7 @@ final class IndicatorsTests: ZintlUITestCase {
   func testProgressBarFollowsItsStore() throws {
     try launch(scenario: "indicators")
 
-    XCTAssertTrue(app.progressIndicators["progress"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.progressIndicators["progress"].waitToExist(timeout: 2))
     XCTAssertEqual(progress() ?? -1, 0.25, accuracy: 0.001)
 
     app.buttons["advance"].click()
@@ -28,7 +28,7 @@ final class IndicatorsTests: ZintlUITestCase {
     try launch(scenario: "indicators")
 
     let text = { (id: String) in self.app.staticTexts[id].frame }
-    XCTAssertTrue(app.staticTexts["above"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.staticTexts["above"].waitToExist(timeout: 2))
     let separated = text("below").minY - text("above").maxY
     let plain = text("left").minY - text("below").maxY
     XCTAssertEqual(separated - plain, 9, accuracy: 0.5)
