@@ -8,7 +8,7 @@ final class TextCommitTests: ZintlUITestCase {
 
     let field = app.textFields["name-field"]
     let commits = app.staticTexts["commits"]
-    XCTAssertTrue(field.waitForExistence(timeout: 2))
+    XCTAssertTrue(field.waitToExist(timeout: 2))
     field.click()
     field.typeText("Section")
     XCTAssertEqual(commits.value as? String, "Commits: ")
@@ -29,7 +29,7 @@ final class TextCommitTests: ZintlUITestCase {
 
     let field = app.textFields.matching(NSPredicate(format: "value ENDSWITH ' m'")).firstMatch
     let position = app.staticTexts["position"]
-    XCTAssertTrue(field.waitForExistence(timeout: 2))
+    XCTAssertTrue(field.waitToExist(timeout: 2))
     XCTAssertEqual(field.value as? String, "1k000.00 m")
 
     field.click()

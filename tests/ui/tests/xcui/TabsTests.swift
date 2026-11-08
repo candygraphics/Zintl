@@ -11,13 +11,13 @@ final class TabsTests: ZintlUITestCase {
   func testClickingATabShowsItsPage() throws {
     try launch(scenario: "tabs")
 
-    XCTAssertTrue(app.staticTexts["general-page"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.staticTexts["general-page"].waitToExist(timeout: 2))
     XCTAssertFalse(app.staticTexts["advanced-page"].exists)
 
     tab("Advanced").click()
     assertLabel("tab-value", "Tab: 1")
     assertLabel("changes", "Changes: 1")
-    XCTAssertTrue(app.staticTexts["advanced-page"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.staticTexts["advanced-page"].waitToExist(timeout: 2))
     XCTAssertFalse(app.staticTexts["general-page"].exists)
     XCTAssertEqual(tab("Advanced").value as? Int, 1)
   }
@@ -28,7 +28,7 @@ final class TabsTests: ZintlUITestCase {
 
     tab("Advanced").click()
     let verbose = app.checkBoxes["verbose"]
-    XCTAssertTrue(verbose.waitForExistence(timeout: 2))
+    XCTAssertTrue(verbose.waitToExist(timeout: 2))
     // The page stretches the checkbox, but AppKit only toggles it on its box and title.
     verbose.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5)).click()
     assertLabel("verbose-value", "Verbose: true")
@@ -36,7 +36,7 @@ final class TabsTests: ZintlUITestCase {
 
     tab("General").click()
     tab("Advanced").click()
-    XCTAssertTrue(verbose.waitForExistence(timeout: 2))
+    XCTAssertTrue(verbose.waitToExist(timeout: 2))
     XCTAssertEqual(verbose.value as? Int, 1)
   }
 
@@ -46,7 +46,7 @@ final class TabsTests: ZintlUITestCase {
 
     app.buttons["show-about"].click()
     assertLabel("tab-value", "Tab: 2")
-    XCTAssertTrue(app.staticTexts["about-page"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.staticTexts["about-page"].waitToExist(timeout: 2))
     XCTAssertTrue(waitUntil { self.tab("About").value as? Int == 1 })
     assertLabel("changes", "Changes: ")
   }

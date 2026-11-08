@@ -7,7 +7,7 @@ final class SlidersTests: ZintlUITestCase {
     try launch(scenario: "sliders")
 
     let slider = app.sliders["free-slider"]
-    XCTAssertTrue(slider.waitForExistence(timeout: 2))
+    XCTAssertTrue(slider.waitToExist(timeout: 2))
     slider.adjust(toNormalizedSliderPosition: 0.4)
     // Adjusting lands within a point of the requested position.
     let value = app.staticTexts["free-value"]
@@ -23,7 +23,7 @@ final class SlidersTests: ZintlUITestCase {
     try launch(scenario: "sliders")
 
     let slider = app.sliders["free-slider"]
-    XCTAssertTrue(slider.waitForExistence(timeout: 2))
+    XCTAssertTrue(slider.waitToExist(timeout: 2))
     // The knob starts at the left end of the track.
     drag(slider, from: CGVector(dx: 0.03, dy: 0.5), by: CGVector(dx: slider.frame.width, dy: 0))
     assertLabel("free-value", "100")
@@ -34,7 +34,7 @@ final class SlidersTests: ZintlUITestCase {
     try launch(scenario: "sliders")
 
     let slider = app.sliders["snapping-slider"]
-    XCTAssertTrue(slider.waitForExistence(timeout: 2))
+    XCTAssertTrue(slider.waitToExist(timeout: 2))
     // Five ticks over 0...100 sit 25 apart, so 0.4 snaps to 50.
     slider.adjust(toNormalizedSliderPosition: 0.4)
     assertLabel("snapping-value", "50.00")
@@ -45,7 +45,7 @@ final class SlidersTests: ZintlUITestCase {
     try launch(scenario: "sliders")
 
     let free = app.sliders["free-slider"]
-    XCTAssertTrue(free.waitForExistence(timeout: 2))
+    XCTAssertTrue(free.waitToExist(timeout: 2))
     app.buttons["set-75"].click()
     assertLabel("free-value", "75")
     XCTAssertTrue(waitUntil { free.normalizedSliderPosition > 0.7 })
@@ -62,7 +62,7 @@ final class SlidersTests: ZintlUITestCase {
     let window = app.windows["main-window"]
     let wide = app.sliders["wide-slider"]
     let free = app.sliders["free-slider"]
-    XCTAssertTrue(wide.waitForExistence(timeout: 2))
+    XCTAssertTrue(wide.waitToExist(timeout: 2))
     XCTAssertEqual(free.frame.width, 200, accuracy: 4)
     XCTAssertEqual(wide.frame.maxX, window.frame.maxX, accuracy: 2)
     XCTAssertGreaterThan(wide.frame.width, free.frame.width)

@@ -7,7 +7,7 @@ final class PickersTests: ZintlUITestCase {
     try launch(scenario: "pickers")
 
     let picker = app.popUpButtons["menu-picker"]
-    XCTAssertTrue(picker.waitForExistence(timeout: 2))
+    XCTAssertTrue(picker.waitToExist(timeout: 2))
     picker.click()
     app.menuItems["Rapid"].click()
     assertLabel("menu-value", "Rapid")
@@ -20,7 +20,7 @@ final class PickersTests: ZintlUITestCase {
     try launch(scenario: "pickers")
 
     let picker = app.radioGroups["segmented-picker"]
-    XCTAssertTrue(picker.waitForExistence(timeout: 2))
+    XCTAssertTrue(picker.waitToExist(timeout: 2))
     picker.radioButtons["Express"].click()
     assertLabel("segmented-value", "Express")
     XCTAssertEqual(picker.radioButtons["Express"].value as? Int, 1)
@@ -46,7 +46,7 @@ final class PickersTests: ZintlUITestCase {
   func testRadioPickerChecksExactlyOneOption() throws {
     try launch(scenario: "pickers")
 
-    XCTAssertTrue(radio("Rapid").waitForExistence(timeout: 2))
+    XCTAssertTrue(radio("Rapid").waitToExist(timeout: 2))
     clickRadio("Rapid")
     assertLabel("radio-value", "Rapid")
     let checked = ["Local", "Rapid", "Express"].map { radio($0).value as? Int }
@@ -77,10 +77,10 @@ final class PickersTests: ZintlUITestCase {
     try launch(scenario: "pickers")
 
     let picker = app.popUpButtons["disabled-picker"]
-    XCTAssertTrue(picker.waitForExistence(timeout: 2))
+    XCTAssertTrue(picker.waitToExist(timeout: 2))
     XCTAssertFalse(picker.isEnabled)
     XCTAssertEqual(picker.value as? String, "Rapid")
     picker.click()
-    XCTAssertFalse(app.menuItems["Express"].waitForExistence(timeout: 1))
+    XCTAssertFalse(app.menuItems["Express"].waitToExist(timeout: 1))
   }
 }

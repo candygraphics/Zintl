@@ -8,7 +8,7 @@ final class TableTests: ZintlUITestCase {
 
     // The ID names the scroll view around the table.
     let table = app.scrollViews["sections"].tables.firstMatch
-    XCTAssertTrue(table.waitForExistence(timeout: 2))
+    XCTAssertTrue(table.waitToExist(timeout: 2))
     XCTAssertTrue(table.buttons["Name"].exists || table.staticTexts["Name"].exists)
     let first = app.staticTexts["length-1"]
     let second = app.staticTexts["length-2"]
@@ -33,8 +33,6 @@ final class TableTests: ZintlUITestCase {
     XCTAssertFalse(row.exists && row.isHittable)
     app.buttons["select-40"].click()
     XCTAssertTrue(waitForValue(app.staticTexts["selection"], "Selected: section-40"))
-    let hittable = NSPredicate(format: "exists == true AND isHittable == true")
-    let expectation = XCTNSPredicateExpectation(predicate: hittable, object: row)
-    XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 2), .completed)
+    XCTAssertTrue(row.waitToBeHittable(timeout: 2))
   }
 }

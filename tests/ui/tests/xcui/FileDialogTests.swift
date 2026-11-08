@@ -24,7 +24,7 @@ final class FileDialogTests: ZintlUITestCase {
     try launchWithDirectory()
 
     app.buttons["save"].click()
-    XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+    XCTAssertTrue(sheet.waitToExist(timeout: 5))
     assertLabel("saving-value", "Saving: true")
     // The panel hides the extension when Finder hides filename extensions.
     let name = sheet.textFields.firstMatch.value as? String
@@ -42,7 +42,7 @@ final class FileDialogTests: ZintlUITestCase {
     try launchWithDirectory()
 
     app.buttons["save"].click()
-    XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+    XCTAssertTrue(sheet.waitToExist(timeout: 5))
     sheet.buttons["Cancel"].click()
     assertLabel("result", "Cancelled", timeout: 5)
     assertLabel("saving-value", "Saving: false")
@@ -54,12 +54,12 @@ final class FileDialogTests: ZintlUITestCase {
     try launchWithDirectory()
 
     app.buttons["open"].click()
-    XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+    XCTAssertTrue(sheet.waitToExist(timeout: 5))
     // The file browser may scroll its columns out of view, so the path is typed instead.
     sheet.typeKey("g", modifierFlags: [.command, .shift])
     let goTo = sheet.sheets["GoToWindow"]
     let field = goTo.textFields["PathTextField"]
-    XCTAssertTrue(field.waitForExistence(timeout: 5))
+    XCTAssertTrue(field.waitToExist(timeout: 5))
     paste(directory.appendingPathComponent("existing.txt").path, into: field)
     field.typeKey(.return, modifierFlags: [])
     XCTAssertTrue(waitUntil(timeout: 5) { !goTo.exists })

@@ -11,7 +11,7 @@ final class ListTests: ZintlUITestCase {
   func testSectionsShowTitlesAndRows() throws {
     try launch(scenario: "list")
 
-    XCTAssertTrue(app.staticTexts["alpha-title"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.staticTexts["alpha-title"].waitToExist(timeout: 2))
     let pinned = app.staticTexts["Pinned"]
     let recent = app.staticTexts["Recent"]
     XCTAssertTrue(pinned.exists)

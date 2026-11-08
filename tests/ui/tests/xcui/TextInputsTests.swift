@@ -7,7 +7,7 @@ final class TextInputsTests: ZintlUITestCase {
     try launch(scenario: "text-inputs")
 
     let combo = app.comboBoxes["combo"]
-    XCTAssertTrue(combo.waitForExistence(timeout: 2))
+    XCTAssertTrue(combo.waitToExist(timeout: 2))
     combo.buttons.firstMatch.click()
     app.textFields["Osaka"].click()
     assertLabel("station-value", "Station: Osaka")
@@ -23,7 +23,7 @@ final class TextInputsTests: ZintlUITestCase {
     try launch(scenario: "text-inputs")
 
     let search = app.searchFields["search"]
-    XCTAssertTrue(search.waitForExistence(timeout: 2))
+    XCTAssertTrue(search.waitToExist(timeout: 2))
     search.click()
     search.typeText("Yama")
     assertLabel("query-value", "Query: Yama")
@@ -60,7 +60,7 @@ final class TextInputsTests: ZintlUITestCase {
   func testNumberFieldAcceptsTypedValuesAndSteps() throws {
     try launch(scenario: "text-inputs")
 
-    XCTAssertTrue(countField.waitForExistence(timeout: 2))
+    XCTAssertTrue(countField.waitToExist(timeout: 2))
     XCTAssertEqual(countField.value as? String, "3")
     enterCount("9")
     assertLabel("count-value", "Count: 9")
@@ -80,7 +80,7 @@ final class TextInputsTests: ZintlUITestCase {
   func testNumberFieldClampsValuesAboveItsRange() throws {
     try launch(scenario: "text-inputs")
 
-    XCTAssertTrue(countField.waitForExistence(timeout: 2))
+    XCTAssertTrue(countField.waitToExist(timeout: 2))
     enterCount("7")
     assertLabel("count-value", "Count: 7")
     XCTExpectFailure(

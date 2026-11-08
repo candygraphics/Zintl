@@ -6,7 +6,7 @@ final class ContextMenuTests: ZintlUITestCase {
   private func openStationMenu(file: StaticString = #filePath, line: UInt = #line) {
     app.staticTexts["station"].rightClick()
     XCTAssertTrue(
-      app.menuItems["Rename"].waitForExistence(timeout: 2), "The context menu did not open",
+      app.menuItems["Rename"].waitToExist(timeout: 2), "The context menu did not open",
       file: file, line: line)
   }
 
@@ -48,13 +48,13 @@ final class ContextMenuTests: ZintlUITestCase {
     try launch(scenario: "context-menu")
 
     let label = app.staticTexts["line-panel"]
-    XCTAssertTrue(label.waitForExistence(timeout: 2))
+    XCTAssertTrue(label.waitToExist(timeout: 2))
     // Clicks the container's padding above its label.
     label.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0)).withOffset(
       CGVector(dx: 0, dy: -8)
     ).rightClick()
     let edit = app.menuItems["Edit Line"]
-    XCTAssertTrue(edit.waitForExistence(timeout: 2))
+    XCTAssertTrue(edit.waitToExist(timeout: 2))
     XCTAssertFalse(app.menuItems["Rename"].exists)
     edit.click()
     assertLabel("log", "Log: Edit Line")

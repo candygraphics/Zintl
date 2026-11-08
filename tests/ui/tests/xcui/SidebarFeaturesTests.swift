@@ -21,7 +21,7 @@ final class SidebarFeaturesTests: ZintlUITestCase {
     try launch(scenario: "sidebar-features")
 
     let inbox = app.tables.tableRows.containing(.staticText, identifier: "Inbox").firstMatch
-    XCTAssertTrue(inbox.waitForExistence(timeout: 2))
+    XCTAssertTrue(inbox.waitToExist(timeout: 2))
     let badge = inbox.staticTexts.matching(NSPredicate(format: "value == '12'")).firstMatch
     XCTAssertTrue(badge.exists)
     XCTAssertGreaterThan(badge.frame.minX, app.staticTexts["Inbox"].frame.maxX)
@@ -32,7 +32,7 @@ final class SidebarFeaturesTests: ZintlUITestCase {
     try launch(scenario: "sidebar-features")
 
     let search = app.searchFields.firstMatch
-    XCTAssertTrue(search.waitForExistence(timeout: 2))
+    XCTAssertTrue(search.waitToExist(timeout: 2))
     XCTAssertEqual(search.placeholderValue, "Filter")
     search.click()
     search.typeText("dra")
@@ -45,7 +45,7 @@ final class SidebarFeaturesTests: ZintlUITestCase {
 
     app.staticTexts["Drafts"].rightClick()
     let archive = app.menuItems["Archive Drafts"]
-    XCTAssertTrue(archive.waitForExistence(timeout: 2))
+    XCTAssertTrue(archive.waitToExist(timeout: 2))
     XCTAssertTrue(app.menuItems["Rename Drafts"].exists)
     archive.click()
     assertLabel("log", "Log: Archive Drafts")
@@ -56,6 +56,6 @@ final class SidebarFeaturesTests: ZintlUITestCase {
     try launch(scenario: "sidebar-features")
 
     app.staticTexts["Sent"].rightClick()
-    XCTAssertFalse(app.menuItems["Archive Drafts"].waitForExistence(timeout: 1))
+    XCTAssertFalse(app.menuItems["Archive Drafts"].waitToExist(timeout: 1))
   }
 }

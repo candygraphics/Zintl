@@ -38,6 +38,11 @@ show a mode indicator that XCUITest treats as an interrupting dialog. Use
 5. Read test-provided paths and switches with `LaunchOptions::variable`; tests
    pass them through `launch(scenario:environment:)`.
 
+Wait with `waitToExist`, `waitForValue`, `assertLabel`, or `waitUntil` instead
+of `waitForExistence` or `XCTNSPredicateExpectation`; XCTest's own waits recheck
+only once per second. Pass `exitsOnItsOwn: true` to `launch` when the app quits
+by itself, so XCTest does not wait about 20 seconds for a crash report.
+
 ## Not covered by XCUITest
 
 Some behavior cannot be driven or observed through XCUITest on macOS. These

@@ -25,7 +25,7 @@ final class SplitViewTests: ZintlUITestCase {
   func testDraggingTheDividerResizesTheFirstPane() throws {
     try launch(scenario: "split-view")
 
-    XCTAssertTrue(app.staticTexts["top-pane"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.staticTexts["top-pane"].waitToExist(timeout: 2))
     XCTAssertEqual(secondPaneOffset(), 200 + divider, accuracy: 1)
 
     dragDivider(at: 200, by: 60)
@@ -37,7 +37,7 @@ final class SplitViewTests: ZintlUITestCase {
   func testDividerStaysInsideItsRange() throws {
     try launch(scenario: "split-view")
 
-    XCTAssertTrue(app.staticTexts["top-pane"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.staticTexts["top-pane"].waitToExist(timeout: 2))
     dragDivider(at: 200, by: 250)
     assertLabel("width-value", "Width: 300")
 
@@ -61,7 +61,7 @@ final class SplitViewTests: ZintlUITestCase {
 
     let top = app.staticTexts["top-pane"]
     let bottom = app.staticTexts["bottom-pane"]
-    XCTAssertTrue(bottom.waitForExistence(timeout: 2))
+    XCTAssertTrue(bottom.waitToExist(timeout: 2))
     // The split asks for 20 points, but its range starts at 60.
     XCTAssertEqual(bottom.frame.minY - top.frame.minY, 60 + divider, accuracy: 1)
   }

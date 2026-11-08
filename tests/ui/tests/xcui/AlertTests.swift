@@ -11,7 +11,7 @@ final class AlertTests: ZintlUITestCase {
   private func showConfirmation(file: StaticString = #filePath, line: UInt = #line) {
     app.buttons["delete-route"].click()
     XCTAssertTrue(
-      sheet.waitForExistence(timeout: 2), "The alert did not appear", file: file, line: line)
+      sheet.waitToExist(timeout: 2), "The alert did not appear", file: file, line: line)
   }
 
   /// Verifies the alert shows its title, message, and buttons as a sheet on its window.
@@ -47,7 +47,7 @@ final class AlertTests: ZintlUITestCase {
     try launch(scenario: "alert")
 
     app.buttons["show-timed"].click()
-    XCTAssertTrue(sheet.waitForExistence(timeout: 2))
+    XCTAssertTrue(sheet.waitToExist(timeout: 2))
     sheet.typeKey(.return, modifierFlags: [])
     assertLabel("log", "Log: wait")
     XCTAssertTrue(waitUntil { !self.sheet.exists })
@@ -74,7 +74,7 @@ final class AlertTests: ZintlUITestCase {
 
     app.buttons["show-timed"].click()
     // The app closes the alert 3 seconds after showing it.
-    XCTAssertTrue(sheet.waitForExistence(timeout: 2))
+    XCTAssertTrue(sheet.waitToExist(timeout: 2))
     XCTAssertTrue(sheet.staticTexts["Closing soon"].exists)
     XCTAssertTrue(waitUntil(timeout: 8) { !self.sheet.exists })
     assertLabel("timed-value", "false")
@@ -86,7 +86,7 @@ final class AlertTests: ZintlUITestCase {
     try launch(scenario: "alert")
 
     app.buttons["show-notice"].click()
-    XCTAssertTrue(sheet.waitForExistence(timeout: 2))
+    XCTAssertTrue(sheet.waitToExist(timeout: 2))
     XCTAssertTrue(sheet.staticTexts["Sync finished"].exists)
     sheet.buttons["OK"].click()
     XCTAssertTrue(waitUntil { !self.sheet.exists })

@@ -16,7 +16,7 @@ final class GridVariantsTests: ZintlUITestCase {
   func testStripedGridShadesAlternateRows() throws {
     try launch(scenario: "grid-variants")
 
-    XCTAssertTrue(app.staticTexts["plain-3"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.staticTexts["plain-3"].waitToExist(timeout: 2))
     let striped = rowBrightness("striped")
     XCTAssertGreaterThan(abs(striped[0] - striped[1]), 0.01, "\(striped)")
     XCTAssertEqual(striped[0], striped[2], accuracy: 0.005)

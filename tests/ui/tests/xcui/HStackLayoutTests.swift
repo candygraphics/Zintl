@@ -8,8 +8,8 @@ final class HStackLayoutTests: ZintlUITestCase {
 
     let leading = app.textFields["leading-field"]
     let trailing = app.textFields["trailing-field"]
-    XCTAssertTrue(leading.waitForExistence(timeout: 2))
-    XCTAssertTrue(trailing.waitForExistence(timeout: 2))
+    XCTAssertTrue(leading.waitToExist(timeout: 2))
+    XCTAssertTrue(trailing.waitToExist(timeout: 2))
 
     XCTAssertGreaterThan(trailing.frame.minX, leading.frame.maxX)
     XCTAssertEqual(trailing.frame.midY, leading.frame.midY, accuracy: 1)
@@ -22,7 +22,7 @@ final class HStackLayoutTests: ZintlUITestCase {
 
     let window = app.windows["main-window"]
     let leading = app.textFields["leading-field"]
-    XCTAssertTrue(leading.waitForExistence(timeout: 2))
+    XCTAssertTrue(leading.waitToExist(timeout: 2))
 
     let initialWindowFrame = window.frame
     let initialTopInset = leading.frame.minY - initialWindowFrame.minY
@@ -57,10 +57,10 @@ final class HStackLayoutTests: ZintlUITestCase {
     let spaceTrailing = app.textFields["space-trailing"]
     let equalLeading = app.textFields["equal-leading"]
     let equalTrailing = app.textFields["equal-trailing"]
-    XCTAssertTrue(spaceLeading.waitForExistence(timeout: 2))
-    XCTAssertTrue(spaceTrailing.waitForExistence(timeout: 2))
-    XCTAssertTrue(equalLeading.waitForExistence(timeout: 2))
-    XCTAssertTrue(equalTrailing.waitForExistence(timeout: 2))
+    XCTAssertTrue(spaceLeading.waitToExist(timeout: 2))
+    XCTAssertTrue(spaceTrailing.waitToExist(timeout: 2))
+    XCTAssertTrue(equalLeading.waitToExist(timeout: 2))
+    XCTAssertTrue(equalTrailing.waitToExist(timeout: 2))
 
     let initialLeadingInset = spaceLeading.frame.minX - window.frame.minX
     let initialTrailingInset = window.frame.maxX - spaceTrailing.frame.maxX

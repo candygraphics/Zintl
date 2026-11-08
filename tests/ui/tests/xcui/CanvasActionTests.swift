@@ -11,7 +11,7 @@ final class CanvasActionTests: ZintlUITestCase {
     try launch(scenario: "canvas-action")
 
     let status = app.staticTexts["canvas-status"]
-    XCTAssertTrue(status.waitForExistence(timeout: 2))
+    XCTAssertTrue(status.waitToExist(timeout: 2))
     XCTAssertEqual(status.value as? String, "Idle")
 
     canvasPoint.click()
@@ -23,7 +23,7 @@ final class CanvasActionTests: ZintlUITestCase {
     try launch(scenario: "canvas-action")
 
     let status = app.staticTexts["canvas-status"]
-    XCTAssertTrue(status.waitForExistence(timeout: 2))
+    XCTAssertTrue(status.waitToExist(timeout: 2))
 
     canvasPoint.click(
       forDuration: 0.2, thenDragTo: canvasPoint.withOffset(CGVector(dx: 100, dy: 0)))
