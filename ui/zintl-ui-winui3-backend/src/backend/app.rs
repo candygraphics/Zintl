@@ -7,7 +7,7 @@ use messageloop_dispatcherqueue::{
 };
 use zintl_ui::composer::Composer;
 use zintl_ui::event::EventRouteId;
-use zintl_ui_backend_core::{Event, MainTask, NodeId, RenderNode, StoreUpdates};
+use zintl_ui_backend_core::{Announcements, Event, MainTask, NodeId, RenderNode, StoreUpdates};
 use zpd_winui3::Application;
 
 use super::menu::Menus;
@@ -45,7 +45,11 @@ struct AppHandler {
 impl AppHandler {
     fn synchronize(&mut self, cx: &MessageContext<'_, Message>) {
         let backend = self.composer.backend_mut();
-        match backend.synchronize(cx.application(), &cx.sender()) {
+        let result = backend
+            .synchronize(cx.application(), &cx.sender())
+            // Announcements follow the changes that caused them.
+            .and_then(|()| backend.announce(&Announcements::take()));
+        match result {
             Ok(()) if backend.should_terminate() => cx.request_termination(),
             Ok(()) => {}
             Err(error) => {

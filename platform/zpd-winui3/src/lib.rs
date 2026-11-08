@@ -559,6 +559,18 @@ impl Window {
         })
     }
 
+    /// Asks screen readers to speak `text` without moving focus.
+    pub fn announce(&self, text: &str, priority: AnnouncementPriority) -> Result<()> {
+        // SAFETY: The window is live and the text is borrowed for this call.
+        check(unsafe {
+            ffi::zpd_winui3_window_announce(
+                self.raw.as_ptr(),
+                ffi::StringRef::new(text),
+                priority as i32,
+            )
+        })
+    }
+
     /// Sets whether closing asks first, and the app's undo history as `(can_undo, can_redo)`.
     pub fn set_document(&self, confirms_close: bool, undo: Option<(bool, bool)>) -> Result<()> {
         let (can_undo, can_redo) = undo.unwrap_or_default();
@@ -772,6 +784,37 @@ pub trait AsElement {
         })
     }
 
+    /// Sets what screen readers report for the element.
+    ///
+    /// `None` restores the element's own name, help text, or status.
+    fn set_accessibility(
+        &self,
+        name: Option<&str>,
+        help_text: Option<&str>,
+        item_status: Option<&str>,
+        view: AccessibilityView,
+    ) -> Result<()> {
+        // SAFETY: The element is live and the strings are borrowed for this call.
+        check(unsafe {
+            ffi::zpd_winui3_element_set_accessibility(
+                self.as_element().raw.as_ptr(),
+                ffi::StringRef::new(name.unwrap_or("")),
+                ffi::StringRef::new(help_text.unwrap_or("")),
+                ffi::StringRef::new(item_status.unwrap_or("")),
+                view as i32,
+            )
+        })
+    }
+
+    /// Names the element after `label`; `None` removes the link.
+    fn set_labeled_by(&self, label: Option<ElementRef<'_>>) -> Result<()> {
+        let label = label.map_or(std::ptr::null(), |label| label.raw.as_ptr().cast_const());
+        // SAFETY: Both elements are live on the UI thread.
+        check(unsafe {
+            ffi::zpd_winui3_element_set_labeled_by(self.as_element().raw.as_ptr(), label)
+        })
+    }
+
     /// Moves keyboard focus to the element.
     fn focus(&self) -> Result<()> {
         // SAFETY: The element is live on the UI thread.
@@ -822,6 +865,32 @@ impl Thickness {
             bottom: value,
         }
     }
+}
+
+/// Which UI Automation views include an element.
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AccessibilityView {
+    /// The element's own choice: controls appear, panels do not.
+    #[default]
+    Default = 0,
+    /// Hidden from screen readers.
+    Raw = 1,
+    /// Read by screen readers, such as a named panel.
+    Content = 2,
+}
+
+/// How an announcement treats speech already queued.
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AnnouncementPriority {
+    /// Speaks only the latest queued announcement.
+    Low = 0,
+    /// Speaks every announcement in turn.
+    #[default]
+    Medium = 1,
+    /// Interrupts other speech.
+    High = 2,
 }
 
 #[repr(i32)]

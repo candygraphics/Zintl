@@ -14,6 +14,7 @@
 #include <winrt/Microsoft.UI.Input.h>
 #include <winrt/Microsoft.UI.Interop.h>
 #include <winrt/Microsoft.UI.Text.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.Peers.h>
 #include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Microsoft.UI.Xaml.Hosting.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
@@ -931,6 +932,79 @@ int32_t zpd_winui3_element_set_tool_tip(zpd_winui3_element* element, zpd_winui3_
 
 int32_t zpd_winui3_element_set_identifier(zpd_winui3_element* element, zpd_winui3_string id) {
   return status([&] { Automation::AutomationProperties::SetAutomationId(element->value, string_from(id)); });
+}
+
+int32_t zpd_winui3_element_set_accessibility(
+    zpd_winui3_element* element, zpd_winui3_string name, zpd_winui3_string help_text, zpd_winui3_string item_status, int32_t view) {
+  return status([&] {
+    using Automation::AutomationProperties;
+    auto value = element->value;
+    // Clearing a property restores what the element reports by itself.
+    auto set = [&](DependencyProperty const& property, zpd_winui3_string text) {
+      if (text.length) {
+        value.SetValue(property, box_value(string_from(text)));
+      } else {
+        value.ClearValue(property);
+      }
+    };
+    auto old_status = AutomationProperties::GetItemStatus(value);
+    set(AutomationProperties::NameProperty(), name);
+    set(AutomationProperties::HelpTextProperty(), help_text);
+    set(AutomationProperties::ItemStatusProperty(), item_status);
+    switch (view) {
+      case ZPD_WINUI3_ACCESSIBILITY_VIEW_RAW:
+        AutomationProperties::SetAccessibilityView(value, Automation::Peers::AccessibilityView::Raw);
+        break;
+      case ZPD_WINUI3_ACCESSIBILITY_VIEW_CONTENT:
+        AutomationProperties::SetAccessibilityView(value, Automation::Peers::AccessibilityView::Content);
+        break;
+      default:
+        value.ClearValue(AutomationProperties::AccessibilityViewProperty());
+        break;
+    }
+    auto new_status = AutomationProperties::GetItemStatus(value);
+    if (old_status != new_status) {
+      if (auto peer = Automation::Peers::FrameworkElementAutomationPeer::FromElement(value)) {
+        peer.RaisePropertyChangedEvent(
+            Automation::AutomationElementIdentifiers::ItemStatusProperty(), box_value(old_status), box_value(new_status));
+      }
+    }
+  });
+}
+
+int32_t zpd_winui3_element_set_labeled_by(zpd_winui3_element* element, const zpd_winui3_element* label) {
+  return status([&] {
+    if (label) {
+      Automation::AutomationProperties::SetLabeledBy(element->value, label->value);
+    } else {
+      element->value.ClearValue(Automation::AutomationProperties::LabeledByProperty());
+    }
+  });
+}
+
+int32_t zpd_winui3_window_announce(zpd_winui3_window* window, zpd_winui3_string text, int32_t priority) {
+  return status([&] {
+    using namespace Automation::Peers;
+    if (!window->announcer) {
+      // Panels have no automation peer, so a text block raises the notifications.
+      TextBlock announcer;
+      announcer.Opacity(0);
+      announcer.IsHitTestVisible(false);
+      Automation::AutomationProperties::SetAccessibilityView(announcer, AccessibilityView::Raw);
+      window->shell.Children().Append(announcer);
+      window->announcer = announcer;
+    }
+    auto peer = FrameworkElementAutomationPeer::FromElement(window->announcer);
+    if (!peer) peer = FrameworkElementAutomationPeer::CreatePeerForElement(window->announcer);
+    if (!peer) return;
+    auto processing = AutomationNotificationProcessing::All;
+    switch (priority) {
+      case ZPD_WINUI3_ANNOUNCEMENT_LOW: processing = AutomationNotificationProcessing::MostRecent; break;
+      case ZPD_WINUI3_ANNOUNCEMENT_HIGH: processing = AutomationNotificationProcessing::ImportantAll; break;
+      default: break;
+    }
+    peer.RaiseNotificationEvent(AutomationNotificationKind::Other, processing, string_from(text), L"zintl.announcement");
+  });
 }
 
 int32_t zpd_winui3_element_focus(zpd_winui3_element* element) {

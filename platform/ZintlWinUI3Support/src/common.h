@@ -167,6 +167,8 @@ struct zpd_winui3_window {
   winrt::Microsoft::UI::Xaml::Controls::MenuBar menu_bar{nullptr};
   winrt::Microsoft::UI::Xaml::Controls::CommandBar toolbar{nullptr};
   winrt::Microsoft::UI::Xaml::FrameworkElement content{nullptr};
+  /* An invisible text block whose automation peer raises announcements; created on first use. */
+  winrt::Microsoft::UI::Xaml::Controls::TextBlock announcer{nullptr};
   std::shared_ptr<zpd::MenuTarget> menu_target;
   zpd::Callback closed_callback;
   zpd_winui3_invoke_fn closed_invoke{};

@@ -58,3 +58,10 @@ cases rely on unit tests, or the UI tests check a weaker property:
   instead.
 - **Color panel controls**: the panel's UI differs between macOS versions, so
   `ColorPanelTests` picks colors only through the hex field of its RGB sliders.
+- **Accessibility title elements and value descriptions**: XCUITest reports
+  `AXTitle` and `AXValue`, not the linked title view or the spoken value
+  description. The macOS tests in `platform/zpd-appkit/tests/macos/accessibility.rs`
+  read them back from AppKit instead. Spoken announcements cannot be observed
+  either; unit tests check that actions queue them.
+- **Accessibility audits**: `performAccessibilityAudit` does not finish in time
+  on macOS fixture apps, so `AccessibilityTests` checks names directly.

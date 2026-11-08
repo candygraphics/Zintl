@@ -1,4 +1,8 @@
 //! Shows every desktop control, presentation, and menu in one app.
+//!
+//! The views also describe themselves to screen readers: labels name controls
+//! without visible text, `accessibility_labeled_by` links fields to the text
+//! beside them, and actions announce their result.
 
 use zintl_ui_desktop::*;
 
@@ -58,31 +62,45 @@ impl Gallery {
             Toggle::new("Bold")
                 .style(ToggleStyle::Button)
                 .bind(self.bold),
+            // Each field is named by the text beside it.
             HStack::new(list![
-                Text::new("Size"),
-                Picker::new(["Small", "Medium", "Large"]).bind(self.size),
+                Text::new("Size").id("size-label"),
+                Picker::new(["Small", "Medium", "Large"])
+                    .bind(self.size)
+                    .accessibility_labeled_by("size-label"),
             ]),
             Picker::new(["List", "Grid", "Columns"])
                 .style(PickerStyle::Segmented)
-                .bind(self.layout),
+                .bind(self.layout)
+                .accessibility_label("Layout"),
             Picker::new(["Low", "Normal", "High"])
                 .style(PickerStyle::Radio)
-                .bind(self.priority),
+                .bind(self.priority)
+                .accessibility_label("Priority"),
             ComboBox::new(["Apple", "Banana", "Cherry"])
                 .placeholder("Fruit")
                 .bind(fruit),
             HStack::new(list![
-                Text::new("Volume"),
-                Slider::new(0.0..=100.0).ticks(11).bind(self.volume),
+                Text::new("Volume").id("volume-label"),
+                Slider::new(0.0..=100.0)
+                    .ticks(11)
+                    .bind(self.volume)
+                    .accessibility_labeled_by("volume-label"),
             ]),
             HStack::new(list![
-                Text::new("Quantity"),
+                Text::new("Quantity").id("quantity-label"),
                 NumberField::new()
                     .range(0.0..=99.0)
                     .step(1.0)
-                    .bind(self.quantity),
+                    .bind(self.quantity)
+                    .accessibility_labeled_by("quantity-label"),
             ]),
-            HStack::new(list![Text::new("Tint"), ColorWell::new().bind(self.tint)]),
+            HStack::new(list![
+                Text::new("Tint").id("tint-label"),
+                ColorWell::new()
+                    .bind(self.tint)
+                    .accessibility_labeled_by("tint-label"),
+            ]),
             SearchField::new()
                 .placeholder("Search items")
                 .bind(self.search),
@@ -123,10 +141,15 @@ impl Gallery {
 
     fn buttons(&self) -> VStack {
         let status = self.status;
+        // The status line changes away from the focused button, so it is also announced.
         let report = move |message: &'static str| {
-            move |cx: &mut Context<'_>| cx.update(status, |status| *status = message.into())
+            move |cx: &mut Context<'_>| {
+                cx.update(status, |status| *status = message.into());
+                cx.announce(message, AnnouncementPriority::Medium);
+            }
         };
         VStack::new(list![
+            // A labeled stack reads as one named group.
             HStack::new(list![
                 Button::new("Save")
                     .role(ButtonRole::Default)
@@ -136,21 +159,26 @@ impl Gallery {
                     .on_click(report("Cancelled")),
                 Button::new("Delete")
                     .role(ButtonRole::Destructive)
-                    .on_click(report("Deleted")),
-            ]),
+                    .on_click(report("Deleted"))
+                    .accessibility_hint("Deletes the item without asking"),
+            ])
+            .accessibility_label("Document actions"),
             HStack::new(list![
                 Button::new("Share")
                     .system_image("square.and.arrow.up")
                     .on_click(report("Shared")),
+                // Buttons without a title need a label.
                 Button::new("")
                     .system_image("gearshape")
                     .style(ButtonStyle::Borderless)
                     .minimum_size(Size::new(32.0, 32.0))
-                    .on_click(report("Gear")),
+                    .on_click(report("Gear"))
+                    .accessibility_label("Settings"),
                 Button::new("")
                     .style(ButtonStyle::Help)
                     .minimum_size(Size::new(32.0, 32.0))
-                    .on_click(report("Help")),
+                    .on_click(report("Help"))
+                    .accessibility_label("Help"),
                 Button::new("Toolbar")
                     .style(ButtonStyle::Toolbar)
                     .on_click(report("Toolbar")),
@@ -172,6 +200,7 @@ impl Gallery {
                 ),
             Text::new("Right-click for a context menu")
                 .minimum_size(Size::new(240.0, 20.0))
+                .accessibility_hint("Open its menu with Control-Option-Shift-M")
                 .context_menu([
                     MenuItem::new("Rename").on_select(report("Rename chosen")),
                     MenuItem::new("Duplicate")

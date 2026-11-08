@@ -143,11 +143,14 @@ pub fn nsstring_array<S: AsRef<str>>(values: &[S]) -> Strong {
 }
 
 /// Returns an autoreleased SF Symbol image, or nil when the name is unknown.
+///
+/// An empty `description` keeps the description the system gives the symbol.
 pub fn symbol_image(name: &str, description: &str) -> Id {
     let name = nsstring(name);
-    let description = nsstring(description);
-    // SAFETY: The class factory accepts live NSString arguments and may return nil.
+    let description = (!description.is_empty()).then(|| nsstring(description));
+    let description = description.as_ref().map_or(zpd_objc::NIL, Strong::as_ptr);
+    // SAFETY: The class factory accepts a live name and a live or nil description, and may return nil.
     unsafe {
-        msg_send!(zpd_objc::class!("NSImage"), zpd_objc::sel!("imageWithSystemSymbolName:accessibilityDescription:"), ((name.as_ptr()): Id, (description.as_ptr()): Id) => Id)
+        msg_send!(zpd_objc::class!("NSImage"), zpd_objc::sel!("imageWithSystemSymbolName:accessibilityDescription:"), ((name.as_ptr()): Id, (description): Id) => Id)
     }
 }

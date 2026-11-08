@@ -170,6 +170,7 @@ impl NativeView for Table {
             enabled: true,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         })
         .with_children(cells);
         let store = self.selection;

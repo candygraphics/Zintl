@@ -41,6 +41,7 @@ impl NativeView for View {
             enabled: true,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         })
         .with_children([self.children.clone().into_element()])
     }

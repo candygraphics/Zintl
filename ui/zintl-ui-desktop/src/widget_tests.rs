@@ -1829,3 +1829,98 @@ fn table_lays_out_cells_by_row_and_writes_the_selection() {
     );
     assert_eq!(app.get(selected), Some("b".to_owned()));
 }
+
+/// Returns the accessibility description of a rendered view.
+fn accessibility_of(node: &RenderedNode) -> &zintl_ui_backend_core::Accessibility {
+    match &node.value {
+        RenderNode::View { accessibility, .. } => accessibility,
+        other => panic!("expected a view, got {other:?}"),
+    }
+}
+
+#[test]
+fn accessibility_modifiers_reach_any_view() {
+    // Verifies every accessibility modifier lands on controls and containers alike.
+    let app = App::new(
+        VStack::new(list![
+            Button::new("")
+                .system_image("plus")
+                .accessibility_label("Add train")
+                .accessibility_hint("Adds a train to the timetable"),
+            Text::new("Speed").id("speed-label").accessibility_hidden(),
+            Slider::new(0.0..=100.0)
+                .accessibility_labeled_by("speed-label")
+                .accessibility_value("Fast"),
+        ])
+        .accessibility_label("Controls")
+        .accessibility_role(AccessibilityRole::Group),
+    );
+    let tree = app.render_tree();
+
+    let stack = accessibility_of(&tree);
+    assert_eq!(stack.label.as_deref(), Some("Controls"));
+    assert_eq!(stack.role, Some(AccessibilityRole::Group));
+    let button = accessibility_of(&tree.children[0]);
+    assert_eq!(button.label.as_deref(), Some("Add train"));
+    assert_eq!(
+        button.hint.as_deref(),
+        Some("Adds a train to the timetable")
+    );
+    assert!(accessibility_of(&tree.children[1]).hidden);
+    let slider = accessibility_of(&tree.children[2]);
+    assert_eq!(slider.labeled_by.as_deref(), Some("speed-label"));
+    assert_eq!(slider.value.as_deref(), Some("Fast"));
+}
+
+#[test]
+fn views_without_modifiers_keep_the_platform_description() {
+    // Verifies unmodified views carry no accessibility overrides.
+    let app = App::new(Button::new("Save"));
+
+    assert!(accessibility_of(&app.render_tree()).is_default());
+}
+
+#[test]
+fn disclosure_group_names_its_section_and_triangle() {
+    // Verifies the group and its triangle carry the title, and the visible title is not read twice.
+    let app = App::new(DisclosureGroup::new("Line settings", Text::new("Details")));
+    let tree = app.render_tree();
+    let header = &tree.children[0];
+
+    let group = accessibility_of(&tree);
+    assert_eq!(group.label.as_deref(), Some("Line settings"));
+    assert_eq!(group.role, Some(AccessibilityRole::Group));
+    assert_eq!(
+        accessibility_of(&header.children[0]).label.as_deref(),
+        Some("Line settings")
+    );
+    assert!(accessibility_of(&header.children[1]).hidden);
+}
+
+#[test]
+fn modifiers_override_a_views_own_description() {
+    // Verifies a modifier on a disclosure group replaces its default label but keeps its role.
+    let app = App::new(
+        DisclosureGroup::new("Line settings", Text::new("Details")).accessibility_label("Lines"),
+    );
+    let group = accessibility_of(&app.render_tree()).clone();
+
+    assert_eq!(group.label.as_deref(), Some("Lines"));
+    assert_eq!(group.role, Some(AccessibilityRole::Group));
+}
+
+#[test]
+fn actions_queue_announcements() {
+    // Verifies an action's announcement waits in the queue the backend posts from.
+    zintl_ui_backend_core::Announcements::take();
+    let mut app = App::new(Button::new("Save").on_click(|cx| {
+        cx.announce("Saved", AnnouncementPriority::High);
+    }));
+
+    app.dispatch_root_event(Event::Activated);
+
+    let announcements = zintl_ui_backend_core::Announcements::take();
+    assert_eq!(announcements.len(), 1);
+    assert_eq!(announcements[0].text, "Saved");
+    assert_eq!(announcements[0].priority, AnnouncementPriority::High);
+}

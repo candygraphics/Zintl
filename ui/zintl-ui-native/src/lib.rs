@@ -45,12 +45,13 @@ pub use zintl_ui::element::{Element, IntoElement, ListFactory};
 pub use zintl_ui::list;
 pub use zintl_ui::store::Store;
 pub use zintl_ui_backend_core::{
-    AlertStyle, BezelStyle, ButtonType, Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasId,
-    CanvasNode, CanvasSetup, Color, Cursor, DocumentState, Event, EventKind, Frame, GesturePhase,
-    Invalidator, Key, KeyEvent, KeyPhase, ListStyle, MagnifyEvent, Modifiers, NamedKey, NodeId,
-    PointerButton, PointerEvent, PointerPhase, PopoverEdge, Rect, Redraw, RedrawPolicy, RenderNode,
-    ScrollAlignment, ScrollAxes, ScrollEvent, ScrollTarget, Signal, StoreSender, TextAlignment,
-    TextColor, TextStyle, TitleBar, UndoState, ViewKind, WindowStyle, graphics,
+    Accessibility, AccessibilityRole, AlertStyle, AnnouncementPriority, BezelStyle, ButtonType,
+    Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasId, CanvasNode, CanvasSetup, Color,
+    Cursor, DocumentState, Event, EventKind, Frame, GesturePhase, Invalidator, Key, KeyEvent,
+    KeyPhase, ListStyle, MagnifyEvent, Modifiers, NamedKey, NodeId, PointerButton, PointerEvent,
+    PointerPhase, PopoverEdge, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAlignment, ScrollAxes,
+    ScrollEvent, ScrollTarget, Signal, StoreSender, TextAlignment, TextColor, TextStyle, TitleBar,
+    UndoState, ViewKind, WindowStyle, graphics,
 };
 #[cfg(feature = "wgpu")]
 pub use zintl_ui_backend_core::{

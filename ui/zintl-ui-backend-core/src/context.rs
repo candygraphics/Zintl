@@ -5,7 +5,7 @@ use zintl_ui::element::IntoElement;
 use zintl_ui::store::Store;
 use zintl_ui::view::{Context as ContextTrait, StoreContext, StoreWatcher};
 
-use crate::MainTaskSender;
+use crate::{Announcement, AnnouncementPriority, Announcements, MainTaskSender};
 
 /// Gives views access to Stores and to the platform main thread.
 pub struct Context<'a> {
@@ -43,6 +43,17 @@ impl<'a> Context<'a> {
             store,
             sender: self.main_sender().clone(),
         }
+    }
+
+    /// Asks assistive apps such as VoiceOver to speak `text`, for example after
+    /// a change that happened away from the focused view.
+    ///
+    /// Backends post it after the views it caused have rendered.
+    pub fn announce(&self, text: impl Into<String>, priority: AnnouncementPriority) {
+        Announcements::push(Announcement {
+            text: text.into(),
+            priority,
+        });
     }
 
     fn main_sender(&self) -> &Arc<MainTaskSender> {

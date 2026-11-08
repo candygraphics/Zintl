@@ -68,6 +68,7 @@ unsafe extern "C" fn validate_menu_item(object: Id, selector: zpd_objc::Sel, ite
 /// `zintlApplyParagraphStyle:`, whose sender's tag is a [`RichParagraph`].
 pub struct TextEditor {
     view: ViewActor,
+    text: crate::actor::ActorRef,
 }
 
 impl TextEditor {
@@ -126,6 +127,8 @@ impl TextEditor {
             (scroll, text)
         };
         let view = ViewActor::new(application, scroll);
+        let tree = view.actor().tree_handle().ok_or(UiError::Closed)?;
+        let text_actor = tree.insert_child(view.actor(), text.clone())?;
         let emit = callback::emitter(view.actor());
         callback::install_observer(
             view.actor(),
@@ -147,7 +150,15 @@ impl TextEditor {
                 emit(kind);
             },
         )?;
-        Ok(Self { view })
+        Ok(Self {
+            view,
+            text: text_actor,
+        })
+    }
+
+    /// Returns the text view, which VoiceOver reads instead of the scroll view.
+    pub fn accessibility_view(&self) -> ViewRef<'_> {
+        ViewRef::from_actor(&self.text)
     }
 
     /// Returns the paragraph style at the start of the selection.

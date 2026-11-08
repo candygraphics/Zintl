@@ -833,6 +833,28 @@ int32_t zpd_winui3_element_measure(
 int32_t zpd_winui3_element_set_tool_tip(zpd_winui3_element* element, zpd_winui3_string text);
 /* Sets the automation id that scroll viewers reveal by. */
 int32_t zpd_winui3_element_set_identifier(zpd_winui3_element* element, zpd_winui3_string id);
+
+/* Which UI Automation views include an element. */
+enum zpd_winui3_accessibility_view {
+  /* The element's own choice: controls appear, panels do not. */
+  ZPD_WINUI3_ACCESSIBILITY_VIEW_DEFAULT = 0,
+  /* Hidden from screen readers. */
+  ZPD_WINUI3_ACCESSIBILITY_VIEW_RAW = 1,
+  /* Read by screen readers, such as a named panel. */
+  ZPD_WINUI3_ACCESSIBILITY_VIEW_CONTENT = 2,
+};
+
+/* Sets the automation name, help text, item status, and view; empty strings
+   restore the element's own values. A changed item status is announced. */
+int32_t zpd_winui3_element_set_accessibility(
+    zpd_winui3_element* element,
+    zpd_winui3_string name,
+    zpd_winui3_string help_text,
+    zpd_winui3_string item_status,
+    int32_t view);
+/* Names the element after `label`; null removes the link. */
+int32_t zpd_winui3_element_set_labeled_by(
+    zpd_winui3_element* element, const zpd_winui3_element* label);
 int32_t zpd_winui3_element_focus(zpd_winui3_element* element);
 /* The height of the element's top part under the window's title bar. */
 double zpd_winui3_element_title_bar_inset(const zpd_winui3_element* element);
@@ -876,6 +898,18 @@ int32_t zpd_winui3_window_set_event_handler(
 int32_t zpd_winui3_window_set_toolbar(
     zpd_winui3_window* window, const zpd_winui3_toolbar_item* items, size_t length);
 /* While `confirms_close` is set, closing reports a close request instead. */
+enum zpd_winui3_announcement_priority {
+  /* Speaks only the latest of queued announcements. */
+  ZPD_WINUI3_ANNOUNCEMENT_LOW = 0,
+  /* Speaks every announcement in turn. */
+  ZPD_WINUI3_ANNOUNCEMENT_MEDIUM = 1,
+  /* Interrupts other speech. */
+  ZPD_WINUI3_ANNOUNCEMENT_HIGH = 2,
+};
+
+/* Asks screen readers to speak `text` without moving focus. */
+int32_t zpd_winui3_window_announce(
+    zpd_winui3_window* window, zpd_winui3_string text, int32_t priority);
 int32_t zpd_winui3_window_set_document(
     zpd_winui3_window* window, bool confirms_close, bool undo, bool can_undo, bool can_redo);
 /* Restores the placement saved under `name` and saves it again when the window closes. */

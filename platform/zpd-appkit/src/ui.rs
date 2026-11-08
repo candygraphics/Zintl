@@ -1,3 +1,4 @@
+mod accessibility;
 mod button;
 pub(crate) mod callback;
 mod canvas;
@@ -23,6 +24,10 @@ mod toolbar;
 mod view;
 mod window;
 
+pub use accessibility::{
+    AccessibilityAnnouncement, AccessibilityAttributes, AccessibilityNotification,
+    AccessibilityRole, AnnouncementPriority,
+};
 pub use button::{BezelStyle, Button, ButtonType};
 pub use canvas::{
     CanvasDelegate, CanvasFrame, CanvasHandle, CanvasInput, CanvasInputDelegate, CanvasRedraw,

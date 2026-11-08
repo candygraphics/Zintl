@@ -193,6 +193,7 @@ impl NativeView for Button {
             enabled: self.enabled,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         });
         if let Some(action) = self.action.clone() {
             element = element.on_event(EventKind::Activated, move |cx, event| {

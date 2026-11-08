@@ -78,6 +78,7 @@ impl State {
         cx.update(self.query, String::clear);
         self.select(cx, Some(id));
         cx.update(self.focus, |focus| *focus += 1);
+        cx.announce("New note", AnnouncementPriority::Medium);
     }
 
     fn delete_selected(&self, cx: &mut Context<'_>) {
@@ -88,7 +89,18 @@ impl State {
 
     /// Moves a note to Recently Deleted, or removes it from there.
     fn delete(&self, cx: &mut Context<'_>, id: NoteId) {
+        let deleted = cx
+            .get(self.library)
+            .note(id)
+            .is_some_and(|note| note.deleted);
         self.change(cx, |library| library.delete(id));
+        // Deleting from the toolbar or a menu leaves focus elsewhere, so the result is spoken.
+        let message = if deleted {
+            "Note deleted"
+        } else {
+            "Moved to Recently Deleted"
+        };
+        cx.announce(message, AnnouncementPriority::Medium);
         if *cx.get(self.selected) == Some(id) {
             cx.update(self.selected, |selected| *selected = None);
             self.select_folder(cx);
@@ -97,6 +109,14 @@ impl State {
 
     fn move_note(&self, cx: &mut Context<'_>, id: NoteId, folder: String) {
         self.change(cx, |library| library.move_note(id, &folder));
+        let name = cx
+            .get(self.library)
+            .folders
+            .iter()
+            .find(|candidate| candidate.id == folder)
+            .map(|folder| folder.name.clone())
+            .unwrap_or(folder);
+        cx.announce(format!("Moved to {name}"), AnnouncementPriority::Medium);
     }
 
     /// Creates a folder, selects it, and asks for its name.
@@ -142,10 +162,13 @@ impl State {
     }
 
     fn toggle_pin(&self, cx: &mut Context<'_>, id: NoteId) {
-        self.change(cx, |library| {
-            let pinned = library.note(id).is_some_and(|note| note.pinned);
-            library.set_pinned(id, !pinned);
+        let pinned = self.change(cx, |library| {
+            let pinned = !library.note(id).is_some_and(|note| note.pinned);
+            library.set_pinned(id, pinned);
+            pinned
         });
+        let message = if pinned { "Pinned" } else { "Unpinned" };
+        cx.announce(message, AnnouncementPriority::Medium);
     }
 }
 
@@ -284,7 +307,8 @@ impl View for NotesApp {
                     VStack::new(list![
                         TextField::new()
                             .bind(state.rename_text)
-                            .placeholder("Folder name"),
+                            .placeholder("Folder name")
+                            .accessibility_label("Folder name"),
                         HStack::new(list![
                             Spacer::new(),
                             Button::new("Cancel").role(ButtonRole::Cancel).on_click(
@@ -341,6 +365,13 @@ impl NoteList {
             .spacing(2.0)
             .padding(6.0)
             .fill_width()
+            // VoiceOver reads each row as one item instead of two separate texts.
+            .accessibility_label(note.title())
+            .accessibility_value(if note.pinned {
+                format!("Pinned, {}", note.preview())
+            } else {
+                note.preview().to_owned()
+            })
             .context_menu([
                 MenuItem::new(pin).on_select(move |cx| state.toggle_pin(cx, id)),
                 MenuItem::submenu(Menu::new("Move to", destinations)),
@@ -400,12 +431,15 @@ impl View for NoteList {
                     (1, false) => "1 result".to_owned(),
                     (count, false) => format!("{count} results"),
                 })
-                .color(TextColor::Secondary),
+                .color(TextColor::Secondary)
+                .id("note-count"),
             ])
             .alignment(CrossAxisAlignment::Center)
             .padding(12.0)
             .fill_width(),
+            // The list is named by the count above it, such as "3 notes".
             List::new(sections)
+                .accessibility_labeled_by("note-count")
                 .bind(state.row)
                 .on_select(move |cx, id| {
                     state.select(cx, id.and_then(|id| id.parse().ok()));
@@ -434,11 +468,17 @@ impl View for Editor {
                 .fill_width()
                 .grow();
         }
+        let title = cx
+            .get(state.selected)
+            .and_then(|id| cx.get(state.library).note(id))
+            .map(|note| note.title().to_owned())
+            .unwrap_or_default();
         VStack::new(list![
             TextEditor::new()
                 .bind(state.draft)
                 .focus_on(state.focus)
-                .on_change(move |cx| state.save(cx)),
+                .on_change(move |cx| state.save(cx))
+                .accessibility_label(title),
         ])
         .fill_width()
         .grow()

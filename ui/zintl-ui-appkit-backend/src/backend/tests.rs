@@ -11,6 +11,7 @@ use zpd_appkit::actor::WindowEventKind;
 use super::app::WindowEventAction;
 use super::layout::native_frame;
 use super::*;
+use crate::Accessibility;
 
 /// Builds the render nodes the tests insert.
 struct Nodes;
@@ -24,6 +25,7 @@ impl Nodes {
             enabled: true,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         }
     }
 
@@ -220,4 +222,51 @@ fn colors_match_within_conversion_tolerance() {
     let color = Color::rgba(0.2, 0.4, 0.6, 1.0);
     assert!(colors_match(color, Color::rgba(0.2001, 0.4, 0.6, 1.0)));
     assert!(!colors_match(color, Color::rgba(0.3, 0.4, 0.6, 1.0)));
+}
+
+#[test]
+fn containers_become_named_groups_only_when_labeled() {
+    // Verifies containers stay transparent to VoiceOver until a label makes them a group.
+    use zpd_appkit::ui::AccessibilityRole as NativeRole;
+
+    let plain =
+        NativeNode::accessibility_attributes(&ViewKind::Container, &Accessibility::default());
+    assert!(!plain.element);
+    assert_eq!(plain.role, None);
+
+    let named = Accessibility {
+        label: Some("Toolbox".into()),
+        value: Some("3 tools".into()),
+        ..Accessibility::default()
+    };
+    let group = NativeNode::accessibility_attributes(&ViewKind::Container, &named);
+    assert!(group.element);
+    assert_eq!(group.role, Some(NativeRole::Group));
+    assert!(group.replaces_value);
+}
+
+#[test]
+fn controls_keep_their_value_and_hide_on_request() {
+    // Verifies controls describe rather than replace their value, and only `hidden` removes them.
+    let slider = ViewKind::Slider {
+        value: 0.5,
+        minimum: 0.0,
+        maximum: 1.0,
+        tick_marks: 0,
+        snaps_to_ticks: false,
+    };
+    let described = Accessibility {
+        value: Some("Half".into()),
+        ..Accessibility::default()
+    };
+    let attributes = NativeNode::accessibility_attributes(&slider, &described);
+    assert!(attributes.element);
+    assert!(!attributes.replaces_value);
+    assert_eq!(attributes.role, None);
+
+    let hidden = Accessibility {
+        hidden: true,
+        ..Accessibility::default()
+    };
+    assert!(!NativeNode::accessibility_attributes(&slider, &hidden).element);
 }
