@@ -21,6 +21,7 @@ impl Nodes {
             enabled: true,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         }
     }
 

@@ -30,6 +30,7 @@ macro_rules! scenarios {
 }
 
 scenarios! {
+    accessibility => "accessibility": |_| accessibility::MainView::new(),
     alert => "alert": |_| alert::MainView::new(),
     arrangements => "arrangements": |_| arrangements::MainView::new(),
     buttons => "buttons": |_| buttons::MainView::new(),

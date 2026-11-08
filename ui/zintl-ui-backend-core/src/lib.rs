@@ -3,6 +3,7 @@
 //! Views render [`RenderNode`] descriptions; each backend maps them to its
 //! platform's views and reports [`Event`]s back.
 
+mod accessibility;
 mod canvas;
 mod context;
 mod event;
@@ -15,6 +16,9 @@ pub mod headless;
 pub mod layout;
 pub mod tree;
 
+pub use accessibility::{
+    Accessibility, AccessibilityRole, Announcement, AnnouncementPriority, Announcements,
+};
 pub use canvas::{
     Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasHost, CanvasId, CanvasNode,
     CanvasSetup, Cursor, Frame, GesturePhase, Invalidator, Key, KeyEvent, KeyPhase, MagnifyEvent,
@@ -220,6 +224,8 @@ pub enum RenderNode {
         title_bar_interactive: bool,
         /// Text shown when the pointer rests on the view, such as why it is disabled.
         help: Option<String>,
+        /// What assistive apps such as VoiceOver report for the view.
+        accessibility: Accessibility,
     },
     /// A contextual menu for the parent view.
     ContextMenu { items: Vec<CommandItem> },

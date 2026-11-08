@@ -158,6 +158,7 @@ impl NativeView for List {
             enabled: true,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         })
         .with_children(rows);
         self.route(element)

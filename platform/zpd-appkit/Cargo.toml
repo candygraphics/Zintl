@@ -27,6 +27,11 @@ path = "tests/controls.rs"
 harness = false
 
 [[test]]
+name = "accessibility"
+path = "tests/accessibility.rs"
+harness = false
+
+[[test]]
 name = "title_bar"
 path = "tests/title_bar.rs"
 harness = false

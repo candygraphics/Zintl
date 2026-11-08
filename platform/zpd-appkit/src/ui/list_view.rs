@@ -304,6 +304,11 @@ impl ListView {
         })
     }
 
+    /// Returns the table, which VoiceOver reads instead of the scroll view.
+    pub fn accessibility_view(&self) -> ViewRef<'_> {
+        ViewRef::from_actor(&self.table)
+    }
+
     /// Shows `columns` with headers; an empty slice shows one untitled list column.
     ///
     /// Apply the rows again with [`ListView::set_entries`] afterwards.

@@ -606,6 +606,10 @@ impl NumberField {
         })?;
         Ok(())
     }
+    /// Returns the text field, which VoiceOver reads as the number.
+    pub fn accessibility_view(&self) -> ViewRef<'_> {
+        ViewRef::from_actor(&self.field)
+    }
     /// Shows `text` over both the field and its stepper.
     pub fn set_tool_tip(&self, text: Option<&str>) -> Result<(), UiError> {
         for control in [&self.field, &self.stepper] {

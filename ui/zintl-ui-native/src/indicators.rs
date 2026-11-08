@@ -62,6 +62,7 @@ impl NativeView for ProgressIndicator {
             enabled: true,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         })
     }
 }
@@ -121,6 +122,7 @@ impl NativeView for Separator {
             enabled: true,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         })
     }
 }

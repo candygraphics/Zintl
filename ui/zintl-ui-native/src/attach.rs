@@ -1,3 +1,5 @@
+use zintl_ui_backend_core::{Accessibility, AccessibilityRole};
+
 use crate::{Context, Element, Menu, Popover, RenderNode};
 
 /// A view that renders exactly one native element.
@@ -20,6 +22,7 @@ pub trait NativeView: Clone + 'static {
                 RenderNode::View {
                     title_bar_interactive,
                     help,
+                    accessibility,
                     ..
                 },
             ..
@@ -27,6 +30,8 @@ pub trait NativeView: Clone + 'static {
         {
             *title_bar_interactive = self.attachments().title_bar_interactive;
             help.clone_from(&self.attachments().help);
+            // Views may describe themselves; modifiers win over that.
+            accessibility.merge(&self.attachments().accessibility);
         }
         self.attachments().attach(element, cx)
     }
@@ -64,6 +69,48 @@ pub trait Attach: NativeView + Sized {
         self.attachments_mut().help = Some(text.into());
         self
     }
+
+    /// Names the view for assistive apps such as VoiceOver.
+    ///
+    /// Use it for controls without visible text, such as a button showing only
+    /// a symbol. A label also turns a container or canvas into a named element.
+    fn accessibility_label(mut self, label: impl Into<String>) -> Self {
+        self.attachments_mut().accessibility.label = Some(label.into());
+        self
+    }
+
+    /// Describes the view's current value, such as "3 of 10 done".
+    fn accessibility_value(mut self, value: impl Into<String>) -> Self {
+        self.attachments_mut().accessibility.value = Some(value.into());
+        self
+    }
+
+    /// Explains what using the view does, such as "Removes the selected train".
+    fn accessibility_hint(mut self, hint: impl Into<String>) -> Self {
+        self.attachments_mut().accessibility.hint = Some(hint.into());
+        self
+    }
+
+    /// Replaces the role assistive apps report, such as [`AccessibilityRole::Group`]
+    /// for a stack that reads as one section.
+    fn accessibility_role(mut self, role: AccessibilityRole) -> Self {
+        self.attachments_mut().accessibility.role = Some(role);
+        self
+    }
+
+    /// Hides the view itself from assistive apps, such as decorative text that
+    /// repeats a neighbor; its subviews stay reachable.
+    fn accessibility_hidden(mut self) -> Self {
+        self.attachments_mut().accessibility.hidden = true;
+        self
+    }
+
+    /// Names the view with the text of the view whose ID is `id`, such as a
+    /// `Text` beside a slider.
+    fn accessibility_labeled_by(mut self, id: impl Into<String>) -> Self {
+        self.attachments_mut().accessibility.labeled_by = Some(id.into());
+        self
+    }
 }
 
 impl<V: NativeView> Attach for V {}
@@ -75,6 +122,7 @@ pub struct Attachments {
     popovers: Vec<Popover>,
     title_bar_interactive: bool,
     help: Option<String>,
+    accessibility: Accessibility,
 }
 
 impl Attachments {

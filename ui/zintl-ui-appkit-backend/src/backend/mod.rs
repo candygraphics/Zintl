@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
@@ -11,8 +12,8 @@ use zintl_ui_layout::{LayoutError, Size};
 use zpd_appkit::actor::{ActorId, EventRouteToken};
 use zpd_appkit::runloop::{Application, ApplicationError};
 use zpd_appkit::ui::{
-    AlertSheet, ColorPanelSession, ContextMenu, FileDialogSheet, ListEntry, Popover, UiError,
-    ViewRef,
+    AccessibilityNotification, AlertSheet, ColorPanelSession, ContextMenu, FileDialogSheet,
+    ListEntry, Popover, UiError, ViewRef,
 };
 
 mod app;
@@ -31,8 +32,8 @@ use native::NativeNode;
 use crate::convert::{Native, Shared};
 
 use super::{
-    Color, CommandSet, Context, MainTask, NodeId, Rect, RenderNode, Sidebar, TitleBar, Toolbar,
-    ViewKind, WindowStyle,
+    Accessibility, Color, CommandSet, Context, MainTask, NodeId, Rect, RenderNode, Sidebar,
+    TitleBar, Toolbar, ViewKind, WindowStyle,
 };
 use zintl_ui_backend_core::layout::{HostLayout, LayoutSnapshot};
 use zintl_ui_backend_core::tree::{ErrorSlot, MainTasks, NodeTree};
@@ -157,6 +158,8 @@ pub struct AppKitBackend {
     default_main_menu: Option<CommandSet>,
     opened_window: bool,
     gpu: GpuSlot,
+    /// Set when an ID or `labeled_by` changed, so accessibility titles relink.
+    titles_dirty: bool,
 }
 
 impl Default for AppKitBackend {
@@ -178,6 +181,7 @@ impl AppKitBackend {
             default_main_menu: None,
             opened_window: false,
             gpu: GpuSlot::default(),
+            titles_dirty: false,
         }
     }
 
@@ -288,6 +292,7 @@ impl AppKitBackend {
         }
         self.structure_dirty = false;
         self.layout_dirty = false;
+        self.titles_dirty = false;
         self.pending_error.take()
     }
 
@@ -448,6 +453,9 @@ impl AppKitBackend {
             })
             .ok_or(UiError::Closed)??;
         }
+        if rebuild_structure || self.titles_dirty {
+            self.link_accessibility_titles(window_id)?;
+        }
         let update_layout = self.layout_dirty || rebuild_structure;
         if update_layout {
             let children = self.content_snapshots(window_id)?;
@@ -490,6 +498,7 @@ impl AppKitBackend {
                     enabled,
                     title_bar_interactive,
                     help,
+                    accessibility,
                     ..
                 } = self.kind(child)
             {
@@ -509,6 +518,9 @@ impl AppKitBackend {
                 }
                 if help.is_some() {
                     native.set_tool_tip(help.as_deref())?;
+                }
+                if !accessibility.is_default() {
+                    native.set_accessibility(&kind, &Accessibility::default(), &accessibility)?;
                 }
                 native
                     .as_view()
@@ -861,6 +873,7 @@ impl AppKitBackend {
                 enabled: old_enabled,
                 title_bar_interactive: old_interactive,
                 help: old_help,
+                accessibility: old_accessibility,
                 ..
             },
             RenderNode::View {
@@ -869,6 +882,7 @@ impl AppKitBackend {
                 enabled: new_enabled,
                 title_bar_interactive: new_interactive,
                 help: new_help,
+                accessibility: new_accessibility,
                 ..
             },
         ) = (old, new)
@@ -890,6 +904,55 @@ impl AppKitBackend {
             native.set_tool_tip(new_help.as_deref())?;
         }
         native.apply(Some(old_kind), new_kind)?;
+        if old_accessibility != new_accessibility {
+            native.set_accessibility(new_kind, old_accessibility, new_accessibility)?;
+            if new_accessibility.labeled_by.is_none() && old_accessibility.labeled_by.is_some() {
+                native
+                    .accessibility_view()
+                    .set_accessibility_title_element(None)?;
+            }
+            if new_accessibility.value.is_some()
+                && old_accessibility.value != new_accessibility.value
+            {
+                native
+                    .accessibility_view()
+                    .post_accessibility_notification(AccessibilityNotification::ValueChanged)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Names views declared with `labeled_by` after the view with that ID in `root`.
+    fn link_accessibility_titles(&self, root: NodeId) -> Result<(), AppError> {
+        let mut ids = HashMap::new();
+        let mut labeled = Vec::new();
+        let mut pending = vec![root];
+        while let Some(node) = pending.pop() {
+            if let Some(RenderNode::View {
+                id, accessibility, ..
+            }) = self.value(node)
+            {
+                if let Some(id) = id {
+                    ids.entry(id.as_str()).or_insert(node);
+                }
+                if let Some(target) = &accessibility.labeled_by {
+                    labeled.push((node, target.as_str()));
+                }
+            }
+            // Children are visited in declaration order, so the first view with an ID wins.
+            pending.extend(self.children(node).iter().rev());
+        }
+        for (node, target) in labeled {
+            let Some(native) = self.state(node).native.as_ref() else {
+                continue;
+            };
+            let title = ids
+                .get(target)
+                .and_then(|title| self.state(*title).native.as_ref());
+            native
+                .accessibility_view()
+                .set_accessibility_title_element(title.map(|title| title.accessibility_view()))?;
+        }
         Ok(())
     }
 }
@@ -917,6 +980,22 @@ impl RenderBackend<RenderNode> for AppKitBackend {
         new.adopt_canvas(&old);
         if let Err(error) = self.update_native(id, &old, &new) {
             self.record_error(error);
+        }
+        if let (
+            RenderNode::View {
+                id: old_id,
+                accessibility: old_accessibility,
+                ..
+            },
+            RenderNode::View {
+                id: new_id,
+                accessibility: new_accessibility,
+                ..
+            },
+        ) = (&old, &new)
+            && (old_id != new_id || old_accessibility.labeled_by != new_accessibility.labeled_by)
+        {
+            self.titles_dirty = true;
         }
         // List sections are applied together with their rows.
         if let (

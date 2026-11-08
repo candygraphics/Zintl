@@ -6,10 +6,11 @@ use zintl_ui::composer::Composer;
 use zintl_ui::event::EventRouteId;
 use zpd_appkit::actor::{WindowEvent, WindowEventKind};
 use zpd_appkit::runloop::Application;
+use zpd_appkit::ui::{AccessibilityAnnouncement, AnnouncementPriority as NativePriority};
 
 use super::{AppError, AppKitBackend};
 use crate::convert::Shared;
-use crate::{Event, MainTask, RenderNode, StoreUpdates};
+use crate::{AnnouncementPriority, Announcements, Event, MainTask, RenderNode, StoreUpdates};
 
 pub(super) enum Message {
     Window(WindowEvent),
@@ -51,7 +52,17 @@ struct AppHandler<'application> {
 impl AppHandler<'_> {
     fn synchronize(&mut self, cx: &MessageContext<'_, '_, Message>) {
         let backend = self.composer.backend_mut();
-        match backend.synchronize(self.application, cx) {
+        let result = backend.synchronize(self.application, cx);
+        // Announcements follow the changes that caused them.
+        for announcement in Announcements::take() {
+            let priority = match announcement.priority {
+                AnnouncementPriority::Low => NativePriority::Low,
+                AnnouncementPriority::Medium => NativePriority::Medium,
+                AnnouncementPriority::High => NativePriority::High,
+            };
+            AccessibilityAnnouncement::post(&announcement.text, priority);
+        }
+        match result {
             Ok(()) if backend.should_terminate() => cx.request_termination(),
             Ok(()) => {}
             Err(error) => {

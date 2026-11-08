@@ -5,8 +5,8 @@ use zintl_ui::view::View;
 use zintl_ui_layout::{Arrangement, Axis, GridCell, LayoutDimension, LayoutStyle, Size};
 
 use crate::{
-    Attachments, Canvas2D, Canvas2DHandler, Color, Context, Element, Frame, Graphics2D,
-    ListFactory, NativeView, RenderNode, Store, Text, list,
+    AccessibilityRole, Attach, Attachments, Canvas2D, Canvas2DHandler, Color, Context, Element,
+    Frame, Graphics2D, ListFactory, NativeView, RenderNode, Store, Text, list,
 };
 
 /// A plain native container for the arrangements below.
@@ -186,6 +186,7 @@ pub struct DisclosureGroup {
     binding: Option<Store<bool>>,
     expanded: Store<bool>,
     id: Option<String>,
+    attachments: Attachments,
 }
 
 impl DisclosureGroup {
@@ -199,6 +200,7 @@ impl DisclosureGroup {
             binding: None,
             expanded: Store::default(),
             id: None,
+            attachments: Attachments::default(),
         }
     }
 
@@ -223,21 +225,42 @@ impl View for DisclosureGroup {
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
+        self.native_element(cx)
+    }
+}
+
+impl NativeView for DisclosureGroup {
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let expanded = self.expanded;
         let open = *cx.get(expanded);
+        // The triangle carries the title for VoiceOver, so the visible title is not read twice.
         let mut toggle = zintl_ui_native::Button::new("")
             .bezel_style(Some(zintl_ui_native::BezelStyle::Disclosure))
             .button_type(zintl_ui_native::ButtonType::PushOnPushOff)
             .minimum_size(Size::new(13.0, 13.0))
-            .bind_state(expanded);
+            .bind_state(expanded)
+            .accessibility_label(self.title.clone());
         if let Some(id) = &self.id {
             toggle = toggle.id(id.clone());
         }
-        let header = crate::HStack::new(list![toggle, Text::new(self.title.clone())]).spacing(4.0);
+        let title = Text::new(self.title.clone()).accessibility_hidden();
+        let header = crate::HStack::new(list![toggle, title]).spacing(4.0);
         let mut rows = list![header];
         if open {
             rows.push(self.content.clone());
         }
-        crate::VStack::new(rows).spacing(6.0)
+        crate::VStack::new(rows)
+            .spacing(6.0)
+            .accessibility_label(self.title.clone())
+            .accessibility_role(AccessibilityRole::Group)
+            .native_element(cx)
+    }
+
+    fn attachments(&self) -> &Attachments {
+        &self.attachments
+    }
+
+    fn attachments_mut(&mut self) -> &mut Attachments {
+        &mut self.attachments
     }
 }

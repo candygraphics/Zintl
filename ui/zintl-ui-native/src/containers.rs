@@ -104,6 +104,7 @@ impl NativeView for ScrollView {
             enabled: true,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         })
         .with_children([self.content.clone().into_element()]);
         let Some(store) = self.store else {
@@ -213,6 +214,7 @@ impl NativeView for TabView {
                 enabled: true,
                 title_bar_interactive: false,
                 help: None,
+                accessibility: Default::default(),
             })
             .with_children([item.content.clone().into_element()])
         });
@@ -226,6 +228,7 @@ impl NativeView for TabView {
             enabled: true,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         })
         .with_children(pages);
         if self.store.is_none() && self.action.is_none() {

@@ -4,9 +4,10 @@ use std::sync::Arc;
 
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
-    AsView, Button, CanvasView, ColorWell, ComboBox, ListView, NumberField, PopUpButton,
-    ProgressIndicator, ScrollView, SearchField, SegmentedControl, Separator, Slider, Switch,
-    TabView, TextEditor, TextField, UiError, View, ViewRef,
+    AccessibilityAttributes, AccessibilityRole as NativeRole, AsView, Button, CanvasView,
+    ColorWell, ComboBox, ListView, NumberField, PopUpButton, ProgressIndicator, ScrollView,
+    SearchField, SegmentedControl, Separator, Slider, Switch, TabView, TextEditor, TextField,
+    UiError, View, ViewRef,
 };
 
 use zintl_ui_layout::Size;
@@ -20,7 +21,7 @@ use super::canvas::CanvasBridge;
 use super::wgpu::WgpuBridge;
 use super::{AppError, GpuSlot};
 use crate::convert::{Native, Shared};
-use crate::{ButtonType, MainTaskSender, ViewKind};
+use crate::{Accessibility, AccessibilityRole, ButtonType, MainTaskSender, ViewKind};
 
 /// Scrolling that waits for a scroll view's next layout.
 #[derive(Default)]
@@ -218,6 +219,68 @@ impl NativeNode {
             width.map_or(declared.width, |width| width.ceil() as f32),
             declared.height,
         )))
+    }
+
+    /// Returns the view VoiceOver reads for this node, inside any scroll view or stepper.
+    pub(super) fn accessibility_view(&self) -> ViewRef<'_> {
+        match self {
+            Self::TextEditor(editor) => editor.accessibility_view(),
+            Self::NumberField(field) => field.accessibility_view(),
+            Self::List(list, _) => list.accessibility_view(),
+            _ => self.as_view(),
+        }
+    }
+
+    /// Changes what VoiceOver reports for a node of `kind` from `old` to `new`.
+    ///
+    /// Pass [`Accessibility::default`] as `old` for a new view.
+    pub(super) fn set_accessibility(
+        &self,
+        kind: &ViewKind,
+        old: &Accessibility,
+        new: &Accessibility,
+    ) -> Result<(), UiError> {
+        self.accessibility_view().set_accessibility(
+            &Self::accessibility_attributes(kind, old),
+            &Self::accessibility_attributes(kind, new),
+        )
+    }
+
+    /// Maps `accessibility` to AppKit attributes for a node of `kind`.
+    ///
+    /// Containers and canvases have no native role, so they become elements
+    /// only when named; native controls stay elements unless hidden.
+    pub(super) fn accessibility_attributes(
+        kind: &ViewKind,
+        accessibility: &Accessibility,
+    ) -> AccessibilityAttributes {
+        let role = accessibility.role.map(|role| match role {
+            AccessibilityRole::Group => NativeRole::Group,
+            AccessibilityRole::Image => NativeRole::Image,
+            AccessibilityRole::StaticText => NativeRole::StaticText,
+        });
+        let fallback_role = match kind {
+            ViewKind::Container => Some(NativeRole::Group),
+            ViewKind::Canvas2D { .. } => Some(NativeRole::Image),
+            #[cfg(feature = "wgpu")]
+            ViewKind::WgpuCanvas { .. } => Some(NativeRole::Image),
+            _ => None,
+        };
+        let (element, role) = match fallback_role {
+            Some(fallback) => {
+                let element = accessibility.exposes_container();
+                (element, element.then(|| role.unwrap_or(fallback)))
+            }
+            None => (!accessibility.hidden, role),
+        };
+        AccessibilityAttributes {
+            element,
+            label: accessibility.label.clone(),
+            value: accessibility.value.clone(),
+            replaces_value: fallback_role.is_some(),
+            help: accessibility.hint.clone(),
+            role,
+        }
     }
 
     /// Sets the tooltip on the view the pointer rests on.

@@ -166,6 +166,7 @@ impl NativeView for Switch {
             enabled: self.enabled,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         });
         Binding {
             store: self.store,
@@ -251,6 +252,7 @@ impl NativeView for Slider {
             enabled: self.enabled,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         });
         Binding {
             store: self.store,
@@ -339,6 +341,7 @@ impl NativeView for PopUpButton {
             enabled: self.enabled,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         });
         Binding {
             store: self.store,
@@ -411,6 +414,7 @@ impl NativeView for SegmentedControl {
             enabled: self.enabled,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         });
         Binding {
             store: self.store,
@@ -490,6 +494,7 @@ impl NativeView for ComboBox {
             enabled: self.enabled,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         });
         Binding {
             store: self.store,
@@ -657,6 +662,7 @@ impl NativeView for NumberField {
             enabled: self.enabled,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         });
         let binding = || Binding {
             store: self.store,
@@ -751,6 +757,7 @@ impl NativeView for SearchField {
             enabled: true,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         });
         Binding {
             store: self.store,
@@ -823,6 +830,7 @@ impl NativeView for ColorWell {
             enabled: self.enabled,
             title_bar_interactive: false,
             help: None,
+            accessibility: Default::default(),
         });
         Binding {
             store: self.store,
