@@ -30,11 +30,16 @@ macro_rules! scenarios {
 }
 
 scenarios! {
+    alert => "alert": |_| alert::MainView::new(),
     arrangements => "arrangements": |_| arrangements::MainView::new(),
     buttons => "buttons": |_| buttons::MainView::new(),
     canvas_action => "canvas-action": |_| canvas_action::MainView::new(),
+    color_panel => "color-panel": |_| color_panel::MainView::new(),
     controls => "controls": |_| controls::MainView::new(),
     document => "document": |_| document::MainView::new(),
+    file_dialog => "file-dialog": |options| {
+        file_dialog::MainView::new(options.variable("ZINTL_UI_TEST_DIRECTORY"))
+    },
     full_size_sidebar => "full-size-sidebar": |_| full_size_sidebar::MainView::default(),
     full_width_stack => "full-width-stack": |_| full_width_stack::MainView,
     hstack => "hstack": |_| hstack::MainView,
@@ -43,6 +48,7 @@ scenarios! {
     overflow => "overflow": |_| overflow::MainView,
     pickers => "pickers": |_| pickers::MainView::new(),
     perform_main => "perform-main": |_| perform_main::MainView::new(),
+    popover => "popover": |_| popover::MainView::new(),
     scroll_status => "scroll-status": |_| scroll_status::MainView::default(),
     sidebar_features => "sidebar-features": |_| sidebar_features::MainView::new(),
     sliders => "sliders": |_| sliders::MainView::new(),
@@ -57,4 +63,5 @@ scenarios! {
     truncation => "truncation": |_| truncation::MainView,
     wgpu_first_frame => "wgpu-first-frame": |_| wgpu_first_frame::MainView::new(),
     window_close => "window-close": |_| window_close::MainView,
+    windows => "windows": |_| windows::MainView::new(),
 }
