@@ -594,3 +594,58 @@ fn formatting_roles_apply_to_the_focused_rich_editor() {
         ]
     );
 }
+
+#[test]
+fn panels_appear_to_screen_readers_only_when_named() {
+    // Verifies panels stay out of the automation tree until labeled, and hiding them changes nothing.
+    use zintl_ui_backend_core::Accessibility;
+    use zpd_winui3::AccessibilityView;
+
+    let named = Accessibility {
+        label: Some("Toolbox".into()),
+        ..Accessibility::default()
+    };
+    let hidden = Accessibility {
+        hidden: true,
+        ..Accessibility::default()
+    };
+
+    assert_eq!(
+        NativeNode::accessibility_view(&ViewKind::Container, &Accessibility::default()),
+        AccessibilityView::Default
+    );
+    assert_eq!(
+        NativeNode::accessibility_view(&ViewKind::Container, &named),
+        AccessibilityView::Content
+    );
+    assert_eq!(
+        NativeNode::accessibility_view(&ViewKind::Container, &hidden),
+        AccessibilityView::Default
+    );
+}
+
+#[test]
+fn hidden_controls_leave_the_automation_tree() {
+    // Verifies only `hidden` removes a control; a label keeps the control's own view.
+    use zintl_ui_backend_core::Accessibility;
+    use zpd_winui3::AccessibilityView;
+
+    let switch = ViewKind::Switch { on: false };
+    let named = Accessibility {
+        label: Some("Wi-Fi".into()),
+        ..Accessibility::default()
+    };
+    let hidden = Accessibility {
+        hidden: true,
+        ..Accessibility::default()
+    };
+
+    assert_eq!(
+        NativeNode::accessibility_view(&switch, &named),
+        AccessibilityView::Default
+    );
+    assert_eq!(
+        NativeNode::accessibility_view(&switch, &hidden),
+        AccessibilityView::Raw
+    );
+}

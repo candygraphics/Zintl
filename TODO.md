@@ -7,6 +7,18 @@
   committed characters.
 - An opt-in render thread (`Canvas2D::threaded`) for heavy drawing.
 
+## Accessibility: follow-ups
+
+- Accessibility trees inside canvases. `Canvas2DHandler` and
+  `WgpuCanvasHandler` would return virtual nodes (frame, role, label, value,
+  actions such as press or increment), mapped to `NSAccessibilityElement`
+  children on macOS and automation peers on Windows. VoiceOver actions would
+  arrive as a `CanvasEvent`, and the tree would be rebuilt on `reconcile` or an
+  explicit invalidation, posting a layout-changed notification. Until then a
+  canvas can only carry one label, like an image.
+- `SplitView` cannot be resized with VoiceOver or Narrator, because its divider
+  is a canvas.
+
 ## Windows follow-ups
 
 - The toolbar's `CommandBar` sits in a row below the menu bar rather than

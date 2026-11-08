@@ -8,13 +8,13 @@ use zintl_ui_backend_core::graphics::{self, AttributedText, SpanStyle};
 use zintl_ui_backend_core::layout::{HostLayout, LayoutNative, LayoutSnapshot};
 use zintl_ui_backend_core::tree::ErrorSlot;
 use zintl_ui_backend_core::{
-    BezelStyle, ButtonType, Color, Event, MainTaskSender, RedrawPolicy, ScrollAlignment,
-    ScrollTarget, TableColumn, TextAlignment, TextColor, TextStyle, ViewKind,
+    Accessibility, BezelStyle, ButtonType, Color, Event, MainTaskSender, RedrawPolicy,
+    ScrollAlignment, ScrollTarget, TableColumn, TextAlignment, TextColor, TextStyle, ViewKind,
 };
 use zintl_ui_layout::{LayoutDimension, LayoutStyle, Rect as LayoutRect, Size};
 use zpd_winui3::{
-    AsElement, BoolProperty, CanvasMode, Control, ControlEvent, ControlKind, ElementRef,
-    NumberProperty, ParagraphStyle, RichRun, RichText, TextProperty, TextTraits,
+    AccessibilityView, AsElement, BoolProperty, CanvasMode, Control, ControlEvent, ControlKind,
+    ElementRef, NumberProperty, ParagraphStyle, RichRun, RichText, TextProperty, TextTraits,
 };
 
 use super::app::{Message, MessageSender};
@@ -511,6 +511,45 @@ impl NativeNode {
             NativeView::Canvas { .. } => {}
         }
         Ok(())
+    }
+
+    /// Writes what screen readers report for a node of `kind`.
+    ///
+    /// UI Automation has no role for plain panels, so `role` is not applied.
+    pub(super) fn set_accessibility(
+        &self,
+        kind: &ViewKind,
+        accessibility: &Accessibility,
+    ) -> Result<(), AppError> {
+        self.view.set_accessibility(
+            accessibility.label.as_deref(),
+            accessibility.hint.as_deref(),
+            accessibility.value.as_deref(),
+            Self::accessibility_view(kind, accessibility),
+        )?;
+        Ok(())
+    }
+
+    /// Returns which automation views include a node of `kind`.
+    ///
+    /// Panels and canvases appear only when named; controls appear unless hidden.
+    pub(super) fn accessibility_view(
+        kind: &ViewKind,
+        accessibility: &Accessibility,
+    ) -> AccessibilityView {
+        let container = match kind {
+            ViewKind::Container | ViewKind::Canvas2D { .. } => true,
+            #[cfg(feature = "wgpu")]
+            ViewKind::WgpuCanvas { .. } => true,
+            _ => false,
+        };
+        if container && accessibility.exposes_container() {
+            AccessibilityView::Content
+        } else if !container && accessibility.hidden {
+            AccessibilityView::Raw
+        } else {
+            AccessibilityView::Default
+        }
     }
 
     /// Converts a declared text style.

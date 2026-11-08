@@ -44,10 +44,12 @@ struct AppHandler {
 
 impl AppHandler {
     fn synchronize(&mut self, cx: &MessageContext<'_, Message>) {
-        // Announcements are not spoken on Windows yet; drop them so they do not pile up.
-        Announcements::take();
         let backend = self.composer.backend_mut();
-        match backend.synchronize(cx.application(), &cx.sender()) {
+        let result = backend
+            .synchronize(cx.application(), &cx.sender())
+            // Announcements follow the changes that caused them.
+            .and_then(|()| backend.announce(&Announcements::take()));
+        match result {
             Ok(()) if backend.should_terminate() => cx.request_termination(),
             Ok(()) => {}
             Err(error) => {

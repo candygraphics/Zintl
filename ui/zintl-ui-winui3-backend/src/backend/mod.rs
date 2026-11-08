@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::path::PathBuf;
@@ -11,7 +12,7 @@ use zintl_ui::view::StoreContext;
 use zintl_ui_backend_core::layout::{HostLayout, LayoutSnapshot};
 use zintl_ui_backend_core::tree::{ErrorSlot, MainTasks, NodeTree};
 use zintl_ui_backend_core::{
-    AlertButtonRole, AlertConfig, Color, CommandSet, Context, DocumentState, Event,
+    AlertButtonRole, AlertConfig, Announcement, Color, CommandSet, Context, DocumentState, Event,
     FileDialogConfig, FileDialogMode, MainTask, NodeId, PopoverEdge, Rect, RenderNode, Sidebar,
     TitleBar, Toolbar, ToolbarItem, ViewKind, WindowStyle,
 };
@@ -177,6 +178,8 @@ pub struct WinUI3Backend {
     menu_version: u64,
     opened_window: bool,
     gpu: GpuSlot,
+    /// Set when an ID or `labeled_by` changed, so automation labels relink.
+    titles_dirty: bool,
 }
 
 impl Default for WinUI3Backend {
@@ -199,6 +202,7 @@ impl WinUI3Backend {
             menu_version: 0,
             opened_window: false,
             gpu: GpuSlot::default(),
+            titles_dirty: false,
         }
     }
 
@@ -323,7 +327,69 @@ impl WinUI3Backend {
         }
         self.structure_dirty = false;
         self.layout_dirty = false;
+        self.titles_dirty = false;
         self.pending_error.take()
+    }
+
+    /// Asks screen readers to speak `announcements` through the first open window.
+    fn announce(&self, announcements: &[Announcement]) -> Result<(), AppError> {
+        let window = self
+            .tree
+            .window_ids(NodeState::is_closed_window)
+            .into_iter()
+            .find_map(|id| self.state(id).window.as_ref());
+        let Some(window) = window else {
+            return Ok(());
+        };
+        for announcement in announcements {
+            let priority = match announcement.priority {
+                zintl_ui_backend_core::AnnouncementPriority::Low => {
+                    zpd_winui3::AnnouncementPriority::Low
+                }
+                zintl_ui_backend_core::AnnouncementPriority::Medium => {
+                    zpd_winui3::AnnouncementPriority::Medium
+                }
+                zintl_ui_backend_core::AnnouncementPriority::High => {
+                    zpd_winui3::AnnouncementPriority::High
+                }
+            };
+            window.native.announce(&announcement.text, priority)?;
+        }
+        Ok(())
+    }
+
+    /// Names views declared with `labeled_by` after the view with that ID in `root`.
+    fn link_accessibility_titles(&self, root: NodeId) -> Result<(), AppError> {
+        let mut ids = HashMap::new();
+        let mut labeled = Vec::new();
+        let mut pending = vec![root];
+        while let Some(node) = pending.pop() {
+            if let Some(RenderNode::View {
+                id, accessibility, ..
+            }) = self.value(node)
+            {
+                if let Some(id) = id {
+                    ids.entry(id.as_str()).or_insert(node);
+                }
+                if let Some(target) = &accessibility.labeled_by {
+                    labeled.push((node, target.as_str()));
+                }
+            }
+            // Children are visited in declaration order, so the first view with an ID wins.
+            pending.extend(self.children(node).iter().rev());
+        }
+        for (node, target) in labeled {
+            let Some(native) = self.state(node).native.as_ref() else {
+                continue;
+            };
+            let label = ids
+                .get(target)
+                .and_then(|label| self.state(*label).native.as_ref());
+            native
+                .view
+                .set_labeled_by(label.map(|label| label.view.as_element()))?;
+        }
+        Ok(())
     }
 
     fn create_window(
@@ -521,6 +587,9 @@ impl WinUI3Backend {
         if rebuild_structure {
             self.attach_children(&state.canvas, window_id)?;
         }
+        if rebuild_structure || self.titles_dirty {
+            self.link_accessibility_titles(window_id)?;
+        }
         let update_layout = self.layout_dirty || rebuild_structure;
         if update_layout {
             state.host.set_content(HostContent::Host(HostLayout {
@@ -665,6 +734,7 @@ impl WinUI3Backend {
                 enabled,
                 title_bar_interactive,
                 help,
+                accessibility,
                 ..
             } = self.kind(child)
                 && self.state(child).native.is_none()
@@ -684,6 +754,9 @@ impl WinUI3Backend {
                 }
                 if help.is_some() {
                     native.view.set_tool_tip(help.as_deref())?;
+                }
+                if !accessibility.is_default() {
+                    native.set_accessibility(&kind, &accessibility)?;
                 }
                 native.title_bar_interactive.set(title_bar_interactive);
                 native.route.set(self.event_route(child));
@@ -1163,6 +1236,7 @@ impl WinUI3Backend {
                 enabled: old_enabled,
                 title_bar_interactive: old_interactive,
                 help: old_help,
+                accessibility: old_accessibility,
                 ..
             },
             RenderNode::View {
@@ -1171,6 +1245,7 @@ impl WinUI3Backend {
                 enabled: new_enabled,
                 title_bar_interactive: new_interactive,
                 help: new_help,
+                accessibility: new_accessibility,
                 ..
             },
         ) = (old, new)
@@ -1194,6 +1269,15 @@ impl WinUI3Backend {
         if old_interactive != new_interactive {
             native.title_bar_interactive.set(*new_interactive);
             self.layout_dirty = true;
+        }
+        if old_accessibility != new_accessibility {
+            native.set_accessibility(new_kind, new_accessibility)?;
+            if new_accessibility.labeled_by.is_none() && old_accessibility.labeled_by.is_some() {
+                native.view.set_labeled_by(None)?;
+            }
+        }
+        if old_id != new_id || old_accessibility.labeled_by != new_accessibility.labeled_by {
+            self.titles_dirty = true;
         }
         native.apply(Some(old_kind), new_kind)
     }

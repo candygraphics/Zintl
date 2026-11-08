@@ -679,6 +679,14 @@ unsafe extern "C" {
     ) -> i32;
     pub fn zpd_winui3_element_set_tool_tip(element: *mut Element, text: StringRef) -> i32;
     pub fn zpd_winui3_element_set_identifier(element: *mut Element, id: StringRef) -> i32;
+    pub fn zpd_winui3_element_set_accessibility(
+        element: *mut Element,
+        name: StringRef,
+        help_text: StringRef,
+        item_status: StringRef,
+        view: i32,
+    ) -> i32;
+    pub fn zpd_winui3_element_set_labeled_by(element: *mut Element, label: *const Element) -> i32;
     pub fn zpd_winui3_element_focus(element: *mut Element) -> i32;
     pub fn zpd_winui3_element_title_bar_inset(element: *const Element) -> f64;
     pub fn zpd_winui3_scroll_viewer_reveal(
@@ -697,6 +705,7 @@ unsafe extern "C" {
         items: *const ToolbarItem,
         length: usize,
     ) -> i32;
+    pub fn zpd_winui3_window_announce(window: *mut Window, text: StringRef, priority: i32) -> i32;
     pub fn zpd_winui3_window_set_document(
         window: *mut Window,
         confirms_close: bool,
