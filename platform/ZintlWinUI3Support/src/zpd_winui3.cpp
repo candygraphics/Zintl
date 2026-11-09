@@ -419,19 +419,19 @@ LaunchState* launch_state{};
 struct NativeApplication : ApplicationT<NativeApplication, IXamlMetadataProvider> {
   std::vector<IXamlMetadataProvider> providers;
 
-  NativeApplication() {
-    Hosting::WindowsXamlManager::InitializeForCurrentThread();
-    Resources().MergedDictionaries().Append(XamlControlsResources());
+  NativeApplication() { Hosting::WindowsXamlManager::InitializeForCurrentThread(); }
+
+  void OnLaunched(LaunchActivatedEventArgs const&) {
+    // WinUI replaces Application.Resources after construction, so merge here.
+    auto dictionaries = Resources().MergedDictionaries();
+    dictionaries.Append(XamlControlsResources());
     // Compact density keeps control heights close to the declared desktop metrics.
     try {
       ResourceDictionary compact;
       compact.Source(Windows::Foundation::Uri(L"ms-appx:///Microsoft.UI.Xaml/DensityStyles/Compact.xaml"));
-      Resources().MergedDictionaries().Append(compact);
+      dictionaries.Append(compact);
     } catch (...) {
     }
-  }
-
-  void OnLaunched(LaunchActivatedEventArgs const&) {
     if (!launch_state || !launch_state->launch) return;
     zpd_winui3_app_context context{DispatcherQueue::GetForCurrentThread()};
     launch_state->launch(&context, launch_state->data);
