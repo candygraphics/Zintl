@@ -120,6 +120,8 @@ pub enum ViewKind {
         /// [`Event::TextChanged`] while the user types and
         /// [`Event::TextCommitted`] when editing ends, for the view to parse.
         text: Option<String>,
+        /// Text shown while the field is empty.
+        placeholder: Option<String>,
     },
     SearchField {
         value: String,

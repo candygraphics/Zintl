@@ -64,4 +64,29 @@ final class IntegerFieldTests: ZintlUITestCase {
     field.typeText("\r")
     XCTAssertTrue(waitForValue(field, "1,200"))
   }
+
+  /// Verifies the optional field reports an empty field as None and steps from zero.
+  func testOptionalFieldClearsToNone() throws {
+    try launch(scenario: "integer-field")
+
+    let count = app.textFields["count"]
+    XCTAssertTrue(count.waitToExist(timeout: 2))
+    XCTAssertTrue(waitForValue(count, "7"))
+    count.click()
+    count.typeKey("a", modifierFlags: .command)
+    count.typeKey(.delete, modifierFlags: [])
+    assertLabel("count-value", "Count: None")
+    count.typeText("5")
+    assertLabel("count-value", "Count: 5")
+
+    count.typeKey("a", modifierFlags: .command)
+    count.typeKey(.delete, modifierFlags: [])
+    count.typeText("\r")
+    assertLabel("count-value", "Count: None")
+    // The stepper beside the optional field starts from zero.
+    let stepper = app.steppers.element(boundBy: 1)
+    stepper.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).click()
+    assertLabel("count-value", "Count: 1")
+    XCTAssertTrue(waitForValue(count, "1"))
+  }
 }

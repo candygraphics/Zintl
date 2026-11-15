@@ -588,6 +588,17 @@ impl NumberField {
         })?;
         Ok(())
     }
+    /// Shows `placeholder` while the field is empty; `None` removes it.
+    pub fn set_placeholder(&self, placeholder: Option<&str>) -> Result<(), UiError> {
+        let placeholder = placeholder.map(native::nsstring);
+        self.field.with(|field| {
+            // SAFETY: The Actor holds a live NSTextField, which copies the string.
+            unsafe {
+                zpd_objc::msg_send!(field, zpd_objc::sel!("setPlaceholderString:"), ((placeholder.as_ref().map_or(zpd_objc::NIL, Strong::as_ptr)): Id) => ())
+            }
+        })?;
+        Ok(())
+    }
     pub fn value(&self) -> Result<f64, UiError> {
         self.stepper
             .with(|stepper| {

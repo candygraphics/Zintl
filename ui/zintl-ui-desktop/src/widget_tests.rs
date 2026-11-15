@@ -416,6 +416,55 @@ fn integer_field_reports_typed_integers_before_editing_ends() {
 }
 
 #[test]
+fn optional_integer_field_treats_empty_text_as_none() {
+    // Verifies empty text parses to None, zero stays a value, and the field shows None as empty text.
+    let field = zintl_ui_native::IntegerField::optional();
+    assert_eq!(field.parse(""), Some(None));
+    assert_eq!(field.parse("  "), Some(None));
+    assert_eq!(field.parse("0"), Some(Some(0)));
+    assert_eq!(field.parse("abc"), None);
+    assert_eq!(field.format(None), "");
+    // Fields bound to `i64` reject empty text instead.
+    assert_eq!(zintl_ui_native::IntegerField::new().parse(""), None);
+
+    let (mut app, value) = Harness::mount(
+        |cx| cx.store(Some(7_i64)),
+        |value| {
+            NumberField::integer_optional()
+                .placeholder("None")
+                .bind(value)
+        },
+    );
+    app.dispatch_at(&[0], Event::TextChanged { value: "".into() });
+    assert_eq!(app.get(value), None);
+    assert!(matches!(
+        app.render(),
+        RenderNode::View {
+            kind: ViewKind::NumberField { text: Some(text), placeholder: Some(placeholder), value, .. },
+            ..
+        } if text.is_empty() && placeholder == "None" && value == 0.0
+    ));
+}
+
+#[test]
+fn optional_integer_field_steps_from_zero_when_empty() {
+    // Verifies the first stepper click on an empty field starts from zero, limited to the range.
+    let (mut app, value) = Harness::mount(
+        |cx| cx.store(None::<i64>),
+        |value| NumberField::integer_optional().bind(value),
+    );
+    assert!(app.dispatch_at(&[0], Event::ValueChanged { value: 1.0 }));
+    assert_eq!(app.get(value), Some(1));
+
+    let (mut app, value) = Harness::mount(
+        |cx| cx.store(None::<i64>),
+        |value| NumberField::integer_optional().range(5..=9).bind(value),
+    );
+    assert!(app.dispatch_at(&[0], Event::ValueChanged { value: 4.0 }));
+    assert_eq!(app.get(value), Some(5));
+}
+
+#[test]
 fn number_field_clamps_entered_values() {
     // Verifies values outside the declared range are clamped before reaching the Store.
     let (mut app, value) = Harness::mount(
@@ -437,6 +486,7 @@ fn number_field_clamps_entered_values() {
                     ..
                 },
                 text: None,
+                placeholder: None,
             },
             ..
         }

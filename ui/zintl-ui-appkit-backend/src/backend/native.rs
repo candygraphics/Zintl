@@ -561,8 +561,13 @@ impl NativeNode {
                     value,
                     format,
                     text,
+                    placeholder,
                 },
             ) => {
+                if !matches!(old, Some(ViewKind::NumberField { placeholder: old, .. }) if old == placeholder)
+                {
+                    field.set_placeholder(placeholder.as_deref())?;
+                }
                 if !matches!(old, Some(ViewKind::NumberField { format: old, .. }) if old == format)
                 {
                     field.set_format(format.native())?;

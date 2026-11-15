@@ -62,7 +62,6 @@ control!(
     SegmentedControl,
     ComboBox,
     NumberField,
-    IntegerField,
     SearchField,
     ColorWell,
     DatePicker,
@@ -74,7 +73,6 @@ enabled!(
     SegmentedControl,
     ComboBox,
     NumberField,
-    IntegerField,
     ColorWell,
     DatePicker,
 );
@@ -660,6 +658,7 @@ impl NativeView for NumberField {
                     fraction_digits: self.fraction_digits,
                 },
                 text: self.formats_text().then(|| self.format(value)),
+                placeholder: None,
             },
             layout: self.layout,
             id: self.id.clone(),
@@ -703,6 +702,35 @@ impl NativeView for NumberField {
     }
 }
 
+/// A value an [`IntegerField`] edits: `i64`, or `Option<i64>` where an empty field is `None`.
+pub trait IntegerValue: Copy + PartialEq + 'static {
+    /// Returns the integer, or `None` for an empty field.
+    fn integer(self) -> Option<i64>;
+
+    /// Returns the value for `integer`, or `None` when this type cannot be empty.
+    fn from_integer(integer: Option<i64>) -> Option<Self>;
+}
+
+impl IntegerValue for i64 {
+    fn integer(self) -> Option<i64> {
+        Some(self)
+    }
+
+    fn from_integer(integer: Option<i64>) -> Option<Self> {
+        integer
+    }
+}
+
+impl IntegerValue for Option<i64> {
+    fn integer(self) -> Option<i64> {
+        self
+    }
+
+    fn from_integer(integer: Option<i64>) -> Option<Self> {
+        Some(integer)
+    }
+}
+
 /// An integer field with a stepper whose values never pass through `f64`.
 ///
 /// The field formats and parses `i64` itself, so values above 2^53 stay
@@ -710,31 +738,54 @@ impl NativeView for NumberField {
 /// integer; once editing ends the text is formatted again, and text that is
 /// not an integer restores the last value, so `12.5` ends as `12`. Full-width
 /// digits from input methods are accepted.
+///
+/// `IntegerField<Option<i64>>` shows `None` as an empty field.
 #[derive(Clone)]
-pub struct IntegerField {
-    value: i64,
+pub struct IntegerField<T: IntegerValue = i64> {
+    value: T,
     minimum: i64,
     maximum: i64,
     step: i64,
     grouping: bool,
     suffix: String,
-    store: Option<Store<i64>>,
-    action: Option<Rc<Change<i64>>>,
+    placeholder: Option<String>,
+    store: Option<Store<T>>,
+    action: Option<Rc<Change<T>>>,
     enabled: bool,
     layout: LayoutStyle,
     id: Option<String>,
     attachments: Attachments,
 }
 
-impl IntegerField {
+impl IntegerField<i64> {
     pub fn new() -> Self {
+        Self::with_value(0)
+    }
+}
+
+impl IntegerField<Option<i64>> {
+    /// Creates a field whose empty text is `None`.
+    pub fn optional() -> Self {
+        Self::with_value(None)
+    }
+
+    /// Shows `placeholder` while the field is empty.
+    pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        self.placeholder = Some(placeholder.into());
+        self
+    }
+}
+
+impl<T: IntegerValue> IntegerField<T> {
+    fn with_value(value: T) -> Self {
         Self {
-            value: 0,
+            value,
             minimum: i64::MIN,
             maximum: i64::MAX,
             step: 1,
             grouping: false,
             suffix: String::new(),
+            placeholder: None,
             store: None,
             action: None,
             enabled: true,
@@ -744,7 +795,28 @@ impl IntegerField {
         }
     }
 
-    pub fn value(mut self, value: i64) -> Self {
+    pub fn id(mut self, id: impl Into<String>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    pub fn minimum_size(mut self, size: Size) -> Self {
+        self.layout.minimum_size = Some(size);
+        self
+    }
+
+    /// Stretches the field across its parent's width.
+    pub fn fill_width(mut self) -> Self {
+        self.layout.width = zintl_ui_layout::LayoutDimension::Percent(1.0);
+        self
+    }
+
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
+    pub fn value(mut self, value: T) -> Self {
         self.value = value;
         self
     }
@@ -774,18 +846,21 @@ impl IntegerField {
         self
     }
 
-    pub fn bind(mut self, store: Store<i64>) -> Self {
+    pub fn bind(mut self, store: Store<T>) -> Self {
         self.store = Some(store);
         self
     }
 
-    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, i64) + 'static) -> Self {
+    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, T) + 'static) -> Self {
         self.action = Some(Rc::new(action));
         self
     }
 
-    /// Formats `value` with the separators and suffix this field shows.
-    pub fn format(&self, value: i64) -> String {
+    /// Formats `value` with the separators and suffix this field shows; `None` is empty.
+    pub fn format(&self, value: T) -> String {
+        let Some(value) = value.integer() else {
+            return String::new();
+        };
         let digits = value.unsigned_abs().to_string();
         let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
         for (index, digit) in digits.chars().enumerate() {
@@ -800,9 +875,13 @@ impl IntegerField {
 
     /// Parses an integer, ignoring separators and the suffix, and limits it to the range.
     ///
+    /// Empty text is `None` for `Option<i64>` fields and rejected otherwise.
     /// Full-width digits and minus signs from input methods are accepted.
-    pub fn parse(&self, text: &str) -> Option<i64> {
+    pub fn parse(&self, text: &str) -> Option<T> {
         let text = text.trim();
+        if text.is_empty() {
+            return T::from_integer(None);
+        }
         let text = text.strip_suffix(self.suffix.trim()).unwrap_or(text).trim();
         let normalized =
             text.chars()
@@ -816,25 +895,44 @@ impl IntegerField {
                 .collect::<String>();
         let value: i128 = normalized.parse().ok()?;
         let clamped = value.clamp(i128::from(self.minimum), i128::from(self.maximum));
-        i64::try_from(clamped).ok()
+        T::from_integer(Some(i64::try_from(clamped).ok()?))
+    }
+
+    /// Returns the value one stepper click moves `value` to; an empty field starts from zero.
+    pub fn stepped(&self, value: T, up: bool) -> Option<T> {
+        let current = value
+            .integer()
+            .unwrap_or(0)
+            .clamp(self.minimum, self.maximum);
+        let next = if up {
+            current.saturating_add(self.step)
+        } else {
+            current.saturating_sub(self.step)
+        };
+        T::from_integer(Some(next.clamp(self.minimum, self.maximum))).filter(|next| *next != value)
     }
 }
 
-impl Default for IntegerField {
+impl Default for IntegerField<i64> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl NativeView for IntegerField {
+impl<T: IntegerValue> NativeView for IntegerField<T> {
     attachments!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let value = self.store.map_or(self.value, |store| *cx.get(store));
+        // An empty field steps from zero, so the stepper starts there.
+        let stepper = value
+            .integer()
+            .unwrap_or(0)
+            .clamp(self.minimum, self.maximum);
         // The field shows text formatted here; the stepper only needs the direction of a click.
         let element = Element::node(RenderNode::View {
             kind: ViewKind::NumberField {
-                value: value as f64,
+                value: stepper as f64,
                 format: zintl_ui_backend_core::NumberFormat {
                     minimum: self.minimum as f64,
                     maximum: self.maximum as f64,
@@ -842,6 +940,7 @@ impl NativeView for IntegerField {
                     fraction_digits: 0,
                 },
                 text: Some(self.format(value)),
+                placeholder: self.placeholder.clone(),
             },
             layout: self.layout,
             id: self.id.clone(),
@@ -854,17 +953,10 @@ impl NativeView for IntegerField {
             store: self.store,
             action: self.action.clone(),
         };
-        let (minimum, maximum, step) = (self.minimum, self.maximum, self.step);
+        let field = self.clone();
         let element = binding().route(element, EventKind::ValueChanged, move |event| match event {
-            // The stepper reports a rounded value, so only its direction from `value` is used.
-            Event::ValueChanged { value: stepped } => {
-                let next = if stepped > value as f64 {
-                    value.saturating_add(step)
-                } else {
-                    value.saturating_sub(step)
-                };
-                Some(next.clamp(minimum, maximum)).filter(|next| *next != value)
-            }
+            // The stepper reports a rounded value, so only its direction is used.
+            Event::ValueChanged { value: shown } => field.stepped(value, shown > stepper as f64),
             _ => None,
         });
         // Typing reports each integer, so actions see the value before editing ends.
@@ -886,6 +978,14 @@ impl NativeView for IntegerField {
                 _ => None,
             },
         )
+    }
+}
+
+impl<T: IntegerValue> View for IntegerField<T> {
+    type Output = RenderNode;
+
+    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
+        self.native_element(cx)
     }
 }
 

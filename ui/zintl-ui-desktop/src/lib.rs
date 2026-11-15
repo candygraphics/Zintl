@@ -19,8 +19,8 @@ mod split_view;
 pub use arrangements::{DisclosureGroup, Grid, GridCell, ZStack};
 pub use chart::{BarChart, ChartBar};
 pub use controls::{
-    ColorWell, ComboBox, IntegerField, NumberField, Picker, PickerStyle, ScrollView, SearchField,
-    Slider, Tab, TabView, Toggle, ToggleStyle,
+    ColorWell, ComboBox, IntegerField, NumberField, OptionalIntegerField, Picker, PickerStyle,
+    ScrollView, SearchField, Slider, Tab, TabView, Toggle, ToggleStyle,
 };
 pub use split_view::SplitView;
 use zintl_ui::composer::Composer;
