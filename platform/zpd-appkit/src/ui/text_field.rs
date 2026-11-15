@@ -230,6 +230,18 @@ impl TextField {
             }
         })
     }
+    /// Makes the field the first responder of its window; does nothing outside a window.
+    pub fn focus(&self) -> Result<(), UiError> {
+        self.view.as_view().with(|field| {
+            // SAFETY: The live field and its window, which may be nil, accept the message.
+            unsafe {
+                let window = zpd_objc::msg_send!(field, zpd_objc::sel!("window"), () => zpd_objc::Id);
+                if !window.is_null() {
+                    zpd_objc::msg_send!(window, zpd_objc::sel!("makeFirstResponder:"), ((field): zpd_objc::Id) => bool);
+                }
+            }
+        })
+    }
     /// Returns the size the text needs at `width`, or its natural size for `None`.
     ///
     /// Wrapping fields grow in height as `width` shrinks.

@@ -302,6 +302,15 @@ impl NativeNode {
         }
     }
 
+    /// Moves keyboard focus to a text field or editor that is in a window.
+    pub(super) fn focus(&self) -> Result<(), UiError> {
+        match self {
+            Self::TextField(field) => field.focus(),
+            Self::TextEditor(editor) => editor.focus(),
+            _ => Ok(()),
+        }
+    }
+
     /// Sets the tooltip on the view the pointer rests on.
     pub(super) fn set_tool_tip(&self, text: Option<&str>) -> Result<(), UiError> {
         match self {
@@ -383,6 +392,7 @@ impl NativeNode {
                     draws_background,
                     multiline,
                     style,
+                    ..
                 },
             ) => {
                 // Typed text stays until the value changes, so unbound fields keep edits.
@@ -449,15 +459,12 @@ impl NativeNode {
                     field.set_alignment(style.alignment.native())?;
                 }
             }
-            (Self::TextEditor(editor), ViewKind::TextEditor { text, focus }) => {
-                let (old_text, old_focus) = match old {
-                    Some(ViewKind::TextEditor { text, focus }) => (Some(text), Some(*focus)),
-                    _ => (None, None),
+            (Self::TextEditor(editor), ViewKind::TextEditor { text, .. }) => {
+                // Focus requests are applied by the backend once the editor is in its window.
+                let old_text = match old {
+                    Some(ViewKind::TextEditor { text, .. }) => Some(text),
+                    _ => None,
                 };
-                // Each new focus request moves keyboard focus to the editor.
-                if *focus > 0 && old_focus != Some(*focus) {
-                    editor.focus()?;
-                }
                 // Text the editor already shows is not written back, so typing keeps
                 // the insertion point. Unchanged text is skipped too: AppKit cannot
                 // keep a paragraph style on an empty last line.

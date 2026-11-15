@@ -81,6 +81,8 @@ pub enum ViewKind {
         draws_background: bool,
         multiline: bool,
         style: TextStyle,
+        /// Each increase makes the field take keyboard focus.
+        focus: u64,
     },
     /// A scrolling rich text editor that fills its parent.
     TextEditor {
@@ -180,6 +182,17 @@ pub enum ViewKind {
 }
 
 impl ViewKind {
+    /// Returns whether a view that rendered `old`, or is new, should now take keyboard focus.
+    ///
+    /// Text fields and editors take focus each time their focus request count increases.
+    pub fn requests_focus(old: Option<&Self>, new: &Self) -> bool {
+        let focus = |kind: &Self| match kind {
+            Self::TextField { focus, .. } | Self::TextEditor { focus, .. } => *focus,
+            _ => 0,
+        };
+        focus(new) > old.map_or(0, focus)
+    }
+
     /// Returns whether this control shows its rendered value again after the user changes it.
     ///
     /// Discrete controls follow the app's value, so a change the app rejects

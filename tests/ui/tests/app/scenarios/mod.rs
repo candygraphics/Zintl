@@ -69,6 +69,7 @@ scenarios! {
     text_commit => "text-commit": |_| text_commit::MainView::new(),
     text_editor => "text-editor": |_| text_editor::MainView::new(),
     text_field => "text-field": |_| text_field::MainView::new(),
+    text_focus => "text-focus": |_| text_focus::MainView::new(),
     text_inputs => "text-inputs": |_| text_inputs::MainView::new(),
     text_styles => "text-styles": |_| text_styles::MainView,
     toggles => "toggles": |_| toggles::MainView::new(),

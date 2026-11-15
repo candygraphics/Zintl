@@ -311,6 +311,7 @@ fn label(line_limit: Option<usize>) -> ViewKind {
             line_limit,
             ..Default::default()
         },
+        focus: 0,
     }
 }
 
@@ -326,6 +327,7 @@ fn view_kinds_choose_matching_controls() {
         draws_background: true,
         multiline: false,
         style: Default::default(),
+        focus: 0,
     };
     assert_eq!(
         NativeNode::control_kind(&field(true)),

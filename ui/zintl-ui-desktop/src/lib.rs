@@ -412,6 +412,14 @@ impl TextField {
         self
     }
 
+    /// Takes keyboard focus whenever `requests` increases, for example after "New Item".
+    ///
+    /// A field created in the same update as the request takes focus once it is shown.
+    pub fn focus_on(mut self, requests: Store<u64>) -> Self {
+        self.inner = self.inner.focus_on(requests);
+        self
+    }
+
     pub fn minimum_size(mut self, size: Size) -> Self {
         self.inner = self.inner.minimum_size(size);
         self

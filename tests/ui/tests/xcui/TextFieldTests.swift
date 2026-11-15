@@ -48,4 +48,31 @@ final class TextFieldTests: ZintlUITestCase {
     input.typeText("row")
     assertLabel("row-value", #"Row value: "row""#)
   }
+
+  /// Verifies a focus request moves typing from the clicked field to the requested one.
+  func testFocusRequestMovesTyping() throws {
+    try launch(scenario: "text-focus")
+
+    let first = app.textFields["first-field"]
+    XCTAssertTrue(first.waitToExist(timeout: 2))
+    first.click()
+    app.buttons["focus-second"].click()
+    app.typeText("abc")
+    assertLabel("second", "second: abc")
+    assertLabel("first", "first: ")
+  }
+
+  /// Verifies a field shown in the same update as its focus request takes focus.
+  func testNewFieldTakesRequestedFocus() throws {
+    try launch(scenario: "text-focus")
+
+    let first = app.textFields["first-field"]
+    XCTAssertTrue(first.waitToExist(timeout: 2))
+    first.click()
+    app.buttons["add-field"].click()
+    XCTAssertTrue(app.textFields["added-field"].waitToExist(timeout: 2))
+    app.typeText("xyz")
+    assertLabel("added", "added: xyz")
+    assertLabel("first", "first: ")
+  }
 }

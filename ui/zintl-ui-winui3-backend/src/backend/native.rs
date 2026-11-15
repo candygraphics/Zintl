@@ -189,6 +189,14 @@ impl NativeNode {
         }
     }
 
+    /// Moves keyboard focus to the control, such as a text field or editor.
+    pub(super) fn focus(&self) -> Result<(), AppError> {
+        match self.control() {
+            Some(control) => Ok(control.focus()?),
+            None => Ok(()),
+        }
+    }
+
     pub(super) fn control(&self) -> Option<&Control> {
         match &self.view {
             NativeView::Control(control) => Some(control),
@@ -715,6 +723,7 @@ impl NativeNode {
                 draws_background,
                 multiline,
                 style,
+                ..
             } => {
                 let old = match old {
                     Some(ViewKind::TextField {
@@ -764,18 +773,15 @@ impl NativeNode {
                     control.set_bool(BoolProperty::Selectable, *selectable)?;
                 }
             }
-            ViewKind::TextEditor { text, focus } => {
-                let (old_text, old_focus) = match old {
-                    Some(ViewKind::TextEditor { text, focus }) => (Some(text), Some(*focus)),
-                    _ => (None, None),
+            ViewKind::TextEditor { text, .. } => {
+                // Focus requests are applied by the backend once the editor is shown.
+                let old_text = match old {
+                    Some(ViewKind::TextEditor { text, .. }) => Some(text),
+                    _ => None,
                 };
                 // Text the editor already shows is not written back, so typing keeps the caret.
                 if old_text != Some(text) && Self::attributed(&control.rich_text()?) != *text {
                     control.set_rich_text(&Self::rich_text(text))?;
-                }
-                // Each new focus request moves keyboard focus to the editor.
-                if *focus > 0 && old_focus != Some(*focus) {
-                    control.focus()?;
                 }
             }
             ViewKind::Switch { on } => {
