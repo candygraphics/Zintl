@@ -160,6 +160,8 @@ pub struct AppKitBackend {
     gpu: GpuSlot,
     /// Set when an ID or `labeled_by` changed, so accessibility titles relink.
     titles_dirty: bool,
+    /// Controls the user changed; their rendered values are shown again on the next synchronization.
+    changed_by_user: Vec<NodeId>,
 }
 
 impl Default for AppKitBackend {
@@ -182,6 +184,7 @@ impl AppKitBackend {
             opened_window: false,
             gpu: GpuSlot::default(),
             titles_dirty: false,
+            changed_by_user: Vec::new(),
         }
     }
 
@@ -272,12 +275,34 @@ impl AppKitBackend {
         self.tree.main_menu_route()
     }
 
+    /// Records that the user changed the control `route` belongs to, before its handlers run.
+    fn note_user_change(&mut self, route: EventRouteId) {
+        if let Some(id) = self.tree.find_route(route) {
+            self.changed_by_user.push(id);
+        }
+    }
+
+    /// Shows the rendered value again in controls the user changed.
+    fn revert_user_changes(&self) -> Result<(), AppError> {
+        for id in self.tree.user_change_targets(&self.changed_by_user) {
+            if let (Some(native), Some(RenderNode::View { kind, .. })) =
+                (self.state(id).native.as_ref(), self.value(id))
+            {
+                native.apply(Some(kind), kind)?;
+            }
+        }
+        Ok(())
+    }
+
     fn synchronize(
         &mut self,
         application: &Application,
         cx: &MessageContext<'_, '_, Message>,
     ) -> Result<(), AppError> {
         self.pending_error.take()?;
+        let reverted = self.revert_user_changes();
+        self.changed_by_user.clear();
+        reverted?;
         for window in self.retired_windows.drain(..) {
             cx.remove_window(window);
         }

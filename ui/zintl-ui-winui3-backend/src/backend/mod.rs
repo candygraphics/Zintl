@@ -180,6 +180,8 @@ pub struct WinUI3Backend {
     gpu: GpuSlot,
     /// Set when an ID or `labeled_by` changed, so automation labels relink.
     titles_dirty: bool,
+    /// Controls the user changed; their rendered values are shown again on the next synchronization.
+    changed_by_user: Vec<NodeId>,
 }
 
 impl Default for WinUI3Backend {
@@ -203,6 +205,7 @@ impl WinUI3Backend {
             opened_window: false,
             gpu: GpuSlot::default(),
             titles_dirty: false,
+            changed_by_user: Vec::new(),
         }
     }
 
@@ -305,12 +308,34 @@ impl WinUI3Backend {
         self.tree.main_menu_route()
     }
 
+    /// Records that the user changed the control `route` belongs to, before its handlers run.
+    fn note_user_change(&mut self, route: EventRouteId) {
+        if let Some(id) = self.tree.find_route(route) {
+            self.changed_by_user.push(id);
+        }
+    }
+
+    /// Shows the rendered value again in controls the user changed.
+    fn revert_user_changes(&self) -> Result<(), AppError> {
+        for id in self.tree.user_change_targets(&self.changed_by_user) {
+            if let (Some(native), Some(RenderNode::View { kind, .. })) =
+                (self.state(id).native.as_ref(), self.tree.value(id))
+            {
+                native.apply(Some(kind), kind)?;
+            }
+        }
+        Ok(())
+    }
+
     fn synchronize(
         &mut self,
         application: &ApplicationContext,
         sender: &MessageSender,
     ) -> Result<(), AppError> {
         self.pending_error.take()?;
+        let reverted = self.revert_user_changes();
+        self.changed_by_user.clear();
+        reverted?;
         let commands = self.tree.main_menu(self.default_main_menu.as_ref());
         if self.main_menu.as_ref() != Some(&commands) {
             self.menu_bar = Menus::menu_bar(&commands);

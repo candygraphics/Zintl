@@ -83,4 +83,31 @@ final class PickersTests: ZintlUITestCase {
     picker.click()
     XCTAssertFalse(app.menuItems["Express"].waitToExist(timeout: 1))
   }
+
+  /// Verifies a pop-up picker returns to the app's option when on_change does not accept the choice.
+  func testRejectedChoiceRevertsTheMenuPicker() throws {
+    try launch(scenario: "pickers")
+
+    let picker = app.popUpButtons["fixed-picker"]
+    XCTAssertTrue(picker.waitToExist(timeout: 2))
+    picker.click()
+    app.menuItems["Other"].click()
+    assertLabel("rejected", "Rejected: 1")
+    XCTAssertTrue(waitUntil { picker.value as? String == "Fixed" }, "the picker kept Other")
+  }
+
+  /// Verifies a radio group checks the app's option again when on_change does not accept the click.
+  func testRejectedClickRevertsTheRadioGroup() throws {
+    try launch(scenario: "pickers")
+
+    XCTAssertTrue(radio("South").waitToExist(timeout: 2))
+    clickRadio("South")
+    assertLabel("rejected", "Rejected: 1")
+    XCTAssertTrue(
+      waitUntil {
+        self.radio("North").value as? Int == 1 && self.radio("South").value as? Int == 0
+      },
+      "the radio group did not return to North"
+    )
+  }
 }

@@ -75,6 +75,10 @@ impl Toggle {
         self
     }
 
+    /// Shows `on`; a bound Store takes precedence.
+    ///
+    /// The toggle always shows this value: a click that `on_change` does not
+    /// turn into a new value is undone.
     pub fn on(mut self, on: bool) -> Self {
         self.on = on;
         self
@@ -215,6 +219,10 @@ impl Picker {
         self
     }
 
+    /// Selects `index`; a bound Store takes precedence.
+    ///
+    /// The picker always shows this option: a choice that `on_change` does
+    /// not turn into a new selection is undone.
     pub fn selected(mut self, index: usize) -> Self {
         self.selected = index;
         self
