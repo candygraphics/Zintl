@@ -89,4 +89,19 @@ final class TableTests: ZintlUITestCase {
     XCTAssertTrue(waitForValue(app.staticTexts["selection"], "Selected: section-40"))
     XCTAssertTrue(row.waitToBeHittable(timeout: 2))
   }
+
+  /// Verifies double-clicking a row and pressing Return on the selected row activate it.
+  func testDoubleClickAndReturnActivateRows() throws {
+    try launch(scenario: "table")
+
+    let third = app.staticTexts["name-3"]
+    XCTAssertTrue(third.waitToExist(timeout: 2))
+    third.doubleClick()
+    assertLabel("activated", "Activated: section-3")
+
+    app.staticTexts["name-5"].click()
+    assertLabel("selection", "Selected: section-5")
+    app.typeKey(.return, modifierFlags: [])
+    assertLabel("activated", "Activated: section-5")
+  }
 }

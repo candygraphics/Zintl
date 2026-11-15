@@ -12,6 +12,7 @@ use crate::attach::attachments;
 use crate::{Attachments, Context, Element, Event, EventKind, NativeView, RenderNode};
 
 type SelectionAction = dyn for<'a> Fn(&mut Context<'a>, Option<&str>);
+type RowAction = dyn for<'a> Fn(&mut Context<'a>, &str);
 
 /// A titled column of a [`Table`].
 #[derive(Clone, Debug, PartialEq)]
@@ -79,6 +80,7 @@ pub struct Table {
     striped: bool,
     selection: Option<Store<Option<String>>>,
     action: Option<Rc<SelectionAction>>,
+    activate: Option<Rc<RowAction>>,
     layout: LayoutStyle,
     id: Option<String>,
     attachments: Attachments,
@@ -95,6 +97,7 @@ impl Table {
             striped: true,
             selection: None,
             action: None,
+            activate: None,
             layout: LayoutStyle::fill(Size::new(0.0, 0.0)),
             id: None,
             attachments: Attachments::default(),
@@ -119,6 +122,15 @@ impl Table {
         action: impl for<'a> Fn(&mut Context<'a>, Option<&str>) + 'static,
     ) -> Self {
         self.action = Some(Rc::new(action));
+        self
+    }
+
+    /// Runs with a row's ID when it is opened: double-clicked, or Return pressed while it is selected.
+    pub fn on_activate(
+        mut self,
+        action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static,
+    ) -> Self {
+        self.activate = Some(Rc::new(action));
         self
     }
 
@@ -188,6 +200,14 @@ impl NativeView for Table {
             accessibility: Default::default(),
         })
         .with_children(cells);
+        let element = match self.activate.clone() {
+            Some(activate) => element.on_event(EventKind::RowActivated, move |cx, event| {
+                if let Event::RowActivated { id } = event {
+                    activate(cx, &id);
+                }
+            }),
+            None => element,
+        };
         let store = self.selection;
         let action = self.action.clone();
         if store.is_none() && action.is_none() {

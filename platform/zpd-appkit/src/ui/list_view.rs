@@ -80,6 +80,17 @@ impl ListState {
         })
     }
 
+    /// Reports `kind` for `row` when it is a selectable row; returns whether it was reported.
+    fn emit_row(&self, row: i64, kind: impl FnOnce(String) -> WindowEventKind) -> bool {
+        let Some(id) = self.entry(row, |entry| entry.id.clone()) else {
+            return false;
+        };
+        if let Some(tree) = self.actor.tree_handle() {
+            tree.emit(&self.actor, kind(id));
+        }
+        true
+    }
+
     fn entry<R: Default>(&self, row: i64, read: impl FnOnce(&Entry) -> R) -> R {
         usize::try_from(row)
             .ok()
@@ -155,6 +166,69 @@ unsafe extern "C" fn selection_changed(object: Id, _: zpd_objc::Sel, notificatio
             tree.emit(&state.actor, WindowEventKind::ListSelectionChanged { id });
         }
     });
+}
+
+/// Runs `operation` with the state of the delegate of `table`, if it still has one.
+fn with_table_state<R: Default>(table: Id, operation: impl FnOnce(&ListState) -> R) -> R {
+    // SAFETY: The receiver is a live table whose delegate is ours or nil after teardown.
+    let delegate = unsafe { zpd_objc::msg_send!(table, zpd_objc::sel!("delegate"), () => Id) };
+    if delegate.is_null() {
+        return R::default();
+    }
+    ListState::with(delegate, operation)
+}
+
+/// Reports the double-clicked row as activated; clicks on the header or below the rows have none.
+unsafe extern "C" fn activate_clicked_row(object: Id, _: zpd_objc::Sel, _: Id) {
+    // SAFETY: AppKit sends the double action to the live table.
+    let row = unsafe { zpd_objc::msg_send!(object, zpd_objc::sel!("clickedRow"), () => i64) };
+    with_table_state(object, |state| {
+        state.emit_row(row, |id| WindowEventKind::RowActivated { id })
+    });
+}
+
+/// Activates the selected row on Return, and passes other keys to `NSTableView`.
+unsafe extern "C" fn table_key_down(object: Id, _: zpd_objc::Sel, event: Id) {
+    const RETURN: u16 = 36;
+    const ENTER: u16 = 76;
+    let shortcut_flags = native::NS_EVENT_MODIFIER_FLAG_COMMAND
+        | native::NS_EVENT_MODIFIER_FLAG_CONTROL
+        | native::NS_EVENT_MODIFIER_FLAG_OPTION;
+    // SAFETY: AppKit passes a live key event to the live table.
+    let (key, flags, row) = unsafe {
+        (
+            zpd_objc::msg_send!(event, zpd_objc::sel!("keyCode"), () => u16),
+            zpd_objc::msg_send!(event, zpd_objc::sel!("modifierFlags"), () => u64),
+            zpd_objc::msg_send!(object, zpd_objc::sel!("selectedRow"), () => i64),
+        )
+    };
+    let handled = flags & shortcut_flags == 0
+        && match key {
+            RETURN | ENTER => with_table_state(object, |state| {
+                state.emit_row(row, |id| WindowEventKind::RowActivated { id })
+            }),
+            _ => false,
+        };
+    if !handled {
+        // SAFETY: The receiver is an NSTableView subclass instance.
+        unsafe {
+            zpd_objc::msg_send_super!(object, zpd_objc::class!("NSTableView"), zpd_objc::sel!("keyDown:"), ((event): Id) => ());
+        }
+    }
+}
+
+/// An `NSTableView` that reports row activation and keys for rows.
+fn table_class() -> zpd_objc::Class {
+    static CLASS: OnceLock<usize> = OnceLock::new();
+    *CLASS.get_or_init(|| {
+        zpd_objc::decl!(ZpdListTableView: [zpd_objc::class!("NSTableView")] {
+            fields {}
+            methods {
+                "keyDown:": "v@:@" => table_key_down,
+                "zpdActivateClickedRow:": "v@:@" => activate_clicked_row,
+            }
+        }) as usize
+    }) as zpd_objc::Class
 }
 
 /// Fills the table's menu with the context menu of the clicked row's view.
@@ -252,7 +326,7 @@ pub struct ListView {
 impl ListView {
     pub fn new(application: &Application) -> Result<Self, UiError> {
         let scroll = native::alloc_init(zpd_objc::class!("NSScrollView"));
-        let table = native::alloc_init(zpd_objc::class!("NSTableView"));
+        let table = native::alloc_init(table_class());
         let view = ViewActor::new(application, scroll.clone());
         let tree = view.actor().tree_handle().ok_or(UiError::Closed)?;
         let table_actor = tree.insert_child(view.actor(), table.clone())?;
@@ -294,6 +368,9 @@ impl ListView {
             zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setAllowsMultipleSelection:"), ((false): bool) => ());
             zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setDataSource:"), ((delegate.as_ptr()): Id) => ());
             zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setDelegate:"), ((delegate.as_ptr()): Id) => ());
+            // The table is its own target, which NSControl does not retain.
+            zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setTarget:"), ((table.as_ptr()): Id) => ());
+            zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setDoubleAction:"), ((zpd_objc::sel!("zpdActivateClickedRow:")): zpd_objc::Sel) => ());
             let menu = native::alloc_init(zpd_objc::class!("NSMenu"));
             zpd_objc::msg_send!(menu.as_ptr(), zpd_objc::sel!("setDelegate:"), ((delegate.as_ptr()): Id) => ());
             zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setMenu:"), ((menu.as_ptr()): Id) => ());

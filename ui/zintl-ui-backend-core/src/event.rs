@@ -21,6 +21,7 @@ pub enum EventKind {
     CanvasActions,
     SidebarSelectionChanged,
     ListSelectionChanged,
+    RowActivated,
     ToolbarItemClicked,
     ToolbarSearchChanged,
     SidebarSearchChanged,
@@ -94,6 +95,10 @@ pub enum Event {
     ListSelectionChanged {
         id: Option<String>,
     },
+    /// The user double-clicked a table row or pressed Return on the selected one.
+    RowActivated {
+        id: String,
+    },
     SidebarSearchChanged {
         value: String,
     },
@@ -140,6 +145,7 @@ impl EventTrait for Event {
             Self::CanvasActions { .. } => EventKind::CanvasActions,
             Self::SidebarSelectionChanged { .. } => EventKind::SidebarSelectionChanged,
             Self::ListSelectionChanged { .. } => EventKind::ListSelectionChanged,
+            Self::RowActivated { .. } => EventKind::RowActivated,
             Self::ToolbarItemClicked { .. } => EventKind::ToolbarItemClicked,
             Self::ToolbarSearchChanged { .. } => EventKind::ToolbarSearchChanged,
             Self::SidebarSearchChanged { .. } => EventKind::SidebarSearchChanged,

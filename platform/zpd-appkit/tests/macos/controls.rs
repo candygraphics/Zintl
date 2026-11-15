@@ -572,6 +572,13 @@ fn main() {
         zpd_objc::msg_send!(Checks::native(&row_button), zpd_objc::sel!("performClick:"), ((zpd_objc::NIL): Id) => ())
     };
     assert_eq!(take(), vec![WindowEventKind::ButtonClicked]);
+    // Verifies a double action without a clicked row, as below the last row, activates nothing.
+    // SAFETY: The list's document view is its live table, which handles its double action.
+    unsafe {
+        let table = zpd_objc::msg_send!(Checks::native(&rows), zpd_objc::sel!("documentView"), () => Id);
+        zpd_objc::msg_send!(table, zpd_objc::sel!("zpdActivateClickedRow:"), ((zpd_objc::NIL): Id) => ());
+    }
+    assert!(take().is_empty());
 
     // Verifies the editor reports typing as rich runs, replaces text silently, and drops stale undo history.
     let editor = TextEditor::new(&application).unwrap();

@@ -707,6 +707,7 @@ impl Shared for zpd_appkit::actor::WindowEventKind {
             Native::ToolbarItemClicked { id } => Shared::ToolbarItemClicked { id },
             Native::ToolbarSearchChanged { value } => Shared::ToolbarSearchChanged { value },
             Native::ListSelectionChanged { id } => Shared::ListSelectionChanged { id },
+            Native::RowActivated { id } => Shared::RowActivated { id },
             Native::StateChanged { on } => Shared::StateChanged { on },
             Native::ValueChanged { value } => Shared::ValueChanged { value },
             Native::SelectionChanged { index } => Shared::SelectionChanged { index },

@@ -3,12 +3,14 @@ use zintl_ui_desktop::*;
 /// A striped table of sections whose selection is shown below and can jump to a far row.
 pub struct MainView {
     selected: Store<Option<String>>,
+    activated: Store<String>,
 }
 
 impl MainView {
     pub fn new() -> Self {
         Self {
             selected: Store::default(),
+            activated: Store::default(),
         }
     }
 }
@@ -18,10 +20,11 @@ impl View for MainView {
 
     fn init(&mut self, cx: &mut Context<'_>) {
         self.selected = cx.store(None);
+        self.activated = cx.store(String::new());
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
-        let selected = self.selected;
+        let (selected, activated) = (self.selected, self.activated);
         let rows = (1..=50).map(|row| {
             TableRow::new(
                 format!("section-{row}"),
@@ -53,7 +56,11 @@ impl View for MainView {
                 VStack::new(list![
                     status,
                     select,
-                    Table::new(columns, rows).bind(selected).id("sections"),
+                    cx.watch(activated, |id| Text::new(format!("Activated: {id}")).id("activated")),
+                    Table::new(columns, rows)
+                        .bind(selected)
+                        .on_activate(move |cx, id| cx.update(activated, |activated| *activated = id.into()))
+                        .id("sections"),
                 ])
                 .spacing(8.0)
                 .fill_width(),

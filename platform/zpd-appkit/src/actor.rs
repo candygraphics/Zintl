@@ -99,6 +99,10 @@ pub enum WindowEventKind {
     ListSelectionChanged {
         id: Option<String>,
     },
+    /// The user double-clicked a list row or pressed Return on the selected one.
+    RowActivated {
+        id: String,
+    },
     /// A continuous control such as a slider or stepper changed.
     ValueChanged {
         value: f64,
