@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use zintl_ui::event::Event as EventTrait;
 
 use crate::graphics::AttributedText;
-use crate::{CanvasEvent, CanvasId, Color};
+use crate::{CanvasEvent, CanvasId, Color, SortOrder};
 
 /// Selects the event an element route handles.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -23,6 +23,7 @@ pub enum EventKind {
     ListSelectionChanged,
     RowActivated,
     RowDeleteRequested,
+    SortChanged,
     ToolbarItemClicked,
     ToolbarSearchChanged,
     SidebarSearchChanged,
@@ -104,6 +105,10 @@ pub enum Event {
     RowDeleteRequested {
         id: String,
     },
+    /// The user clicked a sortable column header.
+    SortChanged {
+        order: SortOrder,
+    },
     SidebarSearchChanged {
         value: String,
     },
@@ -152,6 +157,7 @@ impl EventTrait for Event {
             Self::ListSelectionChanged { .. } => EventKind::ListSelectionChanged,
             Self::RowActivated { .. } => EventKind::RowActivated,
             Self::RowDeleteRequested { .. } => EventKind::RowDeleteRequested,
+            Self::SortChanged { .. } => EventKind::SortChanged,
             Self::ToolbarItemClicked { .. } => EventKind::ToolbarItemClicked,
             Self::ToolbarSearchChanged { .. } => EventKind::ToolbarSearchChanged,
             Self::SidebarSearchChanged { .. } => EventKind::SidebarSearchChanged,

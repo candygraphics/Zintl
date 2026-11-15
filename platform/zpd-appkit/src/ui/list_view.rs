@@ -40,6 +40,8 @@ pub struct TableColumn {
     pub width: Option<f64>,
     /// The alignment of the header title.
     pub alignment: TextAlignment,
+    /// The key reported when the user sorts by this column; `None` makes it unsortable.
+    pub sort_key: Option<String>,
 }
 
 /// A table row: a section header or a selectable row with an ID.
@@ -164,6 +166,36 @@ unsafe extern "C" fn selection_changed(object: Id, _: zpd_objc::Sel, notificatio
         let id = state.entry(row, |entry| entry.id.clone());
         if let Some(tree) = state.actor.tree_handle() {
             tree.emit(&state.actor, WindowEventKind::ListSelectionChanged { id });
+        }
+    });
+}
+
+/// Reports the order the user chose by clicking a sortable header.
+unsafe extern "C" fn sort_changed(object: Id, _: zpd_objc::Sel, table: Id, _: Id) {
+    ListState::with(object, |state| {
+        if !state.ready.get() {
+            return;
+        }
+        // SAFETY: AppKit passes the live table, whose first descriptor is the new order.
+        let order = unsafe {
+            let descriptors =
+                zpd_objc::msg_send!(table, zpd_objc::sel!("sortDescriptors"), () => Id);
+            let first = zpd_objc::msg_send!(descriptors, zpd_objc::sel!("firstObject"), () => Id);
+            (!first.is_null()).then(|| {
+                let key = native::rust_string(
+                    zpd_objc::msg_send!(first, zpd_objc::sel!("key"), () => Id),
+                );
+                (
+                    key,
+                    zpd_objc::msg_send!(first, zpd_objc::sel!("ascending"), () => bool),
+                )
+            })
+        };
+        if let (Some((key, ascending)), Some(tree)) = (order, state.actor.tree_handle()) {
+            tree.emit(
+                &state.actor,
+                WindowEventKind::SortChanged { key, ascending },
+            );
         }
     });
 }
@@ -309,6 +341,7 @@ fn delegate_class() -> zpd_objc::Class {
                 "tableView:isGroupRow:": "B@:@q" => is_group,
                 "tableView:shouldSelectRow:": "B@:@q" => should_select,
                 "tableViewSelectionDidChange:": "v@:@" => selection_changed,
+                "tableView:sortDescriptorsDidChange:": "v@:@@" => sort_changed,
                 "menuNeedsUpdate:": "v@:@" => menu_needs_update,
                 "dealloc": "v@:" => dealloc,
             }
@@ -415,6 +448,7 @@ impl ListView {
                     title: String::new(),
                     width: None,
                     alignment: TextAlignment::Leading,
+                    sort_key: None,
                 };
                 // NSTableColumn widths exclude the intercell spacing drawn beside each column.
                 let spacing = zpd_objc::msg_send!(table, zpd_objc::sel!("intercellSpacing"), () => native::Size).width;
@@ -432,6 +466,11 @@ impl ListView {
                     zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("setTitle:"), ((title.as_ptr()): Id) => ());
                     let header = zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("headerCell"), () => Id);
                     zpd_objc::msg_send!(header, zpd_objc::sel!("setAlignment:"), ((declared.alignment.native()): isize) => ());
+                    // A prototype makes the header clickable for sorting, starting ascending.
+                    if let Some(key) = &declared.sort_key {
+                        let descriptor = Self::sort_descriptor(key, true);
+                        zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("setSortDescriptorPrototype:"), ((descriptor): Id) => ());
+                    }
                     if let Some(width) = declared.width {
                         let width = (width - spacing).max(0.0);
                         zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("setWidth:"), ((width): f64) => ());
@@ -451,6 +490,60 @@ impl ListView {
     }
 
     const USER_RESIZING_MASK: u64 = 1 << 1;
+
+    /// Returns an autoreleased `NSSortDescriptor`.
+    ///
+    /// # Safety
+    /// Must run on the main thread inside an autorelease scope.
+    unsafe fn sort_descriptor(key: &str, ascending: bool) -> Id {
+        let key = native::nsstring(key);
+        // SAFETY: Guaranteed by the caller; the descriptor copies the key.
+        unsafe {
+            zpd_objc::msg_send!(zpd_objc::class!("NSSortDescriptor"), zpd_objc::sel!("sortDescriptorWithKey:ascending:"), ((key.as_ptr()): Id, (ascending): bool) => Id)
+        }
+    }
+
+    /// Shows `order` as `(key, ascending)` in the header, without reporting it as the user's.
+    ///
+    /// The column whose sort key matches shows the sort indicator.
+    pub fn set_sort(&self, order: Option<(&str, bool)>) -> Result<(), UiError> {
+        self.quietly(|table| {
+            // SAFETY: The live table and its columns accept sort descriptors and indicator images.
+            unsafe {
+                let descriptors = match order {
+                    Some((key, ascending)) => {
+                        let descriptor = Self::sort_descriptor(key, ascending);
+                        zpd_objc::msg_send!(zpd_objc::class!("NSArray"), zpd_objc::sel!("arrayWithObject:"), ((descriptor): Id) => Id)
+                    }
+                    None => zpd_objc::msg_send!(zpd_objc::class!("NSArray"), zpd_objc::sel!("array"), () => Id),
+                };
+                zpd_objc::msg_send!(table, zpd_objc::sel!("setSortDescriptors:"), ((descriptors): Id) => ());
+                let columns = zpd_objc::msg_send!(table, zpd_objc::sel!("tableColumns"), () => Id);
+                let count = zpd_objc::msg_send!(columns, zpd_objc::sel!("count"), () => usize);
+                let mut highlighted = zpd_objc::NIL;
+                for index in 0..count {
+                    let column = zpd_objc::msg_send!(columns, zpd_objc::sel!("objectAtIndex:"), ((index): usize) => Id);
+                    let prototype = zpd_objc::msg_send!(column, zpd_objc::sel!("sortDescriptorPrototype"), () => Id);
+                    let sorted = order.filter(|_| !prototype.is_null()).and_then(|(key, ascending)| {
+                        let column_key = native::rust_string(zpd_objc::msg_send!(prototype, zpd_objc::sel!("key"), () => Id));
+                        (column_key == key).then_some(ascending)
+                    });
+                    let image = match sorted {
+                        Some(true) => native::nsstring("NSAscendingSortIndicator"),
+                        Some(false) => native::nsstring("NSDescendingSortIndicator"),
+                        None => {
+                            zpd_objc::msg_send!(table, zpd_objc::sel!("setIndicatorImage:inTableColumn:"), ((zpd_objc::NIL): Id, (column): Id) => ());
+                            continue;
+                        }
+                    };
+                    let image = zpd_objc::msg_send!(zpd_objc::class!("NSImage"), zpd_objc::sel!("imageNamed:"), ((image.as_ptr()): Id) => Id);
+                    zpd_objc::msg_send!(table, zpd_objc::sel!("setIndicatorImage:inTableColumn:"), ((image): Id, (column): Id) => ());
+                    highlighted = column;
+                }
+                zpd_objc::msg_send!(table, zpd_objc::sel!("setHighlightedTableColumn:"), ((highlighted): Id) => ());
+            }
+        })
+    }
 
     /// Shades every other row.
     pub fn set_striped(&self, striped: bool) -> Result<(), UiError> {

@@ -32,8 +32,8 @@ pub use model::{
     AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, CommandItem,
     CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig, FileDialogMode,
     ListSection, ListStyle, MenuRole, NumberFormat, PopoverEdge, ScrollAlignment, ScrollAxes,
-    ScrollTarget, ShortcutKey, Sidebar, SidebarItem, SidebarSearch, SidebarSection, SystemColor,
-    TableColumn, TextAlignment, TextColor, TextStyle, TitleBar, Toolbar, ToolbarItem,
+    ScrollTarget, ShortcutKey, Sidebar, SidebarItem, SidebarSearch, SidebarSection, SortOrder,
+    SystemColor, TableColumn, TextAlignment, TextColor, TextStyle, TitleBar, Toolbar, ToolbarItem,
     WindowAppMenu, WindowStyle,
 };
 pub use signal::Signal;
@@ -160,6 +160,8 @@ pub enum ViewKind {
         selected: Option<String>,
         /// Whether the table always shows `selected`, so a selection the app rejects is undone.
         follows_selection: bool,
+        /// The order the header shows; the app sorts `rows` itself.
+        sort: Option<SortOrder>,
         striped: bool,
     },
     /// A view drawn by its canvas handler.

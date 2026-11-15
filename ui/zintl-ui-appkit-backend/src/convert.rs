@@ -217,6 +217,7 @@ impl Native for core::TableColumn {
             title: self.title.clone(),
             width: self.width,
             alignment: self.alignment.native(),
+            sort_key: self.sort_key.clone(),
         }
     }
 }
@@ -709,6 +710,9 @@ impl Shared for zpd_appkit::actor::WindowEventKind {
             Native::ListSelectionChanged { id } => Shared::ListSelectionChanged { id },
             Native::RowActivated { id } => Shared::RowActivated { id },
             Native::RowDeleteRequested { id } => Shared::RowDeleteRequested { id },
+            Native::SortChanged { key, ascending } => Shared::SortChanged {
+                order: core::SortOrder { key, ascending },
+            },
             Native::StateChanged { on } => Shared::StateChanged { on },
             Native::ValueChanged { value } => Shared::ValueChanged { value },
             Native::SelectionChanged { index } => Shared::SelectionChanged { index },

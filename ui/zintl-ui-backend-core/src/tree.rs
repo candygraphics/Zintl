@@ -451,6 +451,7 @@ mod tests {
                 rows: Vec::new(),
                 selected: None,
                 follows_selection,
+                sort: None,
                 striped: false,
             })
         };

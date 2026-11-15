@@ -533,6 +533,7 @@ fn table_columns_share_the_width_left_by_fixed_ones() {
         title: String::new(),
         width,
         alignment: Default::default(),
+        sort_key: None,
     };
     assert_eq!(NativeNode::column_widths(&[], 300.0), [300.0]);
     assert_eq!(

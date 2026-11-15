@@ -5,7 +5,7 @@ use std::rc::Rc;
 use zintl_ui::element::{ElementFactory, IntoElement, KeyedElement, ListFactory};
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
-use zintl_ui_backend_core::{TextAlignment, ViewKind};
+use zintl_ui_backend_core::{SortOrder, TextAlignment, ViewKind};
 use zintl_ui_layout::{Axis, LayoutDimension, LayoutStyle, Size};
 
 use crate::attach::attachments;
@@ -23,6 +23,7 @@ pub struct TableColumn {
     title: String,
     width: Option<f64>,
     alignment: TextAlignment,
+    sort_key: Option<String>,
 }
 
 impl TableColumn {
@@ -31,7 +32,14 @@ impl TableColumn {
             title: title.into(),
             width: None,
             alignment: TextAlignment::Leading,
+            sort_key: None,
         }
+    }
+
+    /// Lets the user sort by this column; clicking its header reports `key` to [`Table::bind_sort`].
+    pub fn sort_key(mut self, key: impl Into<String>) -> Self {
+        self.sort_key = Some(key.into());
+        self
     }
 
     /// Aligns the header title, and text cells that keep the default leading alignment.
@@ -94,6 +102,7 @@ pub struct Table {
     activate: Option<Rc<RowAction>>,
     delete: Option<Rc<RowAction>>,
     should_select: Option<Rc<SelectionCheck>>,
+    sort: Option<Store<Option<SortOrder>>>,
     layout: LayoutStyle,
     id: Option<String>,
     attachments: Attachments,
@@ -113,6 +122,7 @@ impl Table {
             activate: None,
             delete: None,
             should_select: None,
+            sort: None,
             layout: LayoutStyle::fill(Size::new(0.0, 0.0)),
             id: None,
             attachments: Attachments::default(),
@@ -137,6 +147,15 @@ impl Table {
         action: impl for<'a> Fn(&mut Context<'a>, Option<&str>) + 'static,
     ) -> Self {
         self.action = Some(Rc::new(action));
+        self
+    }
+
+    /// Reads and writes the sort order the header shows.
+    ///
+    /// Clicking a column with a [`TableColumn::sort_key`] writes the Store;
+    /// the app sorts its rows by it, so rows stay keyed by ID.
+    pub fn bind_sort(mut self, order: Store<Option<SortOrder>>) -> Self {
+        self.sort = Some(order);
         self
     }
 
@@ -229,11 +248,13 @@ impl NativeView for Table {
                         title: column.title.clone(),
                         width: column.width,
                         alignment: column.alignment,
+                        sort_key: column.sort_key.clone(),
                     })
                     .collect(),
                 rows: self.rows.iter().map(|row| row.id.clone()).collect(),
                 selected: self.selection.and_then(|store| cx.get(store).clone()),
                 follows_selection: self.selection.is_some() || self.should_select.is_some(),
+                sort: self.sort.and_then(|store| cx.get(store).clone()),
                 striped: self.striped,
             },
             layout: self.layout,
@@ -248,6 +269,14 @@ impl NativeView for Table {
             Some(activate) => element.on_event(EventKind::RowActivated, move |cx, event| {
                 if let Event::RowActivated { id } = event {
                     activate(cx, &id);
+                }
+            }),
+            None => element,
+        };
+        let element = match self.sort {
+            Some(store) => element.on_event(EventKind::SortChanged, move |cx, event| {
+                if let Event::SortChanged { order } = event {
+                    cx.update(store, |sort| *sort = Some(order));
                 }
             }),
             None => element,

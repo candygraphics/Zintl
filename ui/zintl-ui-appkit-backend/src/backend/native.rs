@@ -684,6 +684,7 @@ impl NativeNode {
                     columns,
                     selected,
                     striped,
+                    sort,
                     ..
                 },
             ) => {
@@ -691,8 +692,19 @@ impl NativeNode {
                     list.set_style(zpd_appkit::ui::ListStyle::Plain)?;
                 }
                 // New columns take effect when the rows are attached again.
-                if !matches!(old, Some(ViewKind::Table { columns: old, .. }) if old == columns) {
+                let new_columns =
+                    !matches!(old, Some(ViewKind::Table { columns: old, .. }) if old == columns);
+                if new_columns {
                     list.set_columns(&columns.iter().map(Native::native).collect::<Vec<_>>())?;
+                }
+                // New columns lose their indicators, so the order is shown again with them.
+                if new_columns
+                    || !matches!(old, Some(ViewKind::Table { sort: old, .. }) if old == sort)
+                {
+                    list.set_sort(
+                        sort.as_ref()
+                            .map(|order| (order.key.as_str(), order.ascending)),
+                    )?;
                 }
                 if !matches!(old, Some(ViewKind::Table { striped: old, .. }) if old == striped) {
                     list.set_striped(*striped)?;

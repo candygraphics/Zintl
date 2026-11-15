@@ -41,6 +41,16 @@ pub struct TableColumn {
     pub width: Option<f64>,
     /// The header's alignment, and the default for text cells that keep the leading alignment.
     pub alignment: TextAlignment,
+    /// The key reported when the user sorts by this column; `None` makes it unsortable.
+    pub sort_key: Option<String>,
+}
+
+/// The order a table's rows should be sorted in; the app sorts them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SortOrder {
+    /// The sort key of the column the user chose.
+    pub key: String,
+    pub ascending: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

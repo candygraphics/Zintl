@@ -107,6 +107,11 @@ pub enum WindowEventKind {
     RowDeleteRequested {
         id: String,
     },
+    /// The user clicked a sortable column header.
+    SortChanged {
+        key: String,
+        ascending: bool,
+    },
     /// A continuous control such as a slider or stepper changed.
     ValueChanged {
         value: f64,

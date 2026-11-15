@@ -187,4 +187,37 @@ final class TableTests: ZintlUITestCase {
     app.staticTexts["name-3"].click()
     assertLabel("selection", "Selected: section-3")
   }
+
+  /// Returns the ID of the name cell in the first table row.
+  private func firstRowName() -> String {
+    app.tables["sections"].tableRows.element(boundBy: 0).staticTexts.element(boundBy: 0).identifier
+  }
+
+  /// Verifies clicking the Name header reports the order, which the app's rows follow.
+  func testClickingTheHeaderSortsTheRows() throws {
+    try launch(scenario: "table")
+
+    let header = app.tables["sections"].buttons["Name"]
+    XCTAssertTrue(header.waitToExist(timeout: 2))
+    header.click()
+    assertLabel("sort", "Sort: name ascending")
+    XCTAssertTrue(waitUntil { self.firstRowName() == "name-1" }, firstRowName())
+
+    header.click()
+    assertLabel("sort", "Sort: name descending")
+    XCTAssertTrue(waitUntil { self.firstRowName() == "name-50" }, firstRowName())
+  }
+
+  /// Verifies an order set by the app reorders the rows.
+  func testStoreChangeSortsTheRows() throws {
+    try launch(scenario: "table")
+
+    XCTAssertTrue(app.staticTexts["name-1"].waitToExist(timeout: 2))
+    app.buttons["sort-descending"].click()
+    assertLabel("sort", "Sort: name descending")
+    XCTAssertTrue(waitUntil { self.firstRowName() == "name-50" }, firstRowName())
+    // Clicking the header again continues from the app's order.
+    app.tables["sections"].buttons["Name"].click()
+    assertLabel("sort", "Sort: name ascending")
+  }
 }

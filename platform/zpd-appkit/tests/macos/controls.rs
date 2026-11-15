@@ -386,11 +386,13 @@ fn main() {
                 title: "Name".into(),
                 width: Some(200.0),
                 alignment: TextAlignment::Leading,
+                sort_key: Some("name".into()),
             },
             TableColumn {
                 title: "Length".into(),
                 width: Some(120.0),
                 alignment: TextAlignment::Trailing,
+                sort_key: None,
             },
         ])
         .unwrap();
@@ -410,6 +412,20 @@ fn main() {
         let alignment = zpd_objc::msg_send!(header, zpd_objc::sel!("alignment"), () => isize);
         // NSTextAlignmentRight is 2 on Apple silicon and 1 on Intel Macs.
         assert!(alignment == 1 || alignment == 2, "{alignment}");
+    }
+    // Verifies a programmatic order shows the indicator on its column and reports nothing.
+    table.set_sort(Some(("name", false))).unwrap();
+    assert!(take().is_empty());
+    // SAFETY: The list's document view is its live NSTableView with two columns.
+    unsafe {
+        let native = zpd_objc::msg_send!(Checks::native(&table), zpd_objc::sel!("documentView"), () => Id);
+        let columns = zpd_objc::msg_send!(native, zpd_objc::sel!("tableColumns"), () => Id);
+        let indicator = |index: usize| {
+            let column = zpd_objc::msg_send!(columns, zpd_objc::sel!("objectAtIndex:"), ((index): usize) => Id);
+            zpd_objc::msg_send!(native, zpd_objc::sel!("indicatorImageInTableColumn:"), ((column): Id) => Id)
+        };
+        assert!(!indicator(0).is_null());
+        assert!(indicator(1).is_null());
     }
 
     // Verifies rich runs round-trip, and the paragraph action restyles undoably and validates its items.
