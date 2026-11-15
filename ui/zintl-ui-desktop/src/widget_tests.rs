@@ -82,6 +82,46 @@ fn bar_lengths_follow_their_values() {
     assert_eq!(BarChart::fractions(&[ChartBar::new("Empty", 0.0)]), [0.0]);
 }
 
+/// Returns the chart's group node and its rows' bar canvases.
+fn chart_parts(chart: BarChart) -> (RenderNode, Vec<RenderNode>) {
+    let tree = App::new(chart).render_tree();
+    let bars = tree
+        .children
+        .iter()
+        // Each row is a label column, the track, and a value column; the track holds the bar.
+        .map(|row| row.children[1].children[0].children[0].value.clone())
+        .collect();
+    (tree.value, bars)
+}
+
+#[test]
+fn bar_chart_exposes_a_group_with_bar_ids() {
+    // Verifies the chart is a named group and bars carry their IDs.
+    let (group, bars) = chart_parts(
+        BarChart::new([
+            ChartBar::new("Food", 3480.0).id("expenses-food"),
+            ChartBar::new("Other", 300.0).id("expenses-other"),
+        ])
+        .id("expenses"),
+    );
+    assert!(matches!(
+        &group,
+        RenderNode::View { id: Some(id), accessibility, .. }
+            if id == "expenses" && accessibility.role == Some(AccessibilityRole::Group)
+    ));
+    let ids = bars
+        .iter()
+        .map(|bar| match bar {
+            RenderNode::View { id, .. } => id.clone(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        ids,
+        [Some("expenses-food".into()), Some("expenses-other".into())]
+    );
+}
+
 #[test]
 fn system_text_colors_reach_the_render_node() {
     // Verifies a system color is kept by name, so the backend resolves it for the current appearance.

@@ -7,8 +7,8 @@ use zintl_ui::view::View;
 use zintl_ui_layout::{Axis, CrossAxisAlignment, LayoutDimension, LayoutStyle, Size};
 
 use crate::{
-    Attach, Attachments, Canvas2D, Canvas2DHandler, Color, Context, Element, Frame, Graphics2D,
-    ListFactory, NativeView, RenderNode, Text, TextAlignment, list,
+    AccessibilityRole, Attach, Attachments, Canvas2D, Canvas2DHandler, Color, Context, Element,
+    Frame, Graphics2D, ListFactory, NativeView, RenderNode, Text, TextAlignment, list,
 };
 
 type FormatValue = dyn Fn(f64) -> String;
@@ -19,6 +19,7 @@ pub struct ChartBar {
     label: String,
     value: f64,
     color: Option<Color>,
+    id: Option<String>,
 }
 
 impl ChartBar {
@@ -27,6 +28,7 @@ impl ChartBar {
             label: label.into(),
             value,
             color: None,
+            id: None,
         }
     }
 
@@ -35,13 +37,20 @@ impl ChartBar {
         self.color = Some(color);
         self
     }
+
+    /// Identifies the bar's accessibility element, such as `expenses-food`.
+    pub fn id(mut self, id: impl Into<String>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
 }
 
 /// Horizontal bars whose lengths are proportional to their values, such as a breakdown of a total.
 ///
 /// Each row shows a label, the bar, and the formatted value. The largest
 /// value fills the width beside the labels; negative values show no bar.
-/// Accessibility reports each bar with its label and formatted value.
+/// Accessibility reports the chart as a group and each bar with its label
+/// and formatted value.
 #[derive(Clone)]
 pub struct BarChart {
     bars: Vec<ChartBar>,
@@ -77,6 +86,7 @@ impl BarChart {
         self
     }
 
+    /// Identifies the chart's accessibility group.
     pub fn id(mut self, id: impl Into<String>) -> Self {
         self.id = Some(id.into());
         self
@@ -125,12 +135,16 @@ impl BarChart {
     ) -> ElementFactory<RenderNode> {
         let value = (self.format)(bar.value);
         let label = Self::column(bar.label.clone(), label_width, TextAlignment::Leading);
-        let fill = Canvas2D::new(BarFill {
+        let mut fill = Canvas2D::new(BarFill {
             color: bar.color.unwrap_or(self.color),
         })
-        .grow()
-        .accessibility_label(bar.label.clone())
-        .accessibility_value(value.clone());
+        .grow();
+        if let Some(id) = &bar.id {
+            fill = fill.id(id.clone());
+        }
+        let fill = fill
+            .accessibility_label(bar.label.clone())
+            .accessibility_value(value.clone());
         let mut bar_layout = LayoutStyle::stack(Axis::Vertical, 0.0);
         bar_layout.width = LayoutDimension::Percent(fraction);
         bar_layout.height = LayoutDimension::Points(Self::BAR_HEIGHT);
@@ -168,7 +182,9 @@ impl NativeView for BarChart {
             .collect::<ListFactory<RenderNode>>();
         let mut layout = LayoutStyle::stack(Axis::Vertical, 6.0);
         layout.width = LayoutDimension::Percent(1.0);
-        let view = zintl_ui_native::View::new(layout, rows);
+        // The group exposes the chart's ID and scopes its bars for assistive apps and UI tests.
+        let view =
+            zintl_ui_native::View::new(layout, rows).accessibility_role(AccessibilityRole::Group);
         match &self.id {
             Some(id) => view.id(id.clone()).native_element(cx),
             None => view.native_element(cx),
