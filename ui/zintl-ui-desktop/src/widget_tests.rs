@@ -82,6 +82,14 @@ fn bar_lengths_follow_their_values() {
     assert_eq!(BarChart::fractions(&[ChartBar::new("Empty", 0.0)]), [0.0]);
 }
 
+#[test]
+fn bar_chart_estimates_wide_characters_as_one_em() {
+    // Verifies CJK labels are estimated at the font size per character, so short labels are not truncated.
+    assert!(BarChart::text_width("給与") >= 2.0 * 13.0);
+    assert!(BarChart::text_width("水道光熱費") >= 5.0 * 13.0);
+    assert!(BarChart::text_width("Food") < BarChart::text_width("給与給与"));
+}
+
 /// Returns the chart's group node and its rows' bar canvases.
 fn chart_parts(chart: BarChart) -> (RenderNode, Vec<RenderNode>) {
     let tree = App::new(chart).render_tree();

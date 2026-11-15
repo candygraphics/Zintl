@@ -63,6 +63,8 @@ pub struct BarChart {
 impl BarChart {
     /// The height of each bar.
     const BAR_HEIGHT: f32 = 16.0;
+    /// The size of the system font the labels use.
+    const FONT_SIZE: f32 = 13.0;
 
     pub fn new(bars: impl IntoIterator<Item = ChartBar>) -> Self {
         Self {
@@ -106,9 +108,44 @@ impl BarChart {
             .collect()
     }
 
-    /// Estimates the width that shows `text` on one line.
-    fn text_width(text: &str) -> f32 {
-        text.chars().count() as f32 * 7.5 + 8.0
+    /// Estimates the width that shows `text` on one line in the system font.
+    ///
+    /// East Asian wide and full-width characters take a full em; others take
+    /// an average Latin glyph's width.
+    pub(crate) fn text_width(text: &str) -> f32 {
+        let width: f32 = text
+            .chars()
+            .map(|character| {
+                if Self::is_wide(character) {
+                    Self::FONT_SIZE
+                } else {
+                    7.5
+                }
+            })
+            .sum();
+        width + 8.0
+    }
+
+    /// Returns whether `character` is East Asian wide or full-width, such as kanji or kana.
+    fn is_wide(character: char) -> bool {
+        matches!(
+            character as u32,
+            0x1100..=0x115F
+                | 0x2E80..=0x303E
+                | 0x3041..=0x33FF
+                | 0x3400..=0x4DBF
+                | 0x4E00..=0x9FFF
+                | 0xA000..=0xA4CF
+                | 0xAC00..=0xD7A3
+                | 0xF900..=0xFAFF
+                | 0xFE30..=0xFE4F
+                | 0xFF00..=0xFF60
+                | 0xFFE0..=0xFFE6
+                | 0x1F300..=0x1F64F
+                | 0x1F900..=0x1F9FF
+                | 0x20000..=0x2FFFD
+                | 0x30000..=0x3FFFD
+        )
     }
 
     /// Returns a column of `width` points that shows `text` on one line, truncated if longer.

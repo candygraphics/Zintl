@@ -40,6 +40,21 @@ final class ChartTests: ZintlUITestCase {
     XCTAssertEqual(transport.frame.width, breakdownBar("Rent").frame.width, accuracy: 1)
   }
 
+  /// Verifies short Japanese labels get columns as wide as their text, and bars share one start.
+  func testShortJapaneseLabelsAreNotTruncated() throws {
+    try launch(scenario: "chart")
+
+    let group = app.groups["cjk"]
+    let utilities = bar("cjk-utilities")
+    XCTAssertTrue(utilities.waitToExist(timeout: 2))
+    let font = NSFont.systemFont(ofSize: 13)
+    let textWidth = ("水道光熱費" as NSString).size(withAttributes: [.font: font]).width
+    // The label column ends 8 points before the track.
+    let column = utilities.frame.minX - group.frame.minX - 8
+    XCTAssertGreaterThanOrEqual(column, textWidth.rounded(.up))
+    XCTAssertEqual(bar("cjk-salary").frame.minX, utilities.frame.minX, accuracy: 0.5)
+  }
+
   /// Verifies bars with the same label in two charts are told apart by ID, inside their groups.
   func testBarsAreFoundByIDInsideTheirChart() throws {
     try launch(scenario: "chart")

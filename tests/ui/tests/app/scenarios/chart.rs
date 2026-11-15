@@ -1,6 +1,7 @@
 use zintl_ui_desktop::*;
 
-/// Three bars and a button that doubles the second one, and two charts that share a label.
+/// Three bars and a button that doubles the second one, a chart with short Japanese labels,
+/// and two charts that share a label.
 pub struct MainView {
     transport: Store<f64>,
 }
@@ -30,6 +31,13 @@ impl View for MainView {
         ])
         .value_format(whole)
         .id("breakdown");
+        // Columns sized from these labels must fit two and five CJK characters.
+        let japanese = BarChart::new([
+            ChartBar::new("水道光熱費", 3480.0).id("cjk-utilities"),
+            ChartBar::new("給与", 1200.0).id("cjk-salary"),
+        ])
+        .value_format(whole)
+        .id("cjk");
         // Both charts have an "Other" bar, told apart by ID.
         let expenses = BarChart::new([
             ChartBar::new("Rent", 2000.0).id("expenses-rent"),
@@ -53,6 +61,7 @@ impl View for MainView {
                     Button::new("Double transport")
                         .id("double-transport")
                         .on_click(move |cx| cx.update(transport, |value| *value *= 2.0)),
+                    japanese,
                     expenses,
                     income,
                 ])
