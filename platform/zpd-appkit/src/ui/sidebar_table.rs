@@ -332,14 +332,23 @@ fn rows(sidebar: &Sidebar, table: &ActorRef, window: &ActorRef) -> Result<Vec<Ro
             let menu = (!item.menu.is_empty())
                 .then(|| super::commands::build_menu(&tree, table, "", &item.menu, &selected))
                 .transpose()?;
+            let cell = badged_cell(
+                &item.title,
+                item.system_image.as_deref(),
+                item.badge.as_deref(),
+                false,
+            );
+            // Table rows are accessibility proxies without identifiers, so the title carries the ID.
+            let identifier = native::nsstring(&item.id);
+            // SAFETY: The cell is a live NSTableCellView whose text field copies the identifier.
+            unsafe {
+                let title =
+                    zpd_objc::msg_send!(cell.as_ptr(), zpd_objc::sel!("textField"), () => Id);
+                zpd_objc::msg_send!(title, zpd_objc::sel!("setAccessibilityIdentifier:"), ((identifier.as_ptr()): Id) => ());
+            }
             rows.push(Row {
                 id: Some(item.id.clone()),
-                cell: badged_cell(
-                    &item.title,
-                    item.system_image.as_deref(),
-                    item.badge.as_deref(),
-                    false,
-                ),
+                cell,
                 menu,
             });
         }

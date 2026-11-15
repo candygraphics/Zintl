@@ -174,6 +174,12 @@ fn main() {
             zpd_objc::msg_send!(table, zpd_objc::sel!("deselectAll:"), ((zpd_objc::NIL): zpd_objc::Id) => ());
             assert_eq!(&*clicked.borrow(), "settings");
             assert_eq!(&*events.borrow(), &["settings"]);
+            // Verifies each item's title carries the item ID for UI tests; row 1 is "home".
+            let cell = zpd_objc::msg_send!(table, zpd_objc::sel!("viewAtColumn:row:makeIfNecessary:"), ((0): i64, (1): i64, (true): bool) => zpd_objc::Id);
+            let title = zpd_objc::msg_send!(cell, zpd_objc::sel!("textField"), () => zpd_objc::Id);
+            let identifier = zpd_objc::msg_send!(title, zpd_objc::sel!("accessibilityIdentifier"), () => zpd_objc::Id);
+            let home = native::nsstring("home");
+            assert!(zpd_objc::msg_send!(identifier, zpd_objc::sel!("isEqualToString:"), ((home.as_ptr()): zpd_objc::Id) => bool));
             // Verifies the automatically installed item uses AppKit's sidebar action.
             let toolbar_items = SidebarChecks::toolbar_items(window);
             assert_eq!(

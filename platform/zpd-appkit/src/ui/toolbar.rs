@@ -144,6 +144,21 @@ impl WindowToolbar {
     }
 
     /// Updates enabled states and search text without rebuilding the toolbar.
+    /// `NSBezelStyleToolbar`, the bezel AppKit draws for toolbar buttons.
+    const TOOLBAR_BEZEL: native::Integer = 11;
+
+    /// Enables a button item and the button view that shows it.
+    fn set_button_enabled(item: Id, enabled: bool) {
+        // SAFETY: Callers pass a live NSToolbarItem whose view is an NSButton or nil.
+        unsafe {
+            zpd_objc::msg_send!(item, zpd_objc::sel!("setEnabled:"), ((enabled): bool) => ());
+            let view = zpd_objc::msg_send!(item, zpd_objc::sel!("view"), () => Id);
+            if !view.is_null() {
+                zpd_objc::msg_send!(view, zpd_objc::sel!("setEnabled:"), ((enabled): bool) => ());
+            }
+        }
+    }
+
     pub(crate) fn update(&mut self, toolbar: &Toolbar) -> Result<(), UiError> {
         for (item, native) in toolbar.items.iter().zip(&self.natives) {
             let Some(native) = native else {
@@ -154,7 +169,7 @@ impl WindowToolbar {
                 unsafe {
                     match item {
                         ToolbarItem::Button { enabled, .. } => {
-                            zpd_objc::msg_send!(native, zpd_objc::sel!("setEnabled:"), ((*enabled): bool) => ());
+                            Self::set_button_enabled(native, *enabled);
                         }
                         ToolbarItem::Search { value, placeholder } => {
                             Self::configure_search(native, value, placeholder.as_deref());
@@ -236,8 +251,11 @@ impl WindowToolbar {
                     system_image,
                     enabled,
                 } => {
-                    // SAFETY: NSToolbarItem's initializer copies the identifier; the image is autoreleased.
-                    let item = unsafe {
+                    // The item shows a button view, because only a view can carry the
+                    // item's ID as its accessibility identifier.
+                    // SAFETY: NSToolbarItem's initializer copies the identifier; the item retains
+                    // its button view; the image is autoreleased.
+                    let (item, button) = unsafe {
                         let item = Strong::from_retained(zpd_objc::msg_send!(zpd_objc::msg_send!(zpd_objc::class!("NSToolbarItem"), zpd_objc::sel!("alloc"), () => Id), zpd_objc::sel!("initWithItemIdentifier:"), ((native_name.as_ptr()): Id) => Id))
                             .ok_or(UiError::NativeCreationFailed)?;
                         let label = native::nsstring(label);
@@ -248,21 +266,29 @@ impl WindowToolbar {
                             &native::rust_string(label.as_ptr()),
                         );
                         zpd_objc::msg_send!(item.as_ptr(), zpd_objc::sel!("setImage:"), ((image): Id) => ());
-                        zpd_objc::msg_send!(item.as_ptr(), zpd_objc::sel!("setBordered:"), ((true): bool) => ());
                         zpd_objc::msg_send!(item.as_ptr(), zpd_objc::sel!("setAutovalidates:"), ((false): bool) => ());
-                        item
+                        let button = native::alloc_init(zpd_objc::class!("NSButton"));
+                        zpd_objc::msg_send!(button.as_ptr(), zpd_objc::sel!("setBezelStyle:"), ((Self::TOOLBAR_BEZEL): native::Integer) => ());
+                        zpd_objc::msg_send!(button.as_ptr(), zpd_objc::sel!("setImage:"), ((image): Id) => ());
+                        zpd_objc::msg_send!(button.as_ptr(), zpd_objc::sel!("setImagePosition:"), ((native::NS_IMAGE_ONLY): u64) => ());
+                        zpd_objc::msg_send!(button.as_ptr(), zpd_objc::sel!("setTitle:"), ((native::nsstring("").as_ptr()): Id) => ());
+                        zpd_objc::msg_send!(button.as_ptr(), zpd_objc::sel!("setAccessibilityLabel:"), ((label.as_ptr()): Id) => ());
+                        zpd_objc::msg_send!(button.as_ptr(), zpd_objc::sel!("setAccessibilityIdentifier:"), ((native::nsstring(id).as_ptr()): Id) => ());
+                        zpd_objc::msg_send!(item.as_ptr(), zpd_objc::sel!("setView:"), ((button.as_ptr()): Id) => ());
+                        (item, button)
                     };
                     let actor = tree.insert_child(&root, item.clone())?;
-                    let emit = emit.clone();
-                    let id = id.clone();
-                    callback::install_action(&actor, move |_| {
-                        emit(WindowEventKind::ToolbarItemClicked { id: id.clone() })
-                    })?;
-                    // Setting an action enables the item, so the state is applied afterwards.
-                    // SAFETY: The item is live and retained by `item`.
-                    unsafe {
-                        zpd_objc::msg_send!(item.as_ptr(), zpd_objc::sel!("setEnabled:"), ((*enabled): bool) => ());
+                    let button = tree.insert_child(&actor, button)?;
+                    // The button handles clicks; the item handles its overflow menu entry.
+                    for target in [&actor, &button] {
+                        let emit = emit.clone();
+                        let id = id.clone();
+                        callback::install_action(target, move |_| {
+                            emit(WindowEventKind::ToolbarItemClicked { id: id.clone() })
+                        })?;
                     }
+                    // Setting an action enables the item, so the state is applied afterwards.
+                    Self::set_button_enabled(item.as_ptr(), *enabled);
                     natives.push(Some(actor));
                     item
                 }

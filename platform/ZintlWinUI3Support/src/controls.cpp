@@ -1237,6 +1237,8 @@ int32_t zpd_winui3_navigation_set_items(zpd_winui3_element* target, const zpd_wi
       NavigationViewItem item;
       item.Content(box_value(string_from(source.title)));
       item.Tag(box_value(string_from(source.id)));
+      // UI tests find items by ID instead of their visible title.
+      Automation::AutomationProperties::SetAutomationId(item, string_from(source.id));
       if (source.glyph.length) {
         FontIcon icon;
         icon.Glyph(string_from(source.glyph));

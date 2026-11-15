@@ -862,6 +862,8 @@ int32_t zpd_winui3_window_set_toolbar(zpd_winui3_window* window, const zpd_winui
       } else {
         AppBarButton button;
         button.Label(string_from(item.label));
+        // UI tests find buttons by ID instead of their label.
+        Automation::AutomationProperties::SetAutomationId(button, string_from(item.id));
         ToolTipService::SetToolTip(button, box_value(string_from(item.label)));
         if (item.glyph.length) {
           FontIcon icon;

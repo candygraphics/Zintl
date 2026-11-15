@@ -16,6 +16,17 @@ final class SidebarFeaturesTests: ZintlUITestCase {
     XCTAssertTrue(waitUntil { sent.isSelected })
   }
 
+  /// Verifies a sidebar row is found by its item ID, independent of its title.
+  func testRowIsFoundByItemID() throws {
+    try launch(scenario: "sidebar-features")
+
+    // Table rows have no identifiers on macOS, so each row's title carries its item ID.
+    let drafts = app.tables.staticTexts["drafts"]
+    XCTAssertTrue(drafts.waitToExist(timeout: 2))
+    drafts.click()
+    assertLabel("selection-value", "Selected: drafts")
+  }
+
   /// Verifies an item's badge is shown beside its title.
   func testBadgeIsShown() throws {
     try launch(scenario: "sidebar-features")
