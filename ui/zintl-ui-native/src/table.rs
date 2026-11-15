@@ -109,6 +109,7 @@ impl Table {
         self
     }
 
+    /// Names the table itself, not the scroll view around it, for UI tests and accessibility.
     pub fn id(mut self, id: impl Into<String>) -> Self {
         self.id = Some(id.into());
         self

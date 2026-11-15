@@ -509,7 +509,7 @@ impl AppKitBackend {
                     &self.gpu,
                     &self.pending_error,
                 )?;
-                native.as_view().set_identifier(id.as_deref())?;
+                native.identifier_view().set_identifier(id.as_deref())?;
                 if !enabled {
                     native.set_enabled(false)?;
                 }
@@ -890,7 +890,7 @@ impl AppKitBackend {
             return Ok(());
         };
         if old_id != new_id {
-            native.as_view().set_identifier(new_id.as_deref())?;
+            native.identifier_view().set_identifier(new_id.as_deref())?;
         }
         if old_enabled != new_enabled {
             native.set_enabled(*new_enabled)?;

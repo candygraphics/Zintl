@@ -6,9 +6,10 @@ final class TableTests: ZintlUITestCase {
   func testColumnsHaveHeadersAndAlignedCells() throws {
     try launch(scenario: "table")
 
-    // The ID names the scroll view around the table.
-    let table = app.scrollViews["sections"].tables.firstMatch
+    let table = app.tables["sections"]
     XCTAssertTrue(table.waitToExist(timeout: 2))
+    // The ID names the table only, not the scroll view around it.
+    XCTAssertFalse(app.scrollViews["sections"].exists)
     XCTAssertTrue(table.buttons["Name"].exists || table.staticTexts["Name"].exists)
     let first = app.staticTexts["length-1"]
     let second = app.staticTexts["length-2"]

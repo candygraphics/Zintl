@@ -221,6 +221,14 @@ impl NativeNode {
         )))
     }
 
+    /// Returns the view that carries the node's ID, so UI tests find tables as tables.
+    pub(super) fn identifier_view(&self) -> ViewRef<'_> {
+        match self {
+            Self::List(list, _) => list.accessibility_view(),
+            _ => self.as_view(),
+        }
+    }
+
     /// Returns the view VoiceOver reads for this node, inside any scroll view or stepper.
     pub(super) fn accessibility_view(&self) -> ViewRef<'_> {
         match self {
