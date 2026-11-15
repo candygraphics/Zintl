@@ -33,6 +33,8 @@ pub enum ToolbarItem {
     },
     /// A search field; edits emit [`WindowEventKind::ToolbarSearchChanged`].
     Search {
+        /// The search field's accessibility identifier.
+        id: Option<String>,
         value: String,
         placeholder: Option<String>,
     },
@@ -113,6 +115,8 @@ pub(crate) struct WindowToolbar {
     root: ActorRef,
     /// The native item for each declared item, in order.
     natives: Vec<Option<ActorRef>>,
+    /// The search item, which can start a search interaction.
+    search: Option<ActorRef>,
 }
 
 impl WindowToolbar {
@@ -171,8 +175,17 @@ impl WindowToolbar {
                         ToolbarItem::Button { enabled, .. } => {
                             Self::set_button_enabled(native, *enabled);
                         }
-                        ToolbarItem::Search { value, placeholder } => {
-                            Self::configure_search(native, value, placeholder.as_deref());
+                        ToolbarItem::Search {
+                            id,
+                            value,
+                            placeholder,
+                        } => {
+                            Self::configure_search(
+                                native,
+                                id.as_deref(),
+                                value,
+                                placeholder.as_deref(),
+                            );
                         }
                         ToolbarItem::FlexibleSpace => {}
                     }
@@ -183,13 +196,20 @@ impl WindowToolbar {
         Ok(())
     }
 
-    /// Applies search text and placeholder; equal text is left alone to keep the caret.
+    /// Applies the ID, search text, and placeholder; equal text is left alone to keep the caret.
     ///
     /// # Safety
     /// `field` must be a live `NSSearchField`.
-    unsafe fn configure_search(field: Id, value: &str, placeholder: Option<&str>) {
+    unsafe fn configure_search(
+        field: Id,
+        id: Option<&str>,
+        value: &str,
+        placeholder: Option<&str>,
+    ) {
         // SAFETY: Guaranteed by the caller.
         unsafe {
+            let id = id.map(native::nsstring);
+            zpd_objc::msg_send!(field, zpd_objc::sel!("setAccessibilityIdentifier:"), ((id.as_ref().map_or(zpd_objc::NIL, Strong::as_ptr)): Id) => ());
             let current = native::rust_string(
                 zpd_objc::msg_send!(field, zpd_objc::sel!("stringValue"), () => Id),
             );
@@ -235,6 +255,7 @@ impl WindowToolbar {
         }
         let mut items = Vec::new();
         let mut natives = Vec::new();
+        let mut search = None;
         for (index, item) in toolbar.items.iter().enumerate() {
             let name = format!("zintl.toolbar.{index}");
             let native_name = native::nsstring(&name);
@@ -292,19 +313,23 @@ impl WindowToolbar {
                     natives.push(Some(actor));
                     item
                 }
-                ToolbarItem::Search { value, placeholder } => {
+                ToolbarItem::Search {
+                    id,
+                    value,
+                    placeholder,
+                } => {
                     // SAFETY: NSSearchToolbarItem owns its search field.
                     let (item, field) = unsafe {
                         let item = Strong::from_retained(zpd_objc::msg_send!(zpd_objc::msg_send!(zpd_objc::class!("NSSearchToolbarItem"), zpd_objc::sel!("alloc"), () => Id), zpd_objc::sel!("initWithItemIdentifier:"), ((native_name.as_ptr()): Id) => Id))
                             .ok_or(UiError::NativeCreationFailed)?;
                         let field = zpd_objc::msg_send!(item.as_ptr(), zpd_objc::sel!("searchField"), () => Id);
-                        Self::configure_search(field, value, placeholder.as_deref());
+                        Self::configure_search(field, id.as_deref(), value, placeholder.as_deref());
                         (
                             item,
                             Strong::retain(field).ok_or(UiError::NativeCreationFailed)?,
                         )
                     };
-                    tree.insert_child(&root, item.clone())?;
+                    search = Some(tree.insert_child(&root, item.clone())?);
                     let field = tree.insert_child(&root, field)?;
                     let emit = emit.clone();
                     callback::install_delegate(&field, move |notification| {
@@ -352,7 +377,27 @@ impl WindowToolbar {
             sidebar,
             root,
             natives,
+            search,
         })
+    }
+
+    /// Moves keyboard focus to the search field, expanding it if the window is narrow.
+    ///
+    /// It does nothing while the toolbar is hidden or has no search field.
+    pub(crate) fn focus_search(&self) -> Result<(), UiError> {
+        let Some(search) = &self.search else {
+            return Ok(());
+        };
+        let toolbar = self.root.with(|toolbar| toolbar)?;
+        search.with(|item| {
+            // SAFETY: The toolbar and its NSSearchToolbarItem are live while this Actor exists.
+            unsafe {
+                if zpd_objc::msg_send!(toolbar, zpd_objc::sel!("isVisible"), () => bool) {
+                    zpd_objc::msg_send!(item, zpd_objc::sel!("beginSearchInteraction"), () => ());
+                }
+            }
+        })?;
+        Ok(())
     }
 
     /// Removes the toolbar from `window` if it is still installed.

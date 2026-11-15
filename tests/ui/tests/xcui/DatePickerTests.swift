@@ -2,18 +2,9 @@ import XCTest
 
 @MainActor
 final class DatePickerTests: ZintlUITestCase {
-  /// Returns the date the picker shows as `YYYY-MM-DD`.
-  ///
-  /// XCUITest reports the picker's NSDate without bridging it; its description is in UTC,
-  /// which is the picker's own time zone.
+  /// Returns the date the picker shows, which it reports as `YYYY-MM-DD`.
   private func shownDate(_ picker: XCUIElement) -> String? {
-    guard let value = picker.value else { return nil }
-    let description = String(describing: value)
-    guard let range = description.range(of: #"\d{4}-\d{2}-\d{2}"#, options: .regularExpression)
-    else {
-      return nil
-    }
-    return String(description[range])
+    picker.value as? String
   }
 
   /// Steps the picker's first field up with the keyboard and returns the label's new date.
@@ -61,5 +52,55 @@ final class DatePickerTests: ZintlUITestCase {
     let label = app.staticTexts["date-value"]
     XCTAssertTrue(waitUntil { label.currentValue != "Date: 2026-11-15" })
     XCTAssertEqual("Date: \(shownDate(picker) ?? "")", label.currentValue)
+  }
+
+  /// Verifies the picker reports its date to accessibility as an ISO 8601 string.
+  func testPickerReportsAnISODate() throws {
+    try launch(scenario: "date-picker")
+
+    let picker = app.datePickers["date"]
+    XCTAssertTrue(picker.waitToExist(timeout: 2))
+    XCTAssertEqual(picker.value as? String, "2026-11-15")
+  }
+
+  /// Verifies pasting an ISO date into the picker sets it in one step.
+  func testPastingAnISODateSetsIt() throws {
+    try launch(scenario: "date-picker")
+
+    let picker = app.datePickers["date"]
+    XCTAssertTrue(picker.waitToExist(timeout: 2))
+    picker.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).click()
+    paste("2024-02-29", into: picker)
+    assertLabel("date-value", "Date: 2024-02-29")
+    XCTAssertTrue(waitUntil { self.shownDate(picker) == "2024-02-29" })
+  }
+
+  /// Verifies the optional picker shows a date set by the app, clears it, and picks today.
+  func testOptionalPickerClearsAndPicksADate() throws {
+    try launch(scenario: "date-picker")
+
+    let placeholder = app.buttons["due"]
+    XCTAssertTrue(placeholder.waitToExist(timeout: 2))
+    assertLabel("due-value", "Due: No date")
+
+    app.buttons["set-due"].click()
+    let due = app.datePickers["due"]
+    XCTAssertTrue(due.waitToExist(timeout: 2))
+    XCTAssertTrue(waitUntil { self.shownDate(due) == "2026-12-24" })
+    assertLabel("due-value", "Due: 2026-12-24")
+
+    app.buttons["due-clear"].click()
+    assertLabel("due-value", "Due: No date")
+    XCTAssertTrue(placeholder.waitToExist(timeout: 2))
+
+    // The placeholder picks today's date in the local time zone.
+    placeholder.click()
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    let today = formatter.string(from: Date())
+    assertLabel("due-value", "Due: \(today)")
+    XCTAssertTrue(waitUntil { self.shownDate(due) == today })
   }
 }

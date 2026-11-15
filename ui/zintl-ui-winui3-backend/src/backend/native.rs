@@ -850,7 +850,15 @@ impl NativeNode {
                 value,
                 format,
                 text,
+                placeholder,
             } => {
+                if !matches!(old, Some(ViewKind::NumberField { placeholder: old, .. }) if old == placeholder)
+                {
+                    control.set_text(
+                        TextProperty::Placeholder,
+                        placeholder.as_deref().unwrap_or(""),
+                    )?;
+                }
                 if !matches!(old, Some(ViewKind::NumberField { format: old, .. }) if old == format)
                 {
                     control.set_number(NumberProperty::Minimum, format.minimum)?;

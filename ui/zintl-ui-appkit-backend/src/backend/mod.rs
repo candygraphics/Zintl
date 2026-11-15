@@ -162,8 +162,12 @@ pub struct AppKitBackend {
     titles_dirty: bool,
     /// Controls the user changed; their rendered values are shown again on the next synchronization.
     changed_by_user: Vec<NodeId>,
+    /// Controls the user is typing in; number fields keep typed text until the next synchronization.
+    typing: Vec<NodeId>,
     /// Views that take keyboard focus once they are shown in their window.
     pending_focus: Vec<NodeId>,
+    /// Windows whose toolbar search field takes keyboard focus once they are synchronized.
+    pending_search_focus: Vec<ActorId>,
 }
 
 impl Default for AppKitBackend {
@@ -187,7 +191,9 @@ impl AppKitBackend {
             gpu: GpuSlot::default(),
             titles_dirty: false,
             changed_by_user: Vec::new(),
+            typing: Vec::new(),
             pending_focus: Vec::new(),
+            pending_search_focus: Vec::new(),
         }
     }
 
@@ -285,6 +291,18 @@ impl AppKitBackend {
         }
     }
 
+    /// Records that the user is typing in the control `route` belongs to, before its handlers run.
+    ///
+    /// The value the view parses from that text then does not replace it.
+    fn note_typing(&mut self, route: EventRouteId) {
+        if let Some(id) = self.tree.find_route(route)
+            && let Some(native) = &self.state(id).native
+        {
+            native.hold_text(true);
+            self.typing.push(id);
+        }
+    }
+
     /// Shows the rendered value again in controls the user changed.
     fn revert_user_changes(&self) -> Result<(), AppError> {
         for id in self.tree.user_change_targets(&self.changed_by_user) {
@@ -305,6 +323,13 @@ impl AppKitBackend {
         self.pending_error.take()?;
         let reverted = self.revert_user_changes();
         self.changed_by_user.clear();
+        for id in std::mem::take(&mut self.typing) {
+            if self.tree.contains(id)
+                && let Some(native) = &self.state(id).native
+            {
+                native.hold_text(false);
+            }
+        }
         reverted?;
         for window in self.retired_windows.drain(..) {
             cx.remove_window(window);
@@ -327,6 +352,12 @@ impl AppKitBackend {
                 && let Some(native) = &self.state(id).native
             {
                 native.focus()?;
+            }
+        }
+        for window in std::mem::take(&mut self.pending_search_focus) {
+            if cx.contains_window(window) {
+                cx.with_window(window, |window| window.focus_toolbar_search())
+                    .ok_or(UiError::Closed)??;
             }
         }
         self.pending_error.take()
@@ -428,7 +459,15 @@ impl AppKitBackend {
         let apply_sidebar = state.applied_sidebar.as_ref() != Some(&sidebar);
         // The sidebar decides whether the toolbar includes its toggle, so both reapply together.
         let apply_toolbar = apply_sidebar || state.applied_toolbar.as_ref() != Some(&toolbar);
+        let search_focus =
+            |toolbar: &Option<Toolbar>| toolbar.as_ref().map_or(0, Toolbar::search_focus);
+        let focus_search =
+            search_focus(&toolbar) > state.applied_toolbar.as_ref().map_or(0, search_focus);
         let close = document.close_requests > state.applied_close_requests;
+        // The search field takes focus once every window is synchronized, like other views.
+        if focus_search {
+            self.pending_search_focus.push(native_id);
+        }
         cx.with_window(native_id, |window| -> Result<(), AppError> {
             window
                 .actor_ref()

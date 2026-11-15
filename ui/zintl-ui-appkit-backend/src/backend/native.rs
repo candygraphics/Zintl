@@ -236,12 +236,10 @@ impl NativeNode {
         )))
     }
 
-    /// Returns the view that carries the node's ID, so UI tests find tables as tables.
+    /// Returns the view that carries the node's ID, so UI tests find tables
+    /// as tables and number fields as text fields.
     pub(super) fn identifier_view(&self) -> ViewRef<'_> {
-        match self {
-            Self::List(list, _) => list.accessibility_view(),
-            _ => self.as_view(),
-        }
+        self.accessibility_view()
     }
 
     /// Returns the view VoiceOver reads for this node, inside any scroll view or stepper.
@@ -303,6 +301,13 @@ impl NativeNode {
             replaces_value: fallback_role.is_some(),
             help: accessibility.hint.clone(),
             role,
+        }
+    }
+
+    /// Keeps typed text in a number field while the view renders the value parsed from it.
+    pub(super) fn hold_text(&self, hold: bool) {
+        if let Self::NumberField(field) = self {
+            field.hold_text(hold);
         }
     }
 
@@ -556,8 +561,13 @@ impl NativeNode {
                     value,
                     format,
                     text,
+                    placeholder,
                 },
             ) => {
+                if !matches!(old, Some(ViewKind::NumberField { placeholder: old, .. }) if old == placeholder)
+                {
+                    field.set_placeholder(placeholder.as_deref())?;
+                }
                 if !matches!(old, Some(ViewKind::NumberField { format: old, .. }) if old == format)
                 {
                     field.set_format(format.native())?;

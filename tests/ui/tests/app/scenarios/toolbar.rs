@@ -1,10 +1,12 @@
 use zintl_ui_desktop::*;
 
-/// A toolbar whose Remove button is enabled only while there are items, plus a search field.
+/// A toolbar whose Remove button is enabled only while there are items, plus a search field
+/// that a button and ⌘F focus.
 pub struct MainView {
     count: Store<u32>,
     removes: Store<u32>,
     query: Store<String>,
+    search_focus: Store<u64>,
 }
 
 impl MainView {
@@ -13,6 +15,7 @@ impl MainView {
             count: Store::default(),
             removes: Store::default(),
             query: Store::default(),
+            search_focus: Store::default(),
         }
     }
 }
@@ -24,10 +27,12 @@ impl View for MainView {
         self.count = cx.store(0);
         self.removes = cx.store(0);
         self.query = cx.store(String::new());
+        self.search_focus = cx.store(0);
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let (count, removes, query) = (self.count, self.removes, self.query);
+        let search_focus = self.search_focus;
         Window::new(Rect::new(100.0, 100.0, 560.0, 260.0), "Zintl Toolbar UI Test")
             .id("main-window")
             .toolbar(Toolbar::new([
@@ -40,7 +45,10 @@ impl View for MainView {
                         cx.update(removes, |removes| *removes += 1);
                     }),
                 ToolbarItem::flexible_space(),
-                ToolbarItem::search(query).placeholder("Search"),
+                ToolbarItem::search(query)
+                    .placeholder("Search")
+                    .focus_on(search_focus)
+                    .id("toolbar-search"),
             ]))
             .content(
                 VStack::new(list![
@@ -51,6 +59,9 @@ impl View for MainView {
                     Button::new("Set Query")
                         .id("set-query")
                         .on_click(move |cx| cx.update(query, |query| *query = "Osaka".into())),
+                    Button::new("Find")
+                        .id("find")
+                        .on_click(move |cx| cx.update(search_focus, |count| *count += 1)),
                 ])
                 .spacing(10.0),
             )

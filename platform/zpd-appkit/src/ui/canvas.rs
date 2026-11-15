@@ -55,6 +55,54 @@ pub struct CanvasFrame {
     pub time: f64,
     /// Seconds since the previous draw, or `0.0` for the first one.
     pub delta: f64,
+    /// System colors resolved for the view's effective appearance.
+    pub palette: CanvasPalette,
+}
+
+/// System colors resolved for the appearance a canvas draws in.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CanvasPalette {
+    pub accent: super::Color,
+    pub red: super::Color,
+    pub orange: super::Color,
+    pub yellow: super::Color,
+    pub green: super::Color,
+    pub blue: super::Color,
+    pub gray: super::Color,
+}
+
+impl CanvasPalette {
+    /// Resolves the system colors for `view`'s effective appearance.
+    ///
+    /// # Safety
+    /// `view` must be a live NSView on the main thread.
+    unsafe fn resolve(view: Id) -> Self {
+        // SAFETY: Guaranteed by the caller; the appearance and colors are autoreleased, and the
+        // current appearance is restored before returning.
+        unsafe {
+            let appearance_class = zpd_objc::class!("NSAppearance");
+            let previous = zpd_objc::msg_send!(appearance_class, zpd_objc::sel!("currentAppearance"), () => Id);
+            let effective =
+                zpd_objc::msg_send!(view, zpd_objc::sel!("effectiveAppearance"), () => Id);
+            zpd_objc::msg_send!(appearance_class, zpd_objc::sel!("setCurrentAppearance:"), ((effective): Id) => ());
+            let color = |selector: zpd_objc::Sel| {
+                super::Color::from_native(
+                    zpd_objc::msg_send!(zpd_objc::class!("NSColor"), selector, () => Id),
+                )
+            };
+            let palette = Self {
+                accent: color(zpd_objc::sel!("controlAccentColor")),
+                red: color(zpd_objc::sel!("systemRedColor")),
+                orange: color(zpd_objc::sel!("systemOrangeColor")),
+                yellow: color(zpd_objc::sel!("systemYellowColor")),
+                green: color(zpd_objc::sel!("systemGreenColor")),
+                blue: color(zpd_objc::sel!("systemBlueColor")),
+                gray: color(zpd_objc::sel!("systemGrayColor")),
+            };
+            zpd_objc::msg_send!(appearance_class, zpd_objc::sel!("setCurrentAppearance:"), ((previous): Id) => ());
+            palette
+        }
+    }
 }
 
 /// Modifier keys held during an input event.
@@ -477,6 +525,8 @@ impl CanvasState {
             scale,
             time,
             delta,
+            // SAFETY: Guaranteed by the caller.
+            palette: unsafe { CanvasPalette::resolve(view) },
         }
     }
 }
@@ -507,6 +557,15 @@ unsafe extern "C" fn draw_rect(object: Id, _: zpd_objc::Sel, _dirty: native::Rec
         let mut graphics = unsafe { GraphicsContext::new(context) };
         delegate.draw(&mut graphics, frame);
     });
+}
+
+/// Redraws with the palette of the new appearance, such as after switching to dark mode.
+unsafe extern "C" fn appearance_changed(object: Id, selector: zpd_objc::Sel) {
+    // SAFETY: NSView implements the overridden method; the receiver is a live canvas view.
+    unsafe {
+        zpd_objc::msg_send_super!(object, zpd_objc::class!("NSView"), selector, () => ());
+        zpd_objc::msg_send!(object, zpd_objc::sel!("setNeedsDisplay:"), ((true): bool) => ());
+    }
 }
 
 #[cfg(feature = "metal")]
@@ -872,6 +931,7 @@ impl CanvasView {
                 fields { _zpdCanvasState: ptr }
                 methods {
                     "drawRect:": "v@:{CGRect={CGPoint=dd}{CGSize=dd}}" => draw_rect,
+                    "viewDidChangeEffectiveAppearance": "v@:" => appearance_changed,
                     "isFlipped": "B@:" => yes,
                     "acceptsFirstResponder": "B@:" => accepts_first_responder,
                     "becomeFirstResponder": "B@:" => become_first_responder,

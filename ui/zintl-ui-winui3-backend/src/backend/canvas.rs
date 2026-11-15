@@ -161,6 +161,8 @@ impl InputRoute {
             scale: frame.scale,
             time: frame.time,
             delta: frame.delta,
+            // Theme colors are not resolved for Direct2D canvases yet.
+            palette: Default::default(),
         }
     }
 }
@@ -488,6 +490,7 @@ mod tests {
             scale: 1.5,
             time: 2.0,
             delta: 0.0,
+            palette: Default::default(),
             title_bar_inset: 32.0,
         });
         assert_eq!(frame.safe_area, Rect::new(0.0, 32.0, 100.0, 18.0));

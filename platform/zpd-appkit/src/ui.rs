@@ -31,9 +31,9 @@ pub use accessibility::{
 };
 pub use button::{BezelStyle, Button, ButtonType};
 pub use canvas::{
-    CanvasDelegate, CanvasFrame, CanvasHandle, CanvasInput, CanvasInputDelegate, CanvasRedraw,
-    CanvasView, Cursor, GesturePhase, KeyInput, MagnifyInput, Modifiers, MouseButton, MouseInput,
-    MousePhase, NamedKey, ScrollInput,
+    CanvasDelegate, CanvasFrame, CanvasHandle, CanvasInput, CanvasInputDelegate, CanvasPalette,
+    CanvasRedraw, CanvasView, Cursor, GesturePhase, KeyInput, MagnifyInput, Modifiers, MouseButton,
+    MouseInput, MousePhase, NamedKey, ScrollInput,
 };
 #[cfg(feature = "metal")]
 pub use canvas::{MetalCanvasDelegate, MetalCanvasView, MetalLayer};

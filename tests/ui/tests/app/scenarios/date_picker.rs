@@ -1,14 +1,17 @@
 use zintl_ui_desktop::*;
 
-/// A text-field date picker and a calendar bound to one date, with a button that sets a leap day.
+/// A text-field date picker and a calendar bound to one date, with a button that sets a leap day,
+/// and an optional date picker with a button that sets its date.
 pub struct MainView {
     date: Store<CalendarDate>,
+    due: Store<Option<CalendarDate>>,
 }
 
 impl MainView {
     pub fn new() -> Self {
         Self {
             date: Store::default(),
+            due: Store::default(),
         }
     }
 }
@@ -22,11 +25,12 @@ impl View for MainView {
             month: 11,
             day: 15,
         });
+        self.due = cx.store(None);
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
-        let date = self.date;
-        Window::new(Rect::new(100.0, 100.0, 420.0, 360.0), "Zintl Date Picker UI Test")
+        let (date, due) = (self.date, self.due);
+        Window::new(Rect::new(100.0, 100.0, 420.0, 460.0), "Zintl Date Picker UI Test")
             .id("main-window")
             .content(
                 VStack::new(list![
@@ -45,6 +49,17 @@ impl View for MainView {
                         })
                     }),
                     cx.watch(date, |date| Text::new(format!("Date: {date}")).id("date-value")),
+                    DatePicker::optional()
+                        .placeholder("No date")
+                        .bind(due)
+                        .id("due"),
+                    Button::new("Set due date").id("set-due").on_click(move |cx| {
+                        cx.update(due, |due| *due = CalendarDate::new(2026, 12, 24))
+                    }),
+                    cx.watch(due, |due| {
+                        let due = due.map_or("No date".to_owned(), |due| due.to_string());
+                        Text::new(format!("Due: {due}")).id("due-value")
+                    }),
                 ])
                 .alignment(CrossAxisAlignment::Start)
                 .spacing(10.0),

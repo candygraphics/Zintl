@@ -22,8 +22,8 @@ pub use accessibility::{
 pub use canvas::{
     Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasHost, CanvasId, CanvasNode,
     CanvasSetup, Cursor, Frame, GesturePhase, Invalidator, Key, KeyEvent, KeyPhase, MagnifyEvent,
-    Modifiers, NamedKey, PointerButton, PointerEvent, PointerPhase, Redraw, RedrawPolicy,
-    ScrollEvent,
+    Modifiers, NamedKey, Palette, PaletteColor, PointerButton, PointerEvent, PointerPhase, Redraw,
+    RedrawPolicy, ScrollEvent,
 };
 pub use context::{Context, StoreSender, StoreUpdate, StoreUpdates};
 pub use event::{Event, EventKind};
@@ -117,8 +117,11 @@ pub enum ViewKind {
         value: f64,
         format: NumberFormat,
         /// Text shown instead of the formatted value; edits then arrive as
-        /// [`Event::TextCommitted`] for the view to parse.
+        /// [`Event::TextChanged`] while the user types and
+        /// [`Event::TextCommitted`] when editing ends, for the view to parse.
         text: Option<String>,
+        /// Text shown while the field is empty.
+        placeholder: Option<String>,
     },
     SearchField {
         value: String,

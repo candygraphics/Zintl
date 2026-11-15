@@ -21,6 +21,7 @@ native_view!(
     Slider,
     NumberField,
     IntegerField,
+    OptionalIntegerField,
     SearchField,
     ColorWell,
     ScrollView,
@@ -526,14 +527,83 @@ impl NumberField {
             inner: zintl_ui_native::IntegerField::new(),
         }
     }
+
+    /// Creates a field for whole numbers bound to a `Store<Option<i64>>`, where an empty field is `None`.
+    pub fn integer_optional() -> OptionalIntegerField {
+        OptionalIntegerField {
+            inner: zintl_ui_native::IntegerField::optional(),
+        }
+    }
 }
 
 wrapper!(
     /// A field for whole numbers with a stepper, whose values never pass through `f64`.
     ///
-    /// Text that is not an integer, such as `12.5`, restores the current value.
+    /// Values are reported while the user types. When editing ends, text that
+    /// is not an integer restores the last value, so `12.5` ends as `12`.
     IntegerField(zintl_ui_native::IntegerField)
 );
+
+wrapper!(
+    /// An [`IntegerField`] that can be empty, bound to a `Store<Option<i64>>`.
+    ///
+    /// Clearing the field writes `None`; the stepper starts from zero.
+    OptionalIntegerField(zintl_ui_native::IntegerField<Option<i64>>)
+);
+
+impl OptionalIntegerField {
+    /// Shows `value`; a bound Store takes precedence.
+    pub fn value(mut self, value: Option<i64>) -> Self {
+        self.inner = self.inner.value(value);
+        self
+    }
+
+    pub fn bind(mut self, store: Store<Option<i64>>) -> Self {
+        self.inner = self.inner.bind(store);
+        self
+    }
+
+    /// Shows `placeholder`, such as `"None"`, while the field is empty.
+    pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        self.inner = self.inner.placeholder(placeholder);
+        self
+    }
+
+    pub fn range(mut self, range: RangeInclusive<i64>) -> Self {
+        self.inner = self.inner.range(*range.start(), *range.end());
+        self
+    }
+
+    pub fn step(mut self, step: i64) -> Self {
+        self.inner = self.inner.step(step);
+        self
+    }
+
+    /// Shows thousands separators, such as `1,234`.
+    pub fn grouping(mut self, grouping: bool) -> Self {
+        self.inner = self.inner.grouping(grouping);
+        self
+    }
+
+    /// Appends `suffix`, such as `" pcs"`, to the shown text; typed text may omit it.
+    pub fn suffix(mut self, suffix: impl Into<String>) -> Self {
+        self.inner = self.inner.suffix(suffix);
+        self
+    }
+
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.inner = self.inner.enabled(enabled);
+        self
+    }
+
+    pub fn on_change(
+        mut self,
+        action: impl for<'a> Fn(&mut Context<'a>, Option<i64>) + 'static,
+    ) -> Self {
+        self.inner = self.inner.on_change(action);
+        self
+    }
+}
 
 impl IntegerField {
     /// Shows `value`; a bound Store takes precedence.

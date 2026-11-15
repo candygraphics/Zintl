@@ -65,4 +65,24 @@ final class ToolbarTests: ZintlUITestCase {
     assertLabel("query-value", "Query: Osaka")
     XCTAssertTrue(waitForValue(app.toolbars.searchFields.firstMatch, "Osaka"))
   }
+
+  /// Verifies the search field is found by its ID inside the toolbar.
+  func testSearchFieldIsFoundByID() throws {
+    try launch(scenario: "toolbar")
+
+    XCTAssertTrue(app.toolbars.searchFields["toolbar-search"].waitToExist(timeout: 2))
+  }
+
+  /// Verifies a focus request from the app moves typing into the search field.
+  func testFocusRequestMovesTypingToTheSearchField() throws {
+    try launch(scenario: "toolbar")
+
+    let search = app.toolbars.searchFields["toolbar-search"]
+    XCTAssertTrue(search.waitToExist(timeout: 2))
+    app.buttons["find"].click()
+    XCTAssertTrue(waitUntil { (search.value(forKey: "hasKeyboardFocus") as? Bool) == true })
+    app.typeText("abc")
+    assertLabel("query-value", "Query: abc")
+    XCTAssertTrue(waitForValue(search, "abc"))
+  }
 }

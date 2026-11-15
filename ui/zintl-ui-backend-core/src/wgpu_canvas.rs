@@ -361,6 +361,7 @@ mod tests {
             scale: 2.0,
             time: 0.0,
             delta: 0.0,
+            palette: Default::default(),
         }
     }
 

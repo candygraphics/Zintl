@@ -24,8 +24,8 @@ pub use canvas::Canvas2D;
 pub use canvas::WgpuCanvas;
 pub use containers::{ScrollView, TabView, TabViewItem};
 pub use controls::{
-    ColorWell, ComboBox, DatePicker, IntegerField, NumberField, PopUpButton, SearchField,
-    SegmentedControl, Slider, Switch,
+    ColorWell, ComboBox, DatePicker, IntegerField, IntegerValue, NumberField, OptionalDatePicker,
+    PopUpButton, SearchField, SegmentedControl, Slider, Switch,
 };
 pub use indicators::{ProgressIndicator, Separator};
 pub use list::{List, ListRow, ListSection};
@@ -50,10 +50,10 @@ pub use zintl_ui_backend_core::{
     CalendarDate, Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasId, CanvasNode,
     CanvasSetup, Color, Cursor, DatePickerStyle, DocumentState, Event, EventKind, Frame,
     GesturePhase, Invalidator, Key, KeyEvent, KeyPhase, ListStyle, MagnifyEvent, Modifiers,
-    NamedKey, NodeId, PointerButton, PointerEvent, PointerPhase, PopoverEdge, Rect, Redraw,
-    RedrawPolicy, RenderNode, ScrollAlignment, ScrollAxes, ScrollEvent, ScrollTarget, ShortcutKey,
-    Signal, SortOrder, StoreSender, SystemColor, TextAlignment, TextColor, TextStyle, TitleBar,
-    UndoState, ViewKind, WindowStyle, graphics,
+    NamedKey, NodeId, Palette, PaletteColor, PointerButton, PointerEvent, PointerPhase,
+    PopoverEdge, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAlignment, ScrollAxes, ScrollEvent,
+    ScrollTarget, ShortcutKey, Signal, SortOrder, StoreSender, SystemColor, TextAlignment,
+    TextColor, TextStyle, TitleBar, UndoState, ViewKind, WindowStyle, graphics,
 };
 #[cfg(feature = "wgpu")]
 pub use zintl_ui_backend_core::{
@@ -293,6 +293,7 @@ mod tests {
             scale: 1.0,
             time: 0.0,
             delta: 0.0,
+            palette: Default::default(),
         }
     }
 

@@ -19,8 +19,8 @@ mod split_view;
 pub use arrangements::{DisclosureGroup, Grid, GridCell, ZStack};
 pub use chart::{BarChart, ChartBar};
 pub use controls::{
-    ColorWell, ComboBox, IntegerField, NumberField, Picker, PickerStyle, ScrollView, SearchField,
-    Slider, Tab, TabView, Toggle, ToggleStyle,
+    ColorWell, ComboBox, IntegerField, NumberField, OptionalIntegerField, Picker, PickerStyle,
+    ScrollView, SearchField, Slider, Tab, TabView, Toggle, ToggleStyle,
 };
 pub use split_view::SplitView;
 use zintl_ui::composer::Composer;
@@ -45,12 +45,12 @@ pub use zintl_ui_native::{
     EnglishMenuLocalizer, Event, EventKind, FileDialog, Frame, GesturePhase, Invalidator,
     JapaneseMenuLocalizer, Key, KeyEvent, KeyPhase, List, ListFactory, ListRow, ListSection,
     ListStyle, MagnifyEvent, MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, Modifiers,
-    NamedKey, NativeView, PointerButton, PointerEvent, PointerPhase, Popover, PopoverEdge,
-    ProgressIndicator, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAlignment, ScrollAxes,
-    ScrollEvent, ScrollStatus, Separator, Shortcut, ShortcutKey, Sidebar, SidebarItem,
-    SidebarSection, Signal, SortOrder, StandardAction, StandardMenu, StandardText, StoreSender,
-    SystemColor, Table, TableColumn, TableRow, TextAlignment, TextColor, TextEditor, TitleBar,
-    Toolbar, ToolbarItem, UndoHandler, ViewKind, graphics, list,
+    NamedKey, NativeView, OptionalDatePicker, Palette, PaletteColor, PointerButton, PointerEvent,
+    PointerPhase, Popover, PopoverEdge, ProgressIndicator, Rect, Redraw, RedrawPolicy, RenderNode,
+    ScrollAlignment, ScrollAxes, ScrollEvent, ScrollStatus, Separator, Shortcut, ShortcutKey,
+    Sidebar, SidebarItem, SidebarSection, Signal, SortOrder, StandardAction, StandardMenu,
+    StandardText, StoreSender, SystemColor, Table, TableColumn, TableRow, TextAlignment, TextColor,
+    TextEditor, TitleBar, Toolbar, ToolbarItem, UndoHandler, ViewKind, graphics, list,
 };
 #[cfg(feature = "wgpu")]
 pub use zintl_ui_native::{

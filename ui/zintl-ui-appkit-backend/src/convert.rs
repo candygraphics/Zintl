@@ -335,6 +335,23 @@ impl Shared for ui::CanvasFrame {
             scale: self.scale,
             time: self.time,
             delta: self.delta,
+            palette: self.palette.shared(),
+        }
+    }
+}
+
+impl Shared for ui::CanvasPalette {
+    type Output = core::Palette;
+
+    fn shared(self) -> core::Palette {
+        core::Palette {
+            accent: self.accent.shared(),
+            red: self.red.shared(),
+            orange: self.orange.shared(),
+            yellow: self.yellow.shared(),
+            green: self.green.shared(),
+            blue: self.blue.shared(),
+            gray: self.gray.shared(),
         }
     }
 }
@@ -502,7 +519,13 @@ impl Native for core::Toolbar {
                         system_image: system_image.clone(),
                         enabled: *enabled,
                     },
-                    core::ToolbarItem::Search { value, placeholder } => ui::ToolbarItem::Search {
+                    core::ToolbarItem::Search {
+                        value,
+                        placeholder,
+                        id,
+                        ..
+                    } => ui::ToolbarItem::Search {
+                        id: id.clone(),
                         value: value.clone(),
                         placeholder: placeholder.clone(),
                     },

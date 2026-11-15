@@ -78,8 +78,125 @@ fn bar_lengths_follow_their_values() {
         ChartBar::new("Transport", 1740.0),
         ChartBar::new("Refund", -20.0),
     ];
-    assert_eq!(BarChart::fractions(&bars), [1.0, 0.5, 0.0]);
-    assert_eq!(BarChart::fractions(&[ChartBar::new("Empty", 0.0)]), [0.0]);
+    assert_eq!(BarChart::new(bars).fractions(), [1.0, 0.5, 0.0]);
+    assert_eq!(
+        BarChart::new([ChartBar::new("Empty", 0.0)]).fractions(),
+        [0.0]
+    );
+}
+
+#[test]
+fn bar_chart_maximum_sets_the_value_that_fills_the_track() {
+    // Verifies bars are a share of the given maximum, and values above it fill the track.
+    let chart = BarChart::new([
+        ChartBar::new("Utilities", 52.0),
+        ChartBar::new("Food", 25.0),
+        ChartBar::new("Over", 150.0),
+    ])
+    .maximum(100.0);
+    assert_eq!(chart.fractions(), [0.52, 0.25, 1.0]);
+}
+
+#[test]
+fn bar_chart_estimates_wide_characters_as_one_em() {
+    // Verifies CJK labels are estimated at the font size per character, so short labels are not truncated.
+    assert!(BarChart::text_width("給与") >= 2.0 * 13.0);
+    assert!(BarChart::text_width("水道光熱費") >= 5.0 * 13.0);
+    assert!(BarChart::text_width("Food") < BarChart::text_width("給与給与"));
+}
+
+/// Returns the chart's group node and its rows' bar canvases.
+fn chart_parts(chart: BarChart) -> (RenderNode, Vec<RenderNode>) {
+    let tree = App::new(chart).render_tree();
+    let bars = tree
+        .children
+        .iter()
+        // Each row is a label column, the track, and a value column; the track holds the bar.
+        .map(|row| row.children[1].children[0].children[0].value.clone())
+        .collect();
+    (tree.value, bars)
+}
+
+#[test]
+fn bar_chart_exposes_a_group_with_bar_ids_and_fixed_columns() {
+    // Verifies the chart is a named group, bars carry their IDs, and fixed column widths are kept.
+    let chart = BarChart::new([
+        ChartBar::new("Food", 3480.0).id("expenses-food"),
+        ChartBar::new("Other", 300.0).id("expenses-other"),
+    ])
+    .label_width(160.0)
+    .value_width(96.0)
+    .id("expenses");
+    let tree = App::new(chart.clone()).render_tree();
+    assert!(matches!(
+        &tree.value,
+        RenderNode::View { id: Some(id), accessibility, .. }
+            if id == "expenses" && accessibility.role == Some(AccessibilityRole::Group)
+    ));
+    let widths = |row: &RenderedNode| {
+        [0, 2].map(|column| match &row.children[column].value {
+            RenderNode::View { layout, .. } => layout.width,
+            _ => LayoutDimension::Auto,
+        })
+    };
+    assert_eq!(
+        widths(&tree.children[0]),
+        [
+            LayoutDimension::Points(160.0),
+            LayoutDimension::Points(96.0)
+        ]
+    );
+    let (_, bars) = chart_parts(chart);
+    let ids = bars
+        .iter()
+        .map(|bar| match bar {
+            RenderNode::View { id, .. } => id.clone(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        ids,
+        [Some("expenses-food".into()), Some("expenses-other".into())]
+    );
+}
+
+#[test]
+fn bar_chart_defaults_to_the_accent_color() {
+    // Verifies bars follow the accent color unless they choose a system or fixed color.
+    let palette = Palette::LIGHT;
+    let frame = Frame {
+        palette: Palette {
+            accent: Color::rgb(1.0, 0.0, 1.0),
+            ..palette
+        },
+        ..canvas_frame()
+    };
+    let (_, bars) = chart_parts(BarChart::new([
+        ChartBar::new("Food", 1.0),
+        ChartBar::new("Refunds", 1.0).color(SystemColor::Green),
+    ]));
+    let fills = bars
+        .iter()
+        .map(|bar| {
+            let RenderNode::View {
+                kind: ViewKind::Canvas2D { canvas, .. },
+                ..
+            } = bar
+            else {
+                panic!("bars are canvases");
+            };
+            let commands = canvas.record(&frame);
+            commands
+                .iter()
+                .find_map(|command| match command {
+                    graphics::DrawCommand::Fill { paint, .. } => Some(paint.clone()),
+                    _ => None,
+                })
+                .expect("the bar fills its frame")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(fills[0], Color::rgb(1.0, 0.0, 1.0).into());
+    assert_eq!(fills[1], palette.green.into());
 }
 
 #[test]
@@ -379,6 +496,135 @@ fn integer_field_steps_by_its_increment() {
 }
 
 #[test]
+fn integer_field_reports_typed_integers_before_editing_ends() {
+    // Verifies typed text that is an integer reaches the Store at once, and partial text does not.
+    let (mut app, value) = Harness::mount(
+        |cx| cx.store(3_i64),
+        |value| NumberField::integer().grouping(true).bind(value),
+    );
+    app.dispatch_at(&[0], Event::TextChanged { value: "42".into() });
+    assert_eq!(app.get(value), 42);
+    for partial in ["-", "", "4x"] {
+        app.dispatch_at(
+            &[0],
+            Event::TextChanged {
+                value: partial.into(),
+            },
+        );
+        assert_eq!(app.get(value), 42, "{partial:?}");
+    }
+    app.dispatch_at(&[0], Event::TextChanged { value: "1,".into() });
+    assert_eq!(app.get(value), 1);
+    app.dispatch_at(
+        &[0],
+        Event::TextChanged {
+            value: "1,234".into(),
+        },
+    );
+    assert_eq!(app.get(value), 1234);
+    // The rendered text is formatted; the backend keeps typed text until editing ends.
+    assert!(matches!(
+        app.render(),
+        RenderNode::View {
+            kind: ViewKind::NumberField { text: Some(text), .. },
+            ..
+        } if text == "1,234"
+    ));
+}
+
+#[test]
+fn optional_integer_field_treats_empty_text_as_none() {
+    // Verifies empty text parses to None, zero stays a value, and the field shows None as empty text.
+    let field = zintl_ui_native::IntegerField::optional();
+    assert_eq!(field.parse(""), Some(None));
+    assert_eq!(field.parse("  "), Some(None));
+    assert_eq!(field.parse("0"), Some(Some(0)));
+    assert_eq!(field.parse("abc"), None);
+    assert_eq!(field.format(None), "");
+    // Fields bound to `i64` reject empty text instead.
+    assert_eq!(zintl_ui_native::IntegerField::new().parse(""), None);
+
+    let (mut app, value) = Harness::mount(
+        |cx| cx.store(Some(7_i64)),
+        |value| {
+            NumberField::integer_optional()
+                .placeholder("None")
+                .bind(value)
+        },
+    );
+    app.dispatch_at(&[0], Event::TextChanged { value: "".into() });
+    assert_eq!(app.get(value), None);
+    assert!(matches!(
+        app.render(),
+        RenderNode::View {
+            kind: ViewKind::NumberField { text: Some(text), placeholder: Some(placeholder), value, .. },
+            ..
+        } if text.is_empty() && placeholder == "None" && value == 0.0
+    ));
+}
+
+#[test]
+fn optional_integer_field_steps_from_zero_when_empty() {
+    // Verifies the first stepper click on an empty field starts from zero, limited to the range.
+    let (mut app, value) = Harness::mount(
+        |cx| cx.store(None::<i64>),
+        |value| NumberField::integer_optional().bind(value),
+    );
+    assert!(app.dispatch_at(&[0], Event::ValueChanged { value: 1.0 }));
+    assert_eq!(app.get(value), Some(1));
+
+    let (mut app, value) = Harness::mount(
+        |cx| cx.store(None::<i64>),
+        |value| NumberField::integer_optional().range(5..=9).bind(value),
+    );
+    assert!(app.dispatch_at(&[0], Event::ValueChanged { value: 4.0 }));
+    assert_eq!(app.get(value), Some(5));
+}
+
+#[test]
+fn optional_date_picker_clears_and_picks_dates() {
+    // Verifies the clear button routes None, the placeholder button picks today, and picks route Some.
+    let leap = CalendarDate::new(2024, 2, 29).unwrap();
+    let (mut app, date) = Harness::mount(
+        move |cx| cx.store(Some(CalendarDate::new(2026, 11, 15).unwrap())),
+        |date| {
+            DatePicker::optional()
+                .placeholder("No date")
+                .bind(date)
+                .id("due")
+        },
+    );
+    let tree = app.render_tree();
+    assert!(matches!(
+        &tree.children[..],
+        [picker, clear] if matches!(
+            &picker.value,
+            RenderNode::View { kind: ViewKind::DatePicker { .. }, id: Some(id), .. } if id == "due"
+        ) && matches!(
+            &clear.value,
+            RenderNode::View { id: Some(id), .. } if id == "due-clear"
+        )
+    ));
+    assert!(app.dispatch_at(&[0, 0], Event::DateChanged { date: leap }));
+    assert_eq!(app.get(date), Some(leap));
+
+    assert!(app.dispatch_at(&[0, 1], Event::Activated));
+    assert_eq!(app.get(date), None);
+    let tree = app.render_tree();
+    assert!(matches!(
+        &tree.children[..],
+        [button] if matches!(
+            &button.value,
+            RenderNode::View { kind: ViewKind::Button(button), id: Some(id), .. }
+                if button.title == "No date" && id == "due"
+        )
+    ));
+
+    assert!(app.dispatch_at(&[0, 0], Event::Activated));
+    assert_eq!(app.get(date), Some(CalendarDate::today()));
+}
+
+#[test]
 fn number_field_clamps_entered_values() {
     // Verifies values outside the declared range are clamped before reaching the Store.
     let (mut app, value) = Harness::mount(
@@ -400,6 +646,7 @@ fn number_field_clamps_entered_values() {
                     ..
                 },
                 text: None,
+                placeholder: None,
             },
             ..
         }
@@ -1031,6 +1278,7 @@ fn canvas_frame() -> Frame {
         scale: 2.0,
         time: 0.0,
         delta: 0.0,
+        palette: Default::default(),
     }
 }
 
@@ -1405,6 +1653,37 @@ fn text_editor_updates_its_store_before_on_change() {
 
     assert_eq!(app.get(body), edited);
     assert_eq!(*seen.borrow(), ["Title\nbold"]);
+}
+
+#[test]
+fn toolbar_search_carries_its_id_and_focus_requests() {
+    // Verifies the search item declares its ID and the focus request count from its Store.
+    let (mut app, (focus, _)) = Harness::mount(
+        |cx| (cx.store(0_u64), cx.store(String::new())),
+        |(focus, query)| {
+            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Toolbar").toolbar(Toolbar::new([
+                ToolbarItem::search(query)
+                    .id("toolbar-search")
+                    .focus_on(focus),
+            ]))
+        },
+    );
+    let search = |app: &App| match &app.render_tree().value {
+        RenderNode::Window {
+            toolbar: Some(toolbar),
+            ..
+        } => toolbar.items[0].clone(),
+        _ => panic!("expected a window with a toolbar"),
+    };
+    assert!(matches!(
+        search(&app),
+        zintl_ui_backend_core::ToolbarItem::Search { id: Some(id), focus: 0, .. } if id == "toolbar-search"
+    ));
+    app.set(focus, 1);
+    assert!(matches!(
+        search(&app),
+        zintl_ui_backend_core::ToolbarItem::Search { focus: 1, .. }
+    ));
 }
 
 #[test]
