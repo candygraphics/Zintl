@@ -8,34 +8,17 @@ use zintl_ui::view::View;
 use zintl_ui_backend_core::{CalendarDate, DatePickerStyle, ViewKind};
 use zintl_ui_layout::{LayoutStyle, Size};
 
-use crate::attach::attachments;
+use crate::modifiers;
 use crate::{
-    Attach, Attachments, Color, Context, Element, Event, EventKind, NativeView, RenderNode,
+    Attach, Color, Context, Control, Element, Event, EventKind, NativeView, RenderNode,
+    ViewModifiers,
 };
 
 type Change<T> = dyn for<'a> Fn(&mut Context<'a>, T);
 
-/// Implements shared builder methods and `View` for controls.
+/// Implements `View` for controls.
 macro_rules! control {
     ($($control:ident),* $(,)?) => {$(
-        impl $control {
-            pub fn id(mut self, id: impl Into<String>) -> Self {
-                self.id = Some(id.into());
-                self
-            }
-
-            pub fn minimum_size(mut self, size: Size) -> Self {
-                self.layout.minimum_size = Some(size);
-                self
-            }
-
-            /// Stretches the control across its parent's width.
-            pub fn fill_width(mut self) -> Self {
-                self.layout.width = zintl_ui_layout::LayoutDimension::Percent(1.0);
-                self
-            }
-        }
-
         impl View for $control {
             type Output = RenderNode;
 
@@ -46,14 +29,10 @@ macro_rules! control {
     )*};
 }
 
+/// Lets controls be disabled.
 macro_rules! enabled {
     ($($control:ident),* $(,)?) => {$(
-        impl $control {
-            pub fn enabled(mut self, enabled: bool) -> Self {
-                self.enabled = enabled;
-                self
-            }
-        }
+        impl Control for $control {}
     )*};
 }
 
@@ -77,7 +56,11 @@ enabled!(
     NumberField,
     ColorWell,
     DatePicker,
+    SearchField,
+    OptionalDatePicker,
 );
+
+impl<T: IntegerValue> Control for IntegerField<T> {}
 
 /// Registers a handler that writes event values to `store` and then calls `action`.
 struct Binding<T: 'static> {
@@ -116,10 +99,8 @@ pub struct Switch {
     on: bool,
     store: Option<Store<bool>>,
     action: Option<Rc<Change<bool>>>,
-    enabled: bool,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl Switch {
@@ -128,10 +109,8 @@ impl Switch {
             on: false,
             store: None,
             action: None,
-            enabled: true,
             layout: LayoutStyle::leaf(Size::new(38.0, 22.0)),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -158,7 +137,7 @@ impl Default for Switch {
 }
 
 impl NativeView for Switch {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::View {
@@ -166,8 +145,8 @@ impl NativeView for Switch {
                 on: self.store.map_or(self.on, |store| *cx.get(store)),
             },
             layout: self.layout,
-            id: self.id.clone(),
-            enabled: self.enabled,
+            id: None,
+            enabled: true,
             title_bar_interactive: false,
             help: None,
             accessibility: Default::default(),
@@ -193,10 +172,8 @@ pub struct Slider {
     snaps_to_ticks: bool,
     store: Option<Store<f64>>,
     action: Option<Rc<Change<f64>>>,
-    enabled: bool,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl Slider {
@@ -209,10 +186,8 @@ impl Slider {
             snaps_to_ticks: false,
             store: None,
             action: None,
-            enabled: true,
             layout: LayoutStyle::leaf(Size::new(160.0, 24.0)),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -240,7 +215,7 @@ impl Slider {
 }
 
 impl NativeView for Slider {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::View {
@@ -252,8 +227,8 @@ impl NativeView for Slider {
                 snaps_to_ticks: self.snaps_to_ticks,
             },
             layout: self.layout,
-            id: self.id.clone(),
-            enabled: self.enabled,
+            id: None,
+            enabled: true,
             title_bar_interactive: false,
             help: None,
             accessibility: Default::default(),
@@ -286,10 +261,8 @@ pub struct PopUpButton {
     selected: Option<usize>,
     store: Option<Store<usize>>,
     action: Option<Rc<Change<usize>>>,
-    enabled: bool,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl PopUpButton {
@@ -307,10 +280,8 @@ impl PopUpButton {
             items,
             store: None,
             action: None,
-            enabled: true,
             layout: LayoutStyle::leaf(Size::new(width.max(100.0), 26.0)),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -332,7 +303,7 @@ impl PopUpButton {
 }
 
 impl NativeView for PopUpButton {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::View {
@@ -341,8 +312,8 @@ impl NativeView for PopUpButton {
                 selected: self.store.map(|store| *cx.get(store)).or(self.selected),
             },
             layout: self.layout,
-            id: self.id.clone(),
-            enabled: self.enabled,
+            id: None,
+            enabled: true,
             title_bar_interactive: false,
             help: None,
             accessibility: Default::default(),
@@ -362,10 +333,8 @@ pub struct SegmentedControl {
     selected: Option<usize>,
     store: Option<Store<usize>>,
     action: Option<Rc<Change<usize>>>,
-    enabled: bool,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl SegmentedControl {
@@ -380,10 +349,8 @@ impl SegmentedControl {
             segments,
             store: None,
             action: None,
-            enabled: true,
             layout: LayoutStyle::leaf(Size::new(width, 24.0)),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -405,7 +372,7 @@ impl SegmentedControl {
 }
 
 impl NativeView for SegmentedControl {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::View {
@@ -414,8 +381,8 @@ impl NativeView for SegmentedControl {
                 selected: self.store.map(|store| *cx.get(store)).or(self.selected),
             },
             layout: self.layout,
-            id: self.id.clone(),
-            enabled: self.enabled,
+            id: None,
+            enabled: true,
             title_bar_interactive: false,
             help: None,
             accessibility: Default::default(),
@@ -436,10 +403,8 @@ pub struct ComboBox {
     placeholder: Option<String>,
     store: Option<Store<String>>,
     action: Option<Rc<Change<String>>>,
-    enabled: bool,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl ComboBox {
@@ -450,10 +415,8 @@ impl ComboBox {
             placeholder: None,
             store: None,
             action: None,
-            enabled: true,
             layout: LayoutStyle::leaf(Size::new(160.0, 26.0)),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -482,7 +445,7 @@ impl ComboBox {
 }
 
 impl NativeView for ComboBox {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::View {
@@ -494,8 +457,8 @@ impl NativeView for ComboBox {
                 placeholder: self.placeholder.clone(),
             },
             layout: self.layout,
-            id: self.id.clone(),
-            enabled: self.enabled,
+            id: None,
+            enabled: true,
             title_bar_interactive: false,
             help: None,
             accessibility: Default::default(),
@@ -532,10 +495,8 @@ pub struct NumberField {
     suffix: String,
     store: Option<Store<f64>>,
     action: Option<Rc<Change<f64>>>,
-    enabled: bool,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl NumberField {
@@ -551,10 +512,8 @@ impl NumberField {
             suffix: String::new(),
             store: None,
             action: None,
-            enabled: true,
             layout: LayoutStyle::leaf(Size::new(100.0, 22.0)),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -646,7 +605,7 @@ impl Default for NumberField {
 }
 
 impl NativeView for NumberField {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let value = self.store.map_or(self.value, |store| *cx.get(store));
@@ -663,8 +622,8 @@ impl NativeView for NumberField {
                 placeholder: None,
             },
             layout: self.layout,
-            id: self.id.clone(),
-            enabled: self.enabled,
+            id: None,
+            enabled: true,
             title_bar_interactive: false,
             help: None,
             accessibility: Default::default(),
@@ -753,10 +712,8 @@ pub struct IntegerField<T: IntegerValue = i64> {
     placeholder: Option<String>,
     store: Option<Store<T>>,
     action: Option<Rc<Change<T>>>,
-    enabled: bool,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl IntegerField<i64> {
@@ -790,32 +747,9 @@ impl<T: IntegerValue> IntegerField<T> {
             placeholder: None,
             store: None,
             action: None,
-            enabled: true,
             layout: LayoutStyle::leaf(Size::new(100.0, 22.0)),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
-    }
-
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
-        self
-    }
-
-    pub fn minimum_size(mut self, size: Size) -> Self {
-        self.layout.minimum_size = Some(size);
-        self
-    }
-
-    /// Stretches the field across its parent's width.
-    pub fn fill_width(mut self) -> Self {
-        self.layout.width = zintl_ui_layout::LayoutDimension::Percent(1.0);
-        self
-    }
-
-    pub fn enabled(mut self, enabled: bool) -> Self {
-        self.enabled = enabled;
-        self
     }
 
     pub fn value(mut self, value: T) -> Self {
@@ -922,7 +856,7 @@ impl Default for IntegerField<i64> {
 }
 
 impl<T: IntegerValue> NativeView for IntegerField<T> {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let value = self.store.map_or(self.value, |store| *cx.get(store));
@@ -945,8 +879,8 @@ impl<T: IntegerValue> NativeView for IntegerField<T> {
                 placeholder: self.placeholder.clone(),
             },
             layout: self.layout,
-            id: self.id.clone(),
-            enabled: self.enabled,
+            id: None,
+            enabled: true,
             title_bar_interactive: false,
             help: None,
             accessibility: Default::default(),
@@ -1001,10 +935,8 @@ pub struct DatePicker {
     style: DatePickerStyle,
     store: Option<Store<CalendarDate>>,
     action: Option<Rc<Change<CalendarDate>>>,
-    enabled: bool,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl DatePicker {
@@ -1021,10 +953,8 @@ impl DatePicker {
             style: DatePickerStyle::TextField,
             store: None,
             action: None,
-            enabled: true,
             layout: LayoutStyle::leaf(Size::new(110.0, 22.0)),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -1061,7 +991,7 @@ impl Default for DatePicker {
 }
 
 impl NativeView for DatePicker {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::View {
@@ -1070,8 +1000,8 @@ impl NativeView for DatePicker {
                 style: self.style,
             },
             layout: self.layout,
-            id: self.id.clone(),
-            enabled: self.enabled,
+            id: None,
+            enabled: true,
             title_bar_interactive: false,
             help: None,
             accessibility: Default::default(),
@@ -1112,9 +1042,7 @@ pub struct OptionalDatePicker {
     style: DatePickerStyle,
     store: Option<Store<Option<CalendarDate>>>,
     action: Option<Rc<Change<Option<CalendarDate>>>>,
-    enabled: bool,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl OptionalDatePicker {
@@ -1125,20 +1053,8 @@ impl OptionalDatePicker {
             style: DatePickerStyle::TextField,
             store: None,
             action: None,
-            enabled: true,
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
-    }
-
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
-        self
-    }
-
-    pub fn enabled(mut self, enabled: bool) -> Self {
-        self.enabled = enabled;
-        self
     }
 
     /// Shows `date`; a bound Store takes precedence.
@@ -1187,20 +1103,26 @@ impl OptionalDatePicker {
 }
 
 impl NativeView for OptionalDatePicker {
-    attachments!();
+    modifiers!();
+
+    // The picker and the buttons carry the ID and enabled state, not the row.
+    fn places_identity(&self) -> bool {
+        true
+    }
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let date = self.store.map_or(self.date, |store| *cx.get(store));
+        let (id, enabled) = (self.modifiers.id(), self.modifiers.enabled());
         let mut row = LayoutStyle::stack(zintl_ui_layout::Axis::Horizontal, 4.0);
         row.cross_axis_alignment = zintl_ui_layout::CrossAxisAlignment::Center;
         let children = match date {
             None => {
                 let pick = self.change(Some(CalendarDate::today()));
                 let mut button = crate::Button::new(self.placeholder.clone())
-                    .enabled(self.enabled)
+                    .enabled(enabled)
                     .on_click(pick);
-                if let Some(id) = &self.id {
-                    button = button.id(id.clone());
+                if let Some(id) = id {
+                    button = button.id(id);
                 }
                 zintl_ui::list![button]
             }
@@ -1209,7 +1131,7 @@ impl NativeView for OptionalDatePicker {
                 let mut picker = DatePicker::new()
                     .date(date)
                     .style(self.style)
-                    .enabled(self.enabled)
+                    .enabled(enabled)
                     .on_change(move |cx, date| {
                         if let Some(store) = store {
                             cx.update(store, |current| *current = Some(date));
@@ -1221,12 +1143,12 @@ impl NativeView for OptionalDatePicker {
                 let mut clear = crate::Button::new("")
                     .system_image("xmark.circle.fill")
                     .bezel_style(None)
-                    .enabled(self.enabled)
+                    .enabled(enabled)
                     .on_click(self.change(None))
                     .accessibility_label("Clear Date")
                     .help("Clear Date");
-                if let Some(id) = &self.id {
-                    picker = picker.id(id.clone());
+                if let Some(id) = id {
+                    picker = picker.id(id);
                     clear = clear.id(format!("{id}-clear"));
                 }
                 zintl_ui::list![picker, clear]
@@ -1252,8 +1174,7 @@ pub struct SearchField {
     store: Option<Store<String>>,
     action: Option<Rc<Change<String>>>,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl SearchField {
@@ -1264,8 +1185,7 @@ impl SearchField {
             store: None,
             action: None,
             layout: LayoutStyle::leaf(Size::new(160.0, 22.0)),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -1295,7 +1215,7 @@ impl Default for SearchField {
 }
 
 impl NativeView for SearchField {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::View {
@@ -1306,7 +1226,7 @@ impl NativeView for SearchField {
                 placeholder: self.placeholder.clone(),
             },
             layout: self.layout,
-            id: self.id.clone(),
+            id: None,
             enabled: true,
             title_bar_interactive: false,
             help: None,
@@ -1329,10 +1249,8 @@ pub struct ColorWell {
     color: Color,
     store: Option<Store<Color>>,
     action: Option<Rc<Change<Color>>>,
-    enabled: bool,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl ColorWell {
@@ -1341,10 +1259,8 @@ impl ColorWell {
             color: Color::WHITE,
             store: None,
             action: None,
-            enabled: true,
             layout: LayoutStyle::leaf(Size::new(44.0, 24.0)),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -1371,7 +1287,7 @@ impl Default for ColorWell {
 }
 
 impl NativeView for ColorWell {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::View {
@@ -1379,8 +1295,8 @@ impl NativeView for ColorWell {
                 color: self.store.map_or(self.color, |store| *cx.get(store)),
             },
             layout: self.layout,
-            id: self.id.clone(),
-            enabled: self.enabled,
+            id: None,
+            enabled: true,
             title_bar_interactive: false,
             help: None,
             accessibility: Default::default(),

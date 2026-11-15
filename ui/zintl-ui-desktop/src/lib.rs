@@ -39,18 +39,19 @@ pub use zintl_ui_native::graphics::{
     TextMetrics, Transform, VerticalAlign,
 };
 pub use zintl_ui_native::{
-    AccessibilityRole, Alert, AlertButton, AlertStyle, AnnouncementPriority, Attach, Attachments,
-    ButtonRole, CalendarDate, Canvas2D, Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasId,
-    CanvasSetup, Color, ColorPanel, Context, Cursor, DatePicker, DatePickerStyle,
+    AccessibilityRole, Alert, AlertButton, AlertStyle, AnnouncementPriority, Attach, ButtonRole,
+    CalendarDate, Canvas2D, Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasId,
+    CanvasSetup, Color, ColorPanel, Context, Control, Cursor, DatePicker, DatePickerStyle,
     EnglishMenuLocalizer, Event, EventKind, FileDialog, Frame, GesturePhase, Invalidator,
-    JapaneseMenuLocalizer, Key, KeyEvent, KeyPhase, List, ListFactory, ListRow, ListSection,
-    ListStyle, MagnifyEvent, MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, Modifiers,
-    NamedKey, NativeView, OptionalDatePicker, Palette, PaletteColor, PointerButton, PointerEvent,
-    PointerPhase, Popover, PopoverEdge, ProgressIndicator, Rect, Redraw, RedrawPolicy, RenderNode,
-    ScrollAlignment, ScrollAxes, ScrollEvent, ScrollStatus, Separator, Shortcut, ShortcutKey,
-    Sidebar, SidebarItem, SidebarSection, Signal, SortOrder, StandardAction, StandardMenu,
-    StandardText, StoreSender, SystemColor, Table, TableColumn, TableRow, TextAlignment, TextColor,
-    TextEditor, TitleBar, Toolbar, ToolbarItem, UndoHandler, ViewKind, graphics, list,
+    JapaneseMenuLocalizer, Key, KeyEvent, KeyPhase, Layout, LayoutOverrides, List, ListFactory,
+    ListRow, ListSection, ListStyle, MagnifyEvent, MainMenu, Menu, MenuItem, MenuLocalizer,
+    Modifier, Modifiers, NamedKey, NativeView, OptionalDatePicker, Palette, PaletteColor,
+    PointerButton, PointerEvent, PointerPhase, Popover, PopoverEdge, ProgressIndicator, Rect,
+    Redraw, RedrawPolicy, RenderNode, ScrollAlignment, ScrollAxes, ScrollEvent, ScrollStatus,
+    Separator, Shortcut, ShortcutKey, Sidebar, SidebarItem, SidebarSection, Signal, SortOrder,
+    StandardAction, StandardMenu, StandardText, StoreSender, SystemColor, Table, TableColumn,
+    TableRow, TextAlignment, TextColor, TextEditor, TitleBar, Toolbar, ToolbarItem, UndoHandler,
+    ViewKind, ViewModifiers, graphics, list,
 };
 #[cfg(feature = "wgpu")]
 pub use zintl_ui_native::{
@@ -193,16 +194,6 @@ impl Text {
         }
     }
 
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.inner = self.inner.id(id);
-        self
-    }
-
-    pub fn minimum_size(mut self, size: Size) -> Self {
-        self.inner = self.inner.minimum_size(size);
-        self
-    }
-
     pub fn font(mut self, font: Font) -> Self {
         self.inner = self.inner.font(font);
         self
@@ -226,14 +217,6 @@ impl Text {
         self.inner = self.inner.line_limit(lines);
         self
     }
-
-    /// Takes the parent's full width.
-    ///
-    /// Without a line limit, the text wraps to that width and grows in height.
-    pub fn fill_width(mut self) -> Self {
-        self.inner = self.inner.fill_width();
-        self
-    }
 }
 
 impl NativeView for Text {
@@ -241,12 +224,12 @@ impl NativeView for Text {
         self.inner.base_element(cx)
     }
 
-    fn attachments(&self) -> &Attachments {
-        self.inner.attachments()
+    fn modifiers(&self) -> &ViewModifiers {
+        self.inner.modifiers()
     }
 
-    fn attachments_mut(&mut self) -> &mut Attachments {
-        self.inner.attachments_mut()
+    fn modifiers_mut(&mut self) -> &mut ViewModifiers {
+        self.inner.modifiers_mut()
     }
 }
 
@@ -260,16 +243,6 @@ impl Button {
         Self {
             inner: zintl_ui_native::Button::new(title),
         }
-    }
-
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.inner = self.inner.id(id);
-        self
-    }
-
-    pub fn minimum_size(mut self, size: Size) -> Self {
-        self.inner = self.inner.minimum_size(size);
-        self
     }
 
     pub fn on_click(mut self, action: impl for<'a> Fn(&mut Context<'a>) + 'static) -> Self {
@@ -310,11 +283,6 @@ impl Button {
         self
     }
 
-    pub fn enabled(mut self, enabled: bool) -> Self {
-        self.inner = self.inner.enabled(enabled);
-        self
-    }
-
     /// Shows `menu` below the button when clicked, like a pull-down button.
     pub fn menu(mut self, menu: impl Into<Menu>) -> Self {
         self.inner = self.inner.menu(menu);
@@ -348,17 +316,19 @@ pub enum ButtonStyle {
     Disclosure,
 }
 
+impl Control for Button {}
+
 impl NativeView for Button {
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         self.inner.base_element(cx)
     }
 
-    fn attachments(&self) -> &Attachments {
-        self.inner.attachments()
+    fn modifiers(&self) -> &ViewModifiers {
+        self.inner.modifiers()
     }
 
-    fn attachments_mut(&mut self) -> &mut Attachments {
-        self.inner.attachments_mut()
+    fn modifiers_mut(&mut self) -> &mut ViewModifiers {
+        self.inner.modifiers_mut()
     }
 }
 
@@ -372,11 +342,6 @@ impl TextField {
         Self {
             inner: zintl_ui_native::TextField::new(),
         }
-    }
-
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.inner = self.inner.id(id);
-        self
     }
 
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
@@ -422,11 +387,6 @@ impl TextField {
         self.inner = self.inner.focus_on(requests);
         self
     }
-
-    pub fn minimum_size(mut self, size: Size) -> Self {
-        self.inner = self.inner.minimum_size(size);
-        self
-    }
 }
 
 impl Default for TextField {
@@ -435,17 +395,19 @@ impl Default for TextField {
     }
 }
 
+impl Control for TextField {}
+
 impl NativeView for TextField {
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         self.inner.base_element(cx)
     }
 
-    fn attachments(&self) -> &Attachments {
-        self.inner.attachments()
+    fn modifiers(&self) -> &ViewModifiers {
+        self.inner.modifiers()
     }
 
-    fn attachments_mut(&mut self) -> &mut Attachments {
-        self.inner.attachments_mut()
+    fn modifiers_mut(&mut self) -> &mut ViewModifiers {
+        self.inner.modifiers_mut()
     }
 }
 
@@ -454,8 +416,7 @@ impl NativeView for TextField {
 struct Stack {
     children: ListFactory<RenderNode>,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl Stack {
@@ -468,17 +429,12 @@ impl Stack {
         Self {
             children,
             layout,
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
     fn native_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let view = zintl_ui_native::View::new(self.layout, self.children.clone());
-        match &self.id {
-            Some(id) => view.id(id.clone()).native_element(cx),
-            None => view.native_element(cx),
-        }
+        zintl_ui_native::View::new(self.layout, self.children.clone()).native_element(cx)
     }
 }
 
@@ -497,30 +453,8 @@ macro_rules! stack {
                 }
             }
 
-            pub fn id(mut self, id: impl Into<String>) -> Self {
-                self.stack.id = Some(id.into());
-                self
-            }
-
             pub fn spacing(mut self, spacing: f32) -> Self {
                 self.stack.layout.gap = spacing;
-                self
-            }
-
-            pub fn fill_width(mut self) -> Self {
-                self.stack.layout.width = LayoutDimension::Percent(1.0);
-                self
-            }
-
-            /// Fixes the width in points.
-            pub fn width(mut self, width: f32) -> Self {
-                self.stack.layout.width = LayoutDimension::Points(width);
-                self
-            }
-
-            /// Fixes the height in points.
-            pub fn height(mut self, height: f32) -> Self {
-                self.stack.layout.height = LayoutDimension::Points(height);
                 self
             }
 
@@ -545,20 +479,9 @@ macro_rules! stack {
                 self
             }
 
-            pub fn minimum_size(mut self, size: Size) -> Self {
-                self.stack.layout.minimum_size = Some(size);
-                self
-            }
-
             /// Insets the children from every edge.
             pub fn padding(mut self, padding: f32) -> Self {
                 self.stack.layout.padding = padding;
-                self
-            }
-
-            /// Takes the remaining space along the parent's main axis.
-            pub fn grow(mut self) -> Self {
-                self.stack.layout.grow = 1.0;
                 self
             }
 
@@ -574,12 +497,12 @@ macro_rules! stack {
                 self.stack.native_element(cx)
             }
 
-            fn attachments(&self) -> &Attachments {
-                &self.stack.attachments
+            fn modifiers(&self) -> &ViewModifiers {
+                &self.stack.modifiers
             }
 
-            fn attachments_mut(&mut self) -> &mut Attachments {
-                &mut self.stack.attachments
+            fn modifiers_mut(&mut self) -> &mut ViewModifiers {
+                &mut self.stack.modifiers
             }
         }
     };
@@ -591,7 +514,7 @@ stack!(VStack, Axis::Vertical);
 /// Empty space that takes the remaining room along its stack's axis.
 #[derive(Clone, Default)]
 pub struct Spacer {
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl Spacer {
@@ -607,12 +530,12 @@ impl NativeView for Spacer {
         zintl_ui_native::View::new(layout, Vec::new()).native_element(cx)
     }
 
-    fn attachments(&self) -> &Attachments {
-        &self.attachments
+    fn modifiers(&self) -> &ViewModifiers {
+        &self.modifiers
     }
 
-    fn attachments_mut(&mut self) -> &mut Attachments {
-        &mut self.attachments
+    fn modifiers_mut(&mut self) -> &mut ViewModifiers {
+        &mut self.modifiers
     }
 }
 

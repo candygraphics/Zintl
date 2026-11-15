@@ -260,6 +260,29 @@ fn switch_toggle_round_trips_through_its_store() {
 }
 
 #[test]
+fn labeled_toggle_puts_identity_on_the_switch_and_sizes_on_the_row() {
+    // Verifies the switch carries the ID and enabled state while the labeled row takes the size.
+    let row = App::new(Toggle::new("Wi-Fi").id("wifi").enabled(false).width(200.0)).render_tree();
+
+    let RenderNode::View {
+        id,
+        enabled,
+        layout,
+        ..
+    } = &row.value
+    else {
+        panic!("expected a row, got {:?}", row.value);
+    };
+    assert_eq!(id, &None);
+    assert!(enabled);
+    assert_eq!(layout.width, LayoutDimension::Points(200.0));
+    assert!(matches!(
+        &row.children[1].value,
+        RenderNode::View { kind: ViewKind::Switch { .. }, id: Some(id), enabled: false, .. } if id == "wifi"
+    ));
+}
+
+#[test]
 fn toggle_styles_use_native_two_state_controls() {
     // Verifies switch rows lead with the label and other styles use button types.
     let row = App::new(Toggle::new("Wi-Fi")).render_tree();

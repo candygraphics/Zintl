@@ -6,11 +6,11 @@ use zintl_ui::element::{ElementFactory, IntoElement, KeyedElement, ListFactory};
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
 use zintl_ui_backend_core::{SortOrder, TextAlignment, ViewKind};
-use zintl_ui_layout::{Arrangement, Axis, CrossAxisAlignment, LayoutDimension, LayoutStyle, Size};
+use zintl_ui_layout::{Arrangement, Axis, CrossAxisAlignment, LayoutStyle, Size};
 
-use crate::attach::attachments;
+use crate::modifiers;
 use crate::{
-    Attach, Attachments, Context, Element, Event, EventKind, Menu, NativeView, RenderNode,
+    Attach, Context, Element, Event, EventKind, Menu, NativeView, RenderNode, ViewModifiers,
 };
 
 type SelectionAction = dyn for<'a> Fn(&mut Context<'a>, Option<&str>);
@@ -106,8 +106,7 @@ pub struct Table {
     fit_columns: bool,
     empty_content: Option<ElementFactory<RenderNode>>,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl Table {
@@ -128,8 +127,7 @@ impl Table {
             fit_columns: false,
             empty_content: None,
             layout: LayoutStyle::fill(Size::new(0.0, 0.0)),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -213,24 +211,6 @@ impl Table {
         self
     }
 
-    /// Names the table itself, not the scroll view around it, for UI tests and accessibility.
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
-        self
-    }
-
-    pub fn minimum_size(mut self, size: Size) -> Self {
-        self.layout.minimum_size = Some(size);
-        self
-    }
-
-    /// Uses a fixed height instead of filling the remaining space.
-    pub fn height(mut self, height: f32) -> Self {
-        self.layout.height = LayoutDimension::Points(height);
-        self.layout.grow = 0.0;
-        self
-    }
-
     /// Returns the cells of `row`, padded with empty cells or cut to the column count.
     fn cells(&self, row: &TableRow) -> impl Iterator<Item = ElementFactory<RenderNode>> {
         // Each cell needs exactly one native view, so blanks are empty containers.
@@ -254,7 +234,11 @@ impl Table {
 }
 
 impl NativeView for Table {
-    attachments!();
+    modifiers!();
+
+    fn places_identity(&self) -> bool {
+        true
+    }
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let Some(empty) = &self.empty_content else {
@@ -308,7 +292,8 @@ impl Table {
                 striped: self.striped,
             },
             layout,
-            id: self.id.clone(),
+            // The ID names the table itself, not a container around it.
+            id: self.modifiers.id().map(str::to_owned),
             enabled: true,
             title_bar_interactive: false,
             help: None,

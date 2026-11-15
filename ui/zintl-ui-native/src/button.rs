@@ -6,10 +6,10 @@ use zintl_ui::view::View;
 use zintl_ui_backend_core::{Color, ViewKind};
 use zintl_ui_layout::{LayoutStyle, Size};
 
-use crate::attach::attachments;
+use crate::modifiers;
 use crate::{
-    Attach, Attachments, BezelStyle, ButtonRole, ButtonType, Context, Element, Event, EventKind,
-    Menu, NativeView, RenderNode,
+    Attach, BezelStyle, ButtonRole, ButtonType, Context, Control, Element, Event, EventKind, Menu,
+    NativeView, RenderNode, ViewModifiers,
 };
 
 type Action = dyn for<'a> Fn(&mut Context<'a>);
@@ -24,12 +24,8 @@ pub struct Button {
     system_image: Option<String>,
     on: bool,
     state: Option<Store<bool>>,
-    enabled: bool,
     layout: LayoutStyle,
-    /// Whether the app declared a minimum size, which icon-only buttons then keep.
-    declares_minimum: bool,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
     action: Option<Rc<Action>>,
     state_action: Option<Rc<StateAction>>,
     shows_menu: bool,
@@ -47,11 +43,8 @@ impl Button {
             system_image: None,
             on: false,
             state: None,
-            enabled: true,
             layout: LayoutStyle::leaf(Size::new(80.0, 32.0)),
-            declares_minimum: false,
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
             action: None,
             state_action: None,
             shows_menu: false,
@@ -64,29 +57,18 @@ impl Button {
     pub fn checkbox(title: impl Into<String>) -> Self {
         let title = title.into();
         let width = title.chars().count() as f32 * 7.0 + 24.0;
-        Self::new(title)
-            .button_type(ButtonType::Checkbox)
-            .minimum_size(Size::new(width, 20.0))
+        let mut button = Self::new(title).button_type(ButtonType::Checkbox);
+        button.layout.minimum_size = Some(Size::new(width, 20.0));
+        button
     }
 
     /// Creates a radio button; group radios by binding them to one selection.
     pub fn radio(title: impl Into<String>) -> Self {
         let title = title.into();
         let width = title.chars().count() as f32 * 7.0 + 24.0;
-        Self::new(title)
-            .button_type(ButtonType::Radio)
-            .minimum_size(Size::new(width, 20.0))
-    }
-
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
-        self
-    }
-
-    pub fn minimum_size(mut self, size: Size) -> Self {
-        self.layout.minimum_size = Some(size);
-        self.declares_minimum = true;
-        self
+        let mut button = Self::new(title).button_type(ButtonType::Radio);
+        button.layout.minimum_size = Some(Size::new(width, 20.0));
+        button
     }
 
     pub fn button_type(mut self, button_type: ButtonType) -> Self {
@@ -117,11 +99,6 @@ impl Button {
     /// standard push button size, unless a minimum size is declared.
     pub fn system_image(mut self, name: impl Into<String>) -> Self {
         self.system_image = Some(name.into());
-        self
-    }
-
-    pub fn enabled(mut self, enabled: bool) -> Self {
-        self.enabled = enabled;
         self
     }
 
@@ -176,7 +153,10 @@ impl Button {
     /// Returns the layout; icon-only buttons leave their size to the backend's measuring.
     fn layout(&self) -> LayoutStyle {
         let mut layout = self.layout;
-        if self.title.is_empty() && self.system_image.is_some() && !self.declares_minimum {
+        if self.title.is_empty()
+            && self.system_image.is_some()
+            && self.modifiers.layout().minimum_size.is_none()
+        {
             layout.minimum_size = Some(Size::default());
         }
         layout
@@ -184,7 +164,7 @@ impl Button {
 }
 
 impl NativeView for Button {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let on = self.state.map_or(self.on, |store| *cx.get(store));
@@ -207,8 +187,8 @@ impl NativeView for Button {
                 title_color: self.title_color,
             }),
             layout: self.layout(),
-            id: self.id.clone(),
-            enabled: self.enabled,
+            id: None,
+            enabled: true,
             title_bar_interactive: false,
             help: None,
             accessibility: Default::default(),
@@ -237,6 +217,8 @@ impl NativeView for Button {
         element
     }
 }
+
+impl Control for Button {}
 
 impl View for Button {
     type Output = RenderNode;

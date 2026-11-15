@@ -7,8 +7,8 @@ use zintl_ui_backend_core::graphics::{AttributedText, Font};
 use zintl_ui_backend_core::{TextAlignment, TextColor, TextStyle, ViewKind};
 use zintl_ui_layout::{LayoutDimension, LayoutStyle, Size};
 
-use crate::attach::attachments;
-use crate::{Attachments, Context, Element, Event, EventKind, NativeView, RenderNode};
+use crate::modifiers;
+use crate::{Context, Control, Element, Event, EventKind, NativeView, RenderNode, ViewModifiers};
 
 type ChangeAction = dyn for<'a> Fn(&mut Context<'a>, &str);
 
@@ -27,8 +27,7 @@ pub struct TextField {
     style: TextStyle,
     focus: Option<Store<u64>>,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl TextField {
@@ -51,8 +50,7 @@ impl TextField {
             style: TextStyle::default(),
             focus: None,
             layout: LayoutStyle::leaf(Size::new(160.0, 28.0)),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -118,11 +116,6 @@ impl TextField {
         self.restyle(|style| style.line_limit = Some(lines))
     }
 
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
-        self
-    }
-
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = Some(placeholder.into());
         self
@@ -168,22 +161,6 @@ impl TextField {
         self.focus = Some(requests);
         self
     }
-
-    /// Takes the parent's full width.
-    ///
-    /// A label without a line limit then wraps to that width and grows in height.
-    pub fn fill_width(mut self) -> Self {
-        self.layout.width = LayoutDimension::Percent(1.0);
-        if !self.editable {
-            self.resize_label();
-        }
-        self
-    }
-
-    pub fn minimum_size(mut self, size: Size) -> Self {
-        self.layout.minimum_size = Some(size);
-        self
-    }
 }
 
 impl Default for TextField {
@@ -191,6 +168,8 @@ impl Default for TextField {
         Self::new()
     }
 }
+
+impl Control for TextField {}
 
 impl View for TextField {
     type Output = RenderNode;
@@ -201,13 +180,19 @@ impl View for TextField {
 }
 
 impl NativeView for TextField {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let value = self
             .binding
             .map(|store| cx.get(store).clone())
             .unwrap_or_else(|| self.value.clone());
+        // A label given a width wraps to it, so its size is estimated again.
+        let mut sized = self.clone();
+        if let (false, Some(width)) = (self.editable, self.modifiers.layout().width) {
+            sized.layout.width = width;
+            sized.resize_label();
+        }
         let element = Element::node(RenderNode::View {
             kind: ViewKind::TextField {
                 value,
@@ -216,12 +201,12 @@ impl NativeView for TextField {
                 selectable: self.selectable,
                 bordered: self.bordered,
                 draws_background: self.draws_background,
-                multiline: self.multiline,
+                multiline: sized.multiline,
                 style: self.style.clone(),
                 focus: self.focus.map_or(0, |store| *cx.get(store)),
             },
-            layout: self.layout,
-            id: self.id.clone(),
+            layout: sized.layout,
+            id: None,
             enabled: true,
             title_bar_interactive: false,
             help: None,
@@ -275,7 +260,7 @@ pub struct TextEditor {
     binding: Option<Store<AttributedText>>,
     action: Option<Rc<EditAction>>,
     focus: Option<Store<u64>>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl TextEditor {
@@ -284,7 +269,7 @@ impl TextEditor {
             binding: None,
             action: None,
             focus: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -314,7 +299,7 @@ impl Default for TextEditor {
 }
 
 impl NativeView for TextEditor {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::View {

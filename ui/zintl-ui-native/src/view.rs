@@ -3,15 +3,14 @@ use zintl_ui::view::View as ViewTrait;
 use zintl_ui_backend_core::ViewKind;
 use zintl_ui_layout::LayoutStyle;
 
-use crate::attach::attachments;
-use crate::{Attachments, Context, Element, NativeView, RenderNode};
+use crate::modifiers;
+use crate::{Context, Element, NativeView, RenderNode, ViewModifiers};
 
 #[derive(Clone)]
 pub struct View {
     children: ListFactory<RenderNode>,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl View {
@@ -19,25 +18,19 @@ impl View {
         Self {
             children,
             layout,
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
-    }
-
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
-        self
     }
 }
 
 impl NativeView for View {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, _cx: &mut Context<'_>) -> Element<RenderNode> {
         Element::node(RenderNode::View {
             kind: ViewKind::Container,
             layout: self.layout,
-            id: self.id.clone(),
+            id: None,
             enabled: true,
             title_bar_interactive: false,
             help: None,

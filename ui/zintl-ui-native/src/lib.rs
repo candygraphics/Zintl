@@ -17,7 +17,7 @@ mod types;
 mod view;
 mod window;
 
-pub use attach::{Attach, Attachments, NativeView};
+pub use attach::{Attach, Control, Layout, LayoutOverrides, NativeView, ViewModifiers};
 pub use button::Button;
 pub use canvas::Canvas2D;
 #[cfg(feature = "wgpu")]
