@@ -8,6 +8,19 @@ pub struct Toolbar {
     pub items: Vec<ToolbarItem>,
 }
 
+impl Toolbar {
+    /// Returns the search field's focus request count, or zero without one.
+    pub fn search_focus(&self) -> u64 {
+        self.items
+            .iter()
+            .find_map(|item| match item {
+                ToolbarItem::Search { focus, .. } => Some(*focus),
+                _ => None,
+            })
+            .unwrap_or(0)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ToolbarItem {
     /// A button with an SF Symbol; clicks report [`crate::Event::ToolbarItemClicked`].
@@ -21,6 +34,10 @@ pub enum ToolbarItem {
     Search {
         value: String,
         placeholder: Option<String>,
+        /// The search field's accessibility identifier.
+        id: Option<String>,
+        /// Each increase moves keyboard focus to the search field.
+        focus: u64,
     },
     FlexibleSpace,
 }

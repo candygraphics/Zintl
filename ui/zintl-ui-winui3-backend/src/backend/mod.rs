@@ -684,7 +684,10 @@ impl WinUI3Backend {
                     glyph: Glyph::of(system_image),
                     enabled: *enabled,
                 },
-                ToolbarItem::Search { value, placeholder } => zpd_winui3::ToolbarItem::Search {
+                // Focus requests and IDs are not applied to the WinUI search box yet.
+                ToolbarItem::Search {
+                    value, placeholder, ..
+                } => zpd_winui3::ToolbarItem::Search {
                     value,
                     placeholder: placeholder.as_deref().unwrap_or(""),
                 },

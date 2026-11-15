@@ -1656,6 +1656,37 @@ fn text_editor_updates_its_store_before_on_change() {
 }
 
 #[test]
+fn toolbar_search_carries_its_id_and_focus_requests() {
+    // Verifies the search item declares its ID and the focus request count from its Store.
+    let (mut app, (focus, _)) = Harness::mount(
+        |cx| (cx.store(0_u64), cx.store(String::new())),
+        |(focus, query)| {
+            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Toolbar").toolbar(Toolbar::new([
+                ToolbarItem::search(query)
+                    .id("toolbar-search")
+                    .focus_on(focus),
+            ]))
+        },
+    );
+    let search = |app: &App| match &app.render_tree().value {
+        RenderNode::Window {
+            toolbar: Some(toolbar),
+            ..
+        } => toolbar.items[0].clone(),
+        _ => panic!("expected a window with a toolbar"),
+    };
+    assert!(matches!(
+        search(&app),
+        zintl_ui_backend_core::ToolbarItem::Search { id: Some(id), focus: 0, .. } if id == "toolbar-search"
+    ));
+    app.set(focus, 1);
+    assert!(matches!(
+        search(&app),
+        zintl_ui_backend_core::ToolbarItem::Search { focus: 1, .. }
+    ));
+}
+
+#[test]
 fn toolbar_describes_items_and_routes_clicks_and_search() {
     // Verifies toolbar items render with state, buttons run their actions, and search writes its Store.
     let clicks = Calls::default();

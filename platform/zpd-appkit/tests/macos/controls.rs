@@ -812,6 +812,7 @@ fn main() {
             button(enabled),
             ToolbarItem::FlexibleSpace,
             ToolbarItem::Search {
+                id: Some("toolbar-search".into()),
                 value: String::new(),
                 placeholder: Some("Search".into()),
             },
@@ -836,6 +837,11 @@ fn main() {
         let action = zpd_objc::msg_send!(item, zpd_objc::sel!("action"), () => zpd_objc::Sel);
         let target = zpd_objc::msg_send!(item, zpd_objc::sel!("target"), () => Id);
         zpd_objc::msg_send!(target, action, ((item): Id) => ());
+        // Verifies the search field carries its declared ID for UI tests.
+        let search = zpd_objc::msg_send!(items, zpd_objc::sel!("objectAtIndex:"), ((4): u64) => Id);
+        let field = zpd_objc::msg_send!(search, zpd_objc::sel!("searchField"), () => Id);
+        let field_id = zpd_objc::msg_send!(field, zpd_objc::sel!("accessibilityIdentifier"), () => Id);
+        assert_eq!(rust_string(field_id), "toolbar-search");
         item
     };
     assert_eq!(

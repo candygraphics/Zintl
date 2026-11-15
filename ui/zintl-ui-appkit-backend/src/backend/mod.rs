@@ -166,6 +166,8 @@ pub struct AppKitBackend {
     typing: Vec<NodeId>,
     /// Views that take keyboard focus once they are shown in their window.
     pending_focus: Vec<NodeId>,
+    /// Windows whose toolbar search field takes keyboard focus once they are synchronized.
+    pending_search_focus: Vec<ActorId>,
 }
 
 impl Default for AppKitBackend {
@@ -191,6 +193,7 @@ impl AppKitBackend {
             changed_by_user: Vec::new(),
             typing: Vec::new(),
             pending_focus: Vec::new(),
+            pending_search_focus: Vec::new(),
         }
     }
 
@@ -351,6 +354,12 @@ impl AppKitBackend {
                 native.focus()?;
             }
         }
+        for window in std::mem::take(&mut self.pending_search_focus) {
+            if cx.contains_window(window) {
+                cx.with_window(window, |window| window.focus_toolbar_search())
+                    .ok_or(UiError::Closed)??;
+            }
+        }
         self.pending_error.take()
     }
 
@@ -450,7 +459,15 @@ impl AppKitBackend {
         let apply_sidebar = state.applied_sidebar.as_ref() != Some(&sidebar);
         // The sidebar decides whether the toolbar includes its toggle, so both reapply together.
         let apply_toolbar = apply_sidebar || state.applied_toolbar.as_ref() != Some(&toolbar);
+        let search_focus =
+            |toolbar: &Option<Toolbar>| toolbar.as_ref().map_or(0, Toolbar::search_focus);
+        let focus_search =
+            search_focus(&toolbar) > state.applied_toolbar.as_ref().map_or(0, search_focus);
         let close = document.close_requests > state.applied_close_requests;
+        // The search field takes focus once every window is synchronized, like other views.
+        if focus_search {
+            self.pending_search_focus.push(native_id);
+        }
         cx.with_window(native_id, |window| -> Result<(), AppError> {
             window
                 .actor_ref()

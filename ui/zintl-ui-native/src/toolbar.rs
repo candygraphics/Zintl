@@ -20,6 +20,8 @@ enum Item {
     Search {
         query: Store<String>,
         placeholder: Option<String>,
+        id: Option<String>,
+        focus: Option<Store<u64>>,
     },
     FlexibleSpace,
 }
@@ -49,6 +51,8 @@ impl ToolbarItem {
         Self(Item::Search {
             query,
             placeholder: None,
+            id: None,
+            focus: None,
         })
     }
 
@@ -75,6 +79,24 @@ impl ToolbarItem {
     pub fn placeholder(mut self, value: impl Into<String>) -> Self {
         if let Item::Search { placeholder, .. } = &mut self.0 {
             *placeholder = Some(value.into());
+        }
+        self
+    }
+
+    /// Identifies the search field for UI tests, such as `toolbar-search`.
+    pub fn id(mut self, value: impl Into<String>) -> Self {
+        if let Item::Search { id, .. } = &mut self.0 {
+            *id = Some(value.into());
+        }
+        self
+    }
+
+    /// Moves keyboard focus to the search field whenever `requests` increases, as Find does.
+    ///
+    /// Requests do nothing while the toolbar is hidden.
+    pub fn focus_on(mut self, requests: Store<u64>) -> Self {
+        if let Item::Search { focus, .. } = &mut self.0 {
+            *focus = Some(requests);
         }
         self
     }
@@ -114,9 +136,16 @@ impl Toolbar {
                         system_image: system_image.clone(),
                         enabled: *enabled,
                     },
-                    Item::Search { query, placeholder } => Native::Search {
+                    Item::Search {
+                        query,
+                        placeholder,
+                        id,
+                        focus,
+                    } => Native::Search {
                         value: cx.get(*query).clone(),
                         placeholder: placeholder.clone(),
+                        id: id.clone(),
+                        focus: focus.map_or(0, |focus| *cx.get(focus)),
                     },
                     Item::FlexibleSpace => Native::FlexibleSpace,
                 })

@@ -519,7 +519,13 @@ impl Native for core::Toolbar {
                         system_image: system_image.clone(),
                         enabled: *enabled,
                     },
-                    core::ToolbarItem::Search { value, placeholder } => ui::ToolbarItem::Search {
+                    core::ToolbarItem::Search {
+                        value,
+                        placeholder,
+                        id,
+                        ..
+                    } => ui::ToolbarItem::Search {
+                        id: id.clone(),
                         value: value.clone(),
                         placeholder: placeholder.clone(),
                     },

@@ -671,6 +671,14 @@ impl<'application> Window<'application> {
         *self.toolbar.borrow_mut() = toolbar.cloned();
         self.sync_toolbar()
     }
+    /// Moves keyboard focus to the toolbar's search field, if it has one and is shown.
+    pub fn focus_toolbar_search(&self) -> Result<(), UiError> {
+        self.ensure_open()?;
+        match self.window_toolbar.borrow().as_ref() {
+            Some(toolbar) => toolbar.focus_search(),
+            None => Ok(()),
+        }
+    }
     /// Restores the frame saved under `name` and keeps saving it there.
     ///
     /// Returns whether a saved frame was restored.
