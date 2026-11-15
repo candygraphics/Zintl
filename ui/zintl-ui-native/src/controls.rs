@@ -5,7 +5,7 @@ use std::rc::Rc;
 use zintl_ui::element::IntoElement;
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
-use zintl_ui_backend_core::ViewKind;
+use zintl_ui_backend_core::{CalendarDate, DatePickerStyle, ViewKind};
 use zintl_ui_layout::{LayoutStyle, Size};
 
 use crate::attach::attachments;
@@ -65,6 +65,7 @@ control!(
     IntegerField,
     SearchField,
     ColorWell,
+    DatePicker,
 );
 enabled!(
     Switch,
@@ -75,6 +76,7 @@ enabled!(
     NumberField,
     IntegerField,
     ColorWell,
+    DatePicker,
 );
 
 /// Registers a handler that writes event values to `store` and then calls `action`.
@@ -866,6 +868,107 @@ impl NativeView for IntegerField {
                 _ => None,
             },
         )
+    }
+}
+
+/// Picks a calendar date, in a text field with a stepper or a month calendar.
+///
+/// The date has no time or time zone, so it is the same day everywhere.
+/// The picker formats it for the system locale.
+#[derive(Clone)]
+pub struct DatePicker {
+    date: CalendarDate,
+    style: DatePickerStyle,
+    store: Option<Store<CalendarDate>>,
+    action: Option<Rc<Change<CalendarDate>>>,
+    enabled: bool,
+    layout: LayoutStyle,
+    id: Option<String>,
+    attachments: Attachments,
+}
+
+impl DatePicker {
+    /// The date an unbound picker shows until [`DatePicker::date`] sets one.
+    const DEFAULT_DATE: CalendarDate = CalendarDate {
+        year: 2000,
+        month: 1,
+        day: 1,
+    };
+
+    pub fn new() -> Self {
+        Self {
+            date: Self::DEFAULT_DATE,
+            style: DatePickerStyle::TextField,
+            store: None,
+            action: None,
+            enabled: true,
+            layout: LayoutStyle::leaf(Size::new(110.0, 22.0)),
+            id: None,
+            attachments: Attachments::default(),
+        }
+    }
+
+    /// Shows `date`; a bound Store takes precedence.
+    pub fn date(mut self, date: CalendarDate) -> Self {
+        self.date = date;
+        self
+    }
+
+    /// Shows the date in a text field with a stepper, or as a month calendar.
+    pub fn style(mut self, style: DatePickerStyle) -> Self {
+        self.style = style;
+        self
+    }
+
+    pub fn bind(mut self, store: Store<CalendarDate>) -> Self {
+        self.store = Some(store);
+        self
+    }
+
+    pub fn on_change(
+        mut self,
+        action: impl for<'a> Fn(&mut Context<'a>, CalendarDate) + 'static,
+    ) -> Self {
+        self.action = Some(Rc::new(action));
+        self
+    }
+}
+
+impl Default for DatePicker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl NativeView for DatePicker {
+    attachments!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        let element = Element::node(RenderNode::View {
+            kind: ViewKind::DatePicker {
+                date: self.store.map_or(self.date, |store| *cx.get(store)),
+                style: self.style,
+            },
+            layout: self.layout,
+            id: self.id.clone(),
+            enabled: self.enabled,
+            title_bar_interactive: false,
+            help: None,
+            accessibility: Default::default(),
+        });
+        let binding = || Binding {
+            store: self.store,
+            action: self.action.clone(),
+        };
+        let element = binding().route(element, EventKind::DateChanged, |event| match event {
+            Event::DateChanged { date } => Some(date),
+            _ => None,
+        });
+        // Backends without a native date picker show an ISO date in a text field.
+        binding().route(element, EventKind::TextCommitted, |event| match event {
+            Event::TextCommitted { value } => CalendarDate::parse_iso(&value),
+            _ => None,
+        })
     }
 }
 

@@ -8,6 +8,7 @@ use zpd_appkit::graphics::Font;
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
     AlertButton, AlertButtonRole, AlertConfig, AlertSheet, AsView, Button, ButtonType, Color,
+    DatePicker, DatePickerStyle,
     ColorWell, ListEntry, ListStyle, ListView, CommandItem, CommandMenu, CommandRole, CommandSet, ContextMenu, MenuRole,
     NumberField, NumberFormat, PopUpButton, Popover, ScrollView, SegmentedControl, Sidebar,
     SidebarItem, SidebarSearch, SidebarSection, Slider, Switch, SystemColor, TabView, TextAlignment, TextColor,
@@ -258,6 +259,18 @@ fn main() {
     let shown =
         unsafe { rust_string(zpd_objc::msg_send!(field, zpd_objc::sel!("stringValue"), () => Id)) };
     assert_eq!(shown, "6");
+
+    // Verifies dates round-trip through a date picker around month ends, leap days, and year boundaries.
+    let picker = DatePicker::new(&application).unwrap();
+    content.add_subview(&picker).unwrap();
+    for date in [(2024, 2, 29), (2026, 1, 31), (2026, 12, 31), (2027, 1, 1), (1999, 3, 1)] {
+        picker.set_date(date.0, date.1, date.2).unwrap();
+        assert_eq!(picker.date().unwrap(), date);
+    }
+    // Programmatic dates are not reported as user changes.
+    assert!(take().is_empty());
+    picker.set_style(DatePickerStyle::Graphical).unwrap();
+    assert_eq!(picker.date().unwrap(), (1999, 3, 1));
 
     // Verifies colors round-trip through a color well in sRGB.
     let well = ColorWell::new(&application).unwrap();

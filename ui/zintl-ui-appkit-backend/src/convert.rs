@@ -378,6 +378,7 @@ impl Native for shared::Font {
 
 same_variants!(core::ListStyle => ui::ListStyle { Inset, Plain });
 same_variants!(core::TextAlignment => ui::TextAlignment { Leading, Center, Trailing });
+same_variants!(core::DatePickerStyle => ui::DatePickerStyle { TextField, Graphical });
 
 impl Native for core::TextColor {
     type Output = ui::TextColor;
@@ -712,6 +713,9 @@ impl Shared for zpd_appkit::actor::WindowEventKind {
             Native::RowDeleteRequested { id } => Shared::RowDeleteRequested { id },
             Native::SortChanged { key, ascending } => Shared::SortChanged {
                 order: core::SortOrder { key, ascending },
+            },
+            Native::DateChanged { year, month, day } => Shared::DateChanged {
+                date: core::CalendarDate { year, month, day },
             },
             Native::StateChanged { on } => Shared::StateChanged { on },
             Native::ValueChanged { value } => Shared::ValueChanged { value },

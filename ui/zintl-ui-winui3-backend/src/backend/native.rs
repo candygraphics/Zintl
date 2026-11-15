@@ -158,6 +158,8 @@ impl NativeNode {
                 ButtonType::Radio => ControlKind::RadioButton,
             },
             ViewKind::TextField { editable: true, .. } => ControlKind::TextBox,
+            // No native date picker yet: the view parses the ISO date typed into a text box.
+            ViewKind::DatePicker { .. } => ControlKind::TextBox,
             ViewKind::TextField { .. } => ControlKind::TextBlock,
             ViewKind::TextEditor { .. } => ControlKind::RichEditBox,
             ViewKind::Switch { .. } => ControlKind::ToggleSwitch,
@@ -256,7 +258,7 @@ impl NativeNode {
             | ViewKind::ComboBox { .. }
             | ViewKind::SearchField { .. } => (0.0, 28.0),
             ViewKind::PopUpButton { items, .. } => (longest(items) + 64.0, 28.0),
-            ViewKind::NumberField { .. } => (100.0, 28.0),
+            ViewKind::NumberField { .. } | ViewKind::DatePicker { .. } => (100.0, 28.0),
             ViewKind::Switch { .. } | ViewKind::ColorWell { .. } => (44.0, 28.0),
             ViewKind::SegmentedControl { segments, .. } => (
                 segments.iter().map(|segment| text(segment) + 28.0).sum(),
@@ -884,6 +886,10 @@ impl NativeNode {
                 if !matches!(old, Some(ViewKind::ColorWell { color: old }) if old == color) {
                     control.set_color(Self::color(*color))?;
                 }
+            }
+            ViewKind::DatePicker { date, .. } => {
+                // A rejected or unchanged date shows the declared date again.
+                control.set_text(TextProperty::Text, &date.to_string())?;
             }
             ViewKind::ProgressIndicator { value } => {
                 if let Some(value) = value

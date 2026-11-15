@@ -5,9 +5,9 @@ use std::sync::Arc;
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
     AccessibilityAttributes, AccessibilityRole as NativeRole, AsView, Button, CanvasView,
-    ColorWell, ComboBox, ListView, NumberField, PopUpButton, ProgressIndicator, ScrollView,
-    SearchField, SegmentedControl, Separator, Slider, Switch, TabView, TextEditor, TextField,
-    UiError, View, ViewRef,
+    ColorWell, ComboBox, DatePicker, ListView, NumberField, PopUpButton, ProgressIndicator,
+    ScrollView, SearchField, SegmentedControl, Separator, Slider, Switch, TabView, TextEditor,
+    TextField, UiError, View, ViewRef,
 };
 
 use zintl_ui_layout::Size;
@@ -50,6 +50,7 @@ pub(super) enum NativeNode {
     Separator(Separator),
     SearchField(SearchField),
     ColorWell(ColorWell),
+    DatePicker(DatePicker),
     /// The offset waits until layout has sized the document.
     ScrollView(ScrollView, ScrollState),
     TabView(TabView),
@@ -83,6 +84,7 @@ impl NativeNode {
             Self::Separator(view) => view.as_view(),
             Self::SearchField(view) => view.as_view(),
             Self::ColorWell(view) => view.as_view(),
+            Self::DatePicker(view) => view.as_view(),
             Self::ScrollView(view, _) => view.as_view(),
             Self::TabView(view) => view.as_view(),
             Self::Canvas(view) => view.as_view(),
@@ -130,6 +132,7 @@ impl NativeNode {
             ViewKind::Separator => Self::Separator(Separator::new(application)?),
             ViewKind::SearchField { .. } => Self::SearchField(SearchField::new(application)?),
             ViewKind::ColorWell { .. } => Self::ColorWell(ColorWell::new(application)?),
+            ViewKind::DatePicker { .. } => Self::DatePicker(DatePicker::new(application)?),
             ViewKind::ScrollView { .. } => {
                 Self::ScrollView(ScrollView::new(application)?, ScrollState::default())
             }
@@ -183,7 +186,8 @@ impl NativeNode {
             ViewKind::Button(_)
             | ViewKind::Switch { .. }
             | ViewKind::PopUpButton { .. }
-            | ViewKind::SegmentedControl { .. } => (true, true),
+            | ViewKind::SegmentedControl { .. }
+            | ViewKind::DatePicker { .. } => (true, true),
             // Wrapping labels need a width before they have a height.
             ViewKind::TextField {
                 editable: false,
@@ -582,6 +586,15 @@ impl NativeNode {
                 field.set_placeholder(placeholder.as_deref())?;
                 if field.string_value()? != *value {
                     field.set_string_value(value)?;
+                }
+            }
+            (Self::DatePicker(picker), ViewKind::DatePicker { date, style }) => {
+                if !matches!(old, Some(ViewKind::DatePicker { style: old, .. }) if old == style) {
+                    picker.set_style(style.native())?;
+                }
+                // The shown date is compared, so a date the app rejected is shown again.
+                if picker.date()? != (date.year, date.month, date.day) {
+                    picker.set_date(date.year, date.month, date.day)?;
                 }
             }
             (Self::ColorWell(well), ViewKind::ColorWell { color }) => {

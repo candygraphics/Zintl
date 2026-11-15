@@ -39,6 +39,7 @@ scenarios! {
     color_panel => "color-panel": |_| color_panel::MainView::new(),
     context_menu => "context-menu": |_| context_menu::MainView::new(),
     controls => "controls": |_| controls::MainView::new(),
+    date_picker => "date-picker": |_| date_picker::MainView::new(),
     document => "document": |_| document::MainView::new(),
     file_dialog => "file-dialog": |options| {
         file_dialog::MainView::new(options.variable("ZINTL_UI_TEST_DIRECTORY"))

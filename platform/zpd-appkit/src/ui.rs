@@ -5,6 +5,7 @@ mod canvas;
 mod color;
 pub(crate) mod commands;
 mod controls;
+mod date_picker;
 mod dialogs;
 mod error;
 mod layout;
@@ -44,6 +45,7 @@ pub use controls::{
     ColorWell, ComboBox, NumberField, NumberFormat, PopUpButton, ProgressIndicator, SearchField,
     SegmentedControl, Separator, Slider, Switch,
 };
+pub use date_picker::{DatePicker, DatePickerStyle};
 pub use dialogs::{
     AlertButton, AlertButtonRole, AlertConfig, AlertSheet, AlertStyle, ColorPanelSession,
     FileDialogConfig, FileDialogMode, FileDialogSheet,

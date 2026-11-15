@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use zintl_ui::event::Event as EventTrait;
 
 use crate::graphics::AttributedText;
-use crate::{CanvasEvent, CanvasId, Color, SortOrder};
+use crate::{CalendarDate, CanvasEvent, CanvasId, Color, SortOrder};
 
 /// Selects the event an element route handles.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -24,6 +24,7 @@ pub enum EventKind {
     RowActivated,
     RowDeleteRequested,
     SortChanged,
+    DateChanged,
     ToolbarItemClicked,
     ToolbarSearchChanged,
     SidebarSearchChanged,
@@ -109,6 +110,10 @@ pub enum Event {
     SortChanged {
         order: SortOrder,
     },
+    /// The user changed a date picker's date.
+    DateChanged {
+        date: CalendarDate,
+    },
     SidebarSearchChanged {
         value: String,
     },
@@ -158,6 +163,7 @@ impl EventTrait for Event {
             Self::RowActivated { .. } => EventKind::RowActivated,
             Self::RowDeleteRequested { .. } => EventKind::RowDeleteRequested,
             Self::SortChanged { .. } => EventKind::SortChanged,
+            Self::DateChanged { .. } => EventKind::DateChanged,
             Self::ToolbarItemClicked { .. } => EventKind::ToolbarItemClicked,
             Self::ToolbarSearchChanged { .. } => EventKind::ToolbarSearchChanged,
             Self::SidebarSearchChanged { .. } => EventKind::SidebarSearchChanged,

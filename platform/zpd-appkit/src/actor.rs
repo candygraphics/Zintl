@@ -112,6 +112,12 @@ pub enum WindowEventKind {
         key: String,
         ascending: bool,
     },
+    /// The user changed a date picker's date.
+    DateChanged {
+        year: i32,
+        month: u8,
+        day: u8,
+    },
     /// A continuous control such as a slider or stepper changed.
     ValueChanged {
         value: f64,

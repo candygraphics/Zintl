@@ -29,12 +29,12 @@ pub use context::{Context, StoreSender, StoreUpdate, StoreUpdates};
 pub use event::{Event, EventKind};
 pub use headless::HeadlessBackend;
 pub use model::{
-    AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, CommandItem,
-    CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig, FileDialogMode,
-    ListSection, ListStyle, MenuRole, NumberFormat, PopoverEdge, ScrollAlignment, ScrollAxes,
-    ScrollTarget, ShortcutKey, Sidebar, SidebarItem, SidebarSearch, SidebarSection, SortOrder,
-    SystemColor, TableColumn, TextAlignment, TextColor, TextStyle, TitleBar, Toolbar, ToolbarItem,
-    WindowAppMenu, WindowStyle,
+    AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, CalendarDate,
+    CommandItem, CommandMenu, CommandModifier, CommandRole, CommandSet, DatePickerStyle,
+    FileDialogConfig, FileDialogMode, ListSection, ListStyle, MenuRole, NumberFormat, PopoverEdge,
+    ScrollAlignment, ScrollAxes, ScrollTarget, ShortcutKey, Sidebar, SidebarItem, SidebarSearch,
+    SidebarSection, SortOrder, SystemColor, TableColumn, TextAlignment, TextColor, TextStyle,
+    TitleBar, Toolbar, ToolbarItem, WindowAppMenu, WindowStyle,
 };
 pub use signal::Signal;
 #[cfg(feature = "wgpu")]
@@ -124,6 +124,11 @@ pub enum ViewKind {
         value: String,
         placeholder: Option<String>,
     },
+    /// A calendar date in a text field or a month calendar.
+    DatePicker {
+        date: CalendarDate,
+        style: DatePickerStyle,
+    },
     ColorWell {
         color: Color,
     },
@@ -206,7 +211,10 @@ impl ViewKind {
     pub fn reverts_user_changes(&self) -> bool {
         match self {
             Self::Button(button) => button.button_type != ButtonType::MomentaryPushIn,
-            Self::Switch { .. } | Self::PopUpButton { .. } | Self::SegmentedControl { .. } => true,
+            Self::Switch { .. }
+            | Self::PopUpButton { .. }
+            | Self::SegmentedControl { .. }
+            | Self::DatePicker { .. } => true,
             Self::Table {
                 follows_selection, ..
             } => *follows_selection,
