@@ -17,7 +17,7 @@ final class TableTests: ZintlUITestCase {
     XCTAssertGreaterThan(first.frame.minX, app.staticTexts["name-1"].frame.maxX)
   }
 
-  /// Verifies a declared column width is the rendered width, and the last column fills the rest.
+  /// Verifies a declared column width is the rendered width, with no gap between columns.
   func testColumnWidthsMatchTheDeclaredWidths() throws {
     try launch(scenario: "table")
 
@@ -27,9 +27,11 @@ final class TableTests: ZintlUITestCase {
     let length = table.buttons["Length"]
     XCTAssertEqual(name.frame.width, 200, accuracy: 1)
     XCTAssertGreaterThanOrEqual(length.frame.width, 119)
-    // The table fills the window's width, which the columns add up to.
+    // Each column starts where the previous one ends, so the widths add up.
+    XCTAssertEqual(length.frame.minX, name.frame.maxX, accuracy: 1)
+    // Legacy scroll bars may take part of the width, so only the window is an upper bound.
     let window = app.windows["main-window"]
-    XCTAssertEqual(name.frame.width + length.frame.width, window.frame.width, accuracy: 1)
+    XCTAssertLessThanOrEqual(length.frame.maxX, window.frame.maxX + 1)
   }
 
   /// Verifies clicking a row writes its ID to the bound Store.
