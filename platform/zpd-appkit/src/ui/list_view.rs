@@ -586,7 +586,8 @@ impl ListView {
                     let header = zpd_objc::msg_send!(column, zpd_objc::sel!("headerCell"), () => Id);
                     let title = zpd_objc::msg_send!(header, zpd_objc::sel!("cellSize"), () => native::Size).width;
                     let width = zpd_objc::msg_send!(column, zpd_objc::sel!("width"), () => f64);
-                    let fitted = ((width + spacing) * factor - spacing).max(title.max(MINIMUM));
+                    // Whole points keep rounding from pushing the last column past the edge.
+                    let fitted = ((width + spacing) * factor - spacing).floor().max(title.max(MINIMUM));
                     zpd_objc::msg_send!(column, zpd_objc::sel!("setWidth:"), ((fitted): f64) => ());
                 }
             }
