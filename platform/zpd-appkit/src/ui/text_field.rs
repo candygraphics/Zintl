@@ -64,7 +64,7 @@ pub enum TextAlignment {
 
 impl TextAlignment {
     /// Returns the `NSTextAlignment` value, whose numbering differs on Intel Macs.
-    fn native(self) -> isize {
+    pub(crate) fn native(self) -> isize {
         const NATURAL: isize = 4;
         #[cfg(target_arch = "x86_64")]
         const CENTER_RIGHT: (isize, isize) = (2, 1);

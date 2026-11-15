@@ -8,8 +8,8 @@ use crate::native;
 use crate::runloop::Application;
 use zpd_objc::{Id, RcIvar, Strong};
 
-use super::UiError;
 use super::view::{self, AsView, ViewActor, ViewRef};
+use super::{TextAlignment, UiError};
 
 /// The table style of a [`ListView`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -38,6 +38,8 @@ pub struct TableColumn {
     /// The initial rendered width in points, including the spacing between
     /// columns; `None` lets the table size it.
     pub width: Option<f64>,
+    /// The alignment of the header title.
+    pub alignment: TextAlignment,
 }
 
 /// A table row: a section header or a selectable row with an ID.
@@ -329,6 +331,7 @@ impl ListView {
                 let list_column = TableColumn {
                     title: String::new(),
                     width: None,
+                    alignment: TextAlignment::Leading,
                 };
                 // NSTableColumn widths exclude the intercell spacing drawn beside each column.
                 let spacing = zpd_objc::msg_send!(table, zpd_objc::sel!("intercellSpacing"), () => native::Size).width;
@@ -344,6 +347,8 @@ impl ListView {
                     };
                     let title = native::nsstring(&declared.title);
                     zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("setTitle:"), ((title.as_ptr()): Id) => ());
+                    let header = zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("headerCell"), () => Id);
+                    zpd_objc::msg_send!(header, zpd_objc::sel!("setAlignment:"), ((declared.alignment.native()): isize) => ());
                     if let Some(width) = declared.width {
                         let width = (width - spacing).max(0.0);
                         zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("setWidth:"), ((width): f64) => ());

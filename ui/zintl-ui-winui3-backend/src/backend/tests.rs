@@ -532,6 +532,7 @@ fn table_columns_share_the_width_left_by_fixed_ones() {
     let column = |width| zintl_ui_backend_core::TableColumn {
         title: String::new(),
         width,
+        alignment: Default::default(),
     };
     assert_eq!(NativeNode::column_widths(&[], 300.0), [300.0]);
     assert_eq!(

@@ -216,6 +216,7 @@ impl Native for core::TableColumn {
         ui::TableColumn {
             title: self.title.clone(),
             width: self.width,
+            alignment: self.alignment.native(),
         }
     }
 }

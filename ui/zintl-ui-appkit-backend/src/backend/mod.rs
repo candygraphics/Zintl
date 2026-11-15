@@ -33,7 +33,7 @@ use crate::convert::{Native, Shared};
 
 use super::{
     Accessibility, Color, CommandSet, Context, MainTask, NodeId, Rect, RenderNode, Sidebar,
-    TitleBar, Toolbar, ViewKind, WindowStyle,
+    TextAlignment, TitleBar, Toolbar, ViewKind, WindowStyle,
 };
 use zintl_ui_backend_core::layout::{HostLayout, LayoutSnapshot};
 use zintl_ui_backend_core::tree::{ErrorSlot, MainTasks, NodeTree};
@@ -620,7 +620,7 @@ impl AppKitBackend {
                 Ok(())
             }
             NativeNode::List(list, rows) => {
-                let (entries, selected) = match self.kind(id) {
+                let (entries, selected, columns) = match self.kind(id) {
                     RenderNode::View {
                         kind:
                             ViewKind::List {
@@ -638,11 +638,22 @@ impl AppKitBackend {
                             })
                             .collect::<Vec<_>>(),
                         selected,
+                        Vec::new(),
                     ),
                     RenderNode::View {
-                        kind: ViewKind::Table { rows, selected, .. },
+                        kind:
+                            ViewKind::Table {
+                                rows,
+                                selected,
+                                columns,
+                                ..
+                            },
                         ..
-                    } => (rows.into_iter().map(ListEntry::Row).collect(), selected),
+                    } => (
+                        rows.into_iter().map(ListEntry::Row).collect(),
+                        selected,
+                        columns,
+                    ),
                     _ => return Err(AppError::InvalidTree),
                 };
                 let natives = self
@@ -656,6 +667,23 @@ impl AppKitBackend {
                     .collect::<Vec<_>>();
                 list.set_entries(&entries, &views)?;
                 list.select(selected.as_deref())?;
+                // Text cells that keep the leading alignment follow their column's alignment.
+                if !columns.is_empty() {
+                    for (index, (row_id, native)) in natives.iter().enumerate() {
+                        let alignment = columns[index % columns.len()].alignment;
+                        if let (
+                            NativeNode::TextField(field),
+                            RenderNode::View {
+                                kind: ViewKind::TextField { style, .. },
+                                ..
+                            },
+                        ) = (native.as_ref(), self.kind(*row_id))
+                            && style.alignment == TextAlignment::Leading
+                        {
+                            field.set_alignment(alignment.native())?;
+                        }
+                    }
+                }
                 // Each cell lays out at its bounds; `layout_hosted` fills in its snapshot.
                 let mut layouts = Vec::with_capacity(natives.len());
                 for (index, (row_id, native)) in natives.iter().enumerate() {

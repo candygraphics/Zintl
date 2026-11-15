@@ -5,7 +5,7 @@ use std::rc::Rc;
 use zintl_ui::element::{ElementFactory, IntoElement, KeyedElement, ListFactory};
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
-use zintl_ui_backend_core::ViewKind;
+use zintl_ui_backend_core::{TextAlignment, ViewKind};
 use zintl_ui_layout::{LayoutDimension, LayoutStyle, Size};
 
 use crate::attach::attachments;
@@ -18,6 +18,7 @@ type SelectionAction = dyn for<'a> Fn(&mut Context<'a>, Option<&str>);
 pub struct TableColumn {
     title: String,
     width: Option<f64>,
+    alignment: TextAlignment,
 }
 
 impl TableColumn {
@@ -25,7 +26,16 @@ impl TableColumn {
         Self {
             title: title.into(),
             width: None,
+            alignment: TextAlignment::Leading,
         }
+    }
+
+    /// Aligns the header title, and text cells that keep the default leading alignment.
+    ///
+    /// Numeric columns are usually trailing-aligned.
+    pub fn alignment(mut self, alignment: TextAlignment) -> Self {
+        self.alignment = alignment;
+        self
     }
 
     /// Sets the initial rendered width in points, including the space between columns.
@@ -163,6 +173,7 @@ impl NativeView for Table {
                     .map(|column| zintl_ui_backend_core::TableColumn {
                         title: column.title.clone(),
                         width: column.width,
+                        alignment: column.alignment,
                     })
                     .collect(),
                 rows: self.rows.iter().map(|row| row.id.clone()).collect(),

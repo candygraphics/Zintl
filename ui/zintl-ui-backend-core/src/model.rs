@@ -37,8 +37,10 @@ pub struct ListSection {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TableColumn {
     pub title: String,
-    /// The initial width in points; `None` lets the table size it.
+    /// The initial rendered width in points; `None` lets the table size it.
     pub width: Option<f64>,
+    /// The header's alignment, and the default for text cells that keep the leading alignment.
+    pub alignment: TextAlignment,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

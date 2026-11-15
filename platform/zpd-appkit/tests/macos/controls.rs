@@ -385,10 +385,12 @@ fn main() {
             TableColumn {
                 title: "Name".into(),
                 width: Some(200.0),
+                alignment: TextAlignment::Leading,
             },
             TableColumn {
                 title: "Length".into(),
                 width: Some(120.0),
+                alignment: TextAlignment::Trailing,
             },
         ])
         .unwrap();
@@ -401,6 +403,13 @@ fn main() {
             zpd_objc::msg_send!(native, zpd_objc::sel!("rectOfColumn:"), ((column): i64) => zpd_appkit::geometry::Rect).width
         });
         assert_eq!(widths, [200.0, 120.0]);
+        // Verifies a column's alignment reaches its header title.
+        let columns = zpd_objc::msg_send!(native, zpd_objc::sel!("tableColumns"), () => Id);
+        let length = zpd_objc::msg_send!(columns, zpd_objc::sel!("objectAtIndex:"), ((1): usize) => Id);
+        let header = zpd_objc::msg_send!(length, zpd_objc::sel!("headerCell"), () => Id);
+        let alignment = zpd_objc::msg_send!(header, zpd_objc::sel!("alignment"), () => isize);
+        // NSTextAlignmentRight is 2 on Apple silicon and 1 on Intel Macs.
+        assert!(alignment == 1 || alignment == 2, "{alignment}");
     }
 
     // Verifies rich runs round-trip, and the paragraph action restyles undoably and validates its items.
