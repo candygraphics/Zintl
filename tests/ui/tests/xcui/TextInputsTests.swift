@@ -33,12 +33,9 @@ final class TextInputsTests: ZintlUITestCase {
     assertLabel("query-value", "Query: ")
   }
 
-  /// Returns the number field's text field.
-  ///
-  /// The field and stepper share a container that is not an accessibility element, so the
-  /// number field's ID is not exposed; it is the window's only plain text field.
+  /// Returns the number field's text field, which carries the field's ID.
   private var countField: XCUIElement {
-    app.windows["main-window"].children(matching: .textField).firstMatch
+    app.textFields["count"]
   }
 
   /// Clicks the upper or lower half of the number field's stepper.

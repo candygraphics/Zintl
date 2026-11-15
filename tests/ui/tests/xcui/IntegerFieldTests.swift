@@ -2,11 +2,9 @@ import XCTest
 
 @MainActor
 final class IntegerFieldTests: ZintlUITestCase {
-  /// Returns the integer field's text field, the window's only plain text field.
-  ///
-  /// The field and stepper share a container that is not an accessibility element.
+  /// Returns the integer field's text field, which carries the field's ID.
   private var field: XCUIElement {
-    app.windows["main-window"].children(matching: .textField).firstMatch
+    app.textFields["quantity"]
   }
 
   /// Replaces the field's text with `text` and commits it with Return.
