@@ -62,4 +62,33 @@ final class DatePickerTests: ZintlUITestCase {
     XCTAssertTrue(waitUntil { label.currentValue != "Date: 2026-11-15" })
     XCTAssertEqual("Date: \(shownDate(picker) ?? "")", label.currentValue)
   }
+
+  /// Verifies the optional picker shows a date set by the app, clears it, and picks today.
+  func testOptionalPickerClearsAndPicksADate() throws {
+    try launch(scenario: "date-picker")
+
+    let placeholder = app.buttons["due"]
+    XCTAssertTrue(placeholder.waitToExist(timeout: 2))
+    assertLabel("due-value", "Due: No date")
+
+    app.buttons["set-due"].click()
+    let due = app.datePickers["due"]
+    XCTAssertTrue(due.waitToExist(timeout: 2))
+    XCTAssertTrue(waitUntil { self.shownDate(due) == "2026-12-24" })
+    assertLabel("due-value", "Due: 2026-12-24")
+
+    app.buttons["due-clear"].click()
+    assertLabel("due-value", "Due: No date")
+    XCTAssertTrue(placeholder.waitToExist(timeout: 2))
+
+    // The placeholder picks today's date in the local time zone.
+    placeholder.click()
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    let today = formatter.string(from: Date())
+    assertLabel("due-value", "Due: \(today)")
+    XCTAssertTrue(waitUntil { self.shownDate(due) == today })
+  }
 }

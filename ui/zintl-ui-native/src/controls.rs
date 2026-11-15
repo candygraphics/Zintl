@@ -9,7 +9,9 @@ use zintl_ui_backend_core::{CalendarDate, DatePickerStyle, ViewKind};
 use zintl_ui_layout::{LayoutStyle, Size};
 
 use crate::attach::attachments;
-use crate::{Attachments, Color, Context, Element, Event, EventKind, NativeView, RenderNode};
+use crate::{
+    Attach, Attachments, Color, Context, Element, Event, EventKind, NativeView, RenderNode,
+};
 
 type Change<T> = dyn for<'a> Fn(&mut Context<'a>, T);
 
@@ -1087,6 +1089,158 @@ impl NativeView for DatePicker {
             Event::TextCommitted { value } => CalendarDate::parse_iso(&value),
             _ => None,
         })
+    }
+}
+
+impl DatePicker {
+    /// Creates a picker for a date that may be missing, bound to a `Store<Option<CalendarDate>>`.
+    pub fn optional() -> OptionalDatePicker {
+        OptionalDatePicker::new()
+    }
+}
+
+/// A date picker that can show "no date", for values such as an optional due date.
+///
+/// Without a date it shows a button with the placeholder; clicking it picks
+/// today's date. With a date it shows the picker and a clear button beside it.
+/// The picker and the placeholder button carry the ID; the clear button's ID
+/// adds `-clear`, such as `due-clear`.
+#[derive(Clone)]
+pub struct OptionalDatePicker {
+    date: Option<CalendarDate>,
+    placeholder: String,
+    style: DatePickerStyle,
+    store: Option<Store<Option<CalendarDate>>>,
+    action: Option<Rc<Change<Option<CalendarDate>>>>,
+    enabled: bool,
+    id: Option<String>,
+    attachments: Attachments,
+}
+
+impl OptionalDatePicker {
+    fn new() -> Self {
+        Self {
+            date: None,
+            placeholder: "No Date".into(),
+            style: DatePickerStyle::TextField,
+            store: None,
+            action: None,
+            enabled: true,
+            id: None,
+            attachments: Attachments::default(),
+        }
+    }
+
+    pub fn id(mut self, id: impl Into<String>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
+    /// Shows `date`; a bound Store takes precedence.
+    pub fn date(mut self, date: Option<CalendarDate>) -> Self {
+        self.date = date;
+        self
+    }
+
+    /// Sets the button title shown without a date.
+    pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        self.placeholder = placeholder.into();
+        self
+    }
+
+    /// Shows the date in a text field with a stepper, or as a month calendar.
+    pub fn style(mut self, style: DatePickerStyle) -> Self {
+        self.style = style;
+        self
+    }
+
+    pub fn bind(mut self, store: Store<Option<CalendarDate>>) -> Self {
+        self.store = Some(store);
+        self
+    }
+
+    pub fn on_change(
+        mut self,
+        action: impl for<'a> Fn(&mut Context<'a>, Option<CalendarDate>) + 'static,
+    ) -> Self {
+        self.action = Some(Rc::new(action));
+        self
+    }
+
+    /// Returns an action that writes `date` to the Store and reports it.
+    fn change(&self, date: Option<CalendarDate>) -> impl for<'a> Fn(&mut Context<'a>) + 'static {
+        let (store, action) = (self.store, self.action.clone());
+        move |cx| {
+            if let Some(store) = store {
+                cx.update(store, |current| *current = date);
+            }
+            if let Some(action) = &action {
+                action(cx, date);
+            }
+        }
+    }
+}
+
+impl NativeView for OptionalDatePicker {
+    attachments!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        let date = self.store.map_or(self.date, |store| *cx.get(store));
+        let mut row = LayoutStyle::stack(zintl_ui_layout::Axis::Horizontal, 4.0);
+        row.cross_axis_alignment = zintl_ui_layout::CrossAxisAlignment::Center;
+        let children = match date {
+            None => {
+                let pick = self.change(Some(CalendarDate::today()));
+                let mut button = crate::Button::new(self.placeholder.clone())
+                    .enabled(self.enabled)
+                    .on_click(pick);
+                if let Some(id) = &self.id {
+                    button = button.id(id.clone());
+                }
+                zintl_ui::list![button]
+            }
+            Some(date) => {
+                let (store, action) = (self.store, self.action.clone());
+                let mut picker = DatePicker::new()
+                    .date(date)
+                    .style(self.style)
+                    .enabled(self.enabled)
+                    .on_change(move |cx, date| {
+                        if let Some(store) = store {
+                            cx.update(store, |current| *current = Some(date));
+                        }
+                        if let Some(action) = &action {
+                            action(cx, Some(date));
+                        }
+                    });
+                let mut clear = crate::Button::new("")
+                    .system_image("xmark.circle.fill")
+                    .bezel_style(None)
+                    .enabled(self.enabled)
+                    .on_click(self.change(None))
+                    .accessibility_label("Clear Date")
+                    .help("Clear Date");
+                if let Some(id) = &self.id {
+                    picker = picker.id(id.clone());
+                    clear = clear.id(format!("{id}-clear"));
+                }
+                zintl_ui::list![picker, clear]
+            }
+        };
+        crate::View::new(row, children).native_element(cx)
+    }
+}
+
+impl View for OptionalDatePicker {
+    type Output = RenderNode;
+
+    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
+        self.native_element(cx)
     }
 }
 

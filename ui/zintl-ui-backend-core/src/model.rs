@@ -87,6 +87,95 @@ impl CalendarDate {
         let day = parts.next()?.parse().ok()?;
         Self::new(year, month, day)
     }
+
+    /// Returns today's date in the local time zone.
+    pub fn today() -> Self {
+        let seconds = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs() as i64);
+        local_time::date(seconds)
+            .unwrap_or_else(|| Self::from_days_since_epoch(seconds.div_euclid(86_400)))
+    }
+
+    /// Returns the date `days` days after 1970-01-01.
+    pub fn from_days_since_epoch(days: i64) -> Self {
+        // Howard Hinnant's `civil_from_days`, with eras of 400 years starting in March.
+        let shifted = days + 719_468;
+        let era = shifted.div_euclid(146_097);
+        let day_of_era = shifted.rem_euclid(146_097);
+        let year_of_era =
+            (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+        let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+        let month_index = (5 * day_of_year + 2) / 153;
+        let day = (day_of_year - (153 * month_index + 2) / 5 + 1) as u8;
+        let month = if month_index < 10 {
+            month_index + 3
+        } else {
+            month_index - 9
+        } as u8;
+        let year = (year_of_era + era * 400 + i64::from(month <= 2)) as i32;
+        Self { year, month, day }
+    }
+}
+
+/// Converts Unix time to the local calendar date with the C library.
+mod local_time {
+    use super::CalendarDate;
+
+    /// The leading fields of the C `struct tm`, with room for platform-specific fields after them.
+    #[repr(C)]
+    #[derive(Default)]
+    struct Tm {
+        second: i32,
+        minute: i32,
+        hour: i32,
+        day: i32,
+        /// From 0 for January.
+        month: i32,
+        /// Years since 1900.
+        year: i32,
+        weekday: i32,
+        year_day: i32,
+        dst: i32,
+        rest: [u64; 4],
+    }
+
+    #[cfg(unix)]
+    unsafe extern "C" {
+        fn localtime_r(time: *const i64, result: *mut Tm) -> *mut Tm;
+    }
+
+    #[cfg(windows)]
+    unsafe extern "C" {
+        fn _localtime64_s(result: *mut Tm, time: *const i64) -> i32;
+    }
+
+    /// Returns the local date at `seconds` since the Unix epoch.
+    #[cfg(unix)]
+    pub(super) fn date(seconds: i64) -> Option<CalendarDate> {
+        let mut tm = Tm::default();
+        // SAFETY: `time_t` is 64 bits on supported Unix targets, and `Tm` is at least as
+        // large as `struct tm`, so the call writes inside it.
+        let result = unsafe { localtime_r(&seconds, &mut tm) };
+        (!result.is_null()).then_some(())?;
+        CalendarDate::new(tm.year + 1900, (tm.month + 1) as u8, tm.day as u8)
+    }
+
+    /// Returns the local date at `seconds` since the Unix epoch.
+    #[cfg(windows)]
+    pub(super) fn date(seconds: i64) -> Option<CalendarDate> {
+        let mut tm = Tm::default();
+        // SAFETY: `Tm` is at least as large as `struct tm`, so the call writes inside it.
+        let status = unsafe { _localtime64_s(&mut tm, &seconds) };
+        (status == 0).then_some(())?;
+        CalendarDate::new(tm.year + 1900, (tm.month + 1) as u8, tm.day as u8)
+    }
+
+    /// Returns `None`, so the UTC date is used.
+    #[cfg(not(any(unix, windows)))]
+    pub(super) fn date(_: i64) -> Option<CalendarDate> {
+        None
+    }
 }
 
 impl std::fmt::Display for CalendarDate {
@@ -540,5 +629,39 @@ mod tests {
             CalendarDate::new(2027, 1, 1)
         );
         assert_eq!(CalendarDate::parse_iso("2026-02-30"), None);
+    }
+
+    #[test]
+    fn days_since_epoch_convert_to_dates() {
+        // Verifies Unix days map to Gregorian dates across leap days and before 1970.
+        assert_eq!(
+            CalendarDate::from_days_since_epoch(0).to_string(),
+            "1970-01-01"
+        );
+        assert_eq!(
+            CalendarDate::from_days_since_epoch(19_782).to_string(),
+            "2024-02-29"
+        );
+        assert_eq!(
+            CalendarDate::from_days_since_epoch(20_407).to_string(),
+            "2025-11-15"
+        );
+        assert_eq!(
+            CalendarDate::from_days_since_epoch(-1).to_string(),
+            "1969-12-31"
+        );
+    }
+
+    #[test]
+    fn today_is_within_a_day_of_the_utc_date() {
+        // Verifies the local date differs from the UTC date by at most one day, as time zones do.
+        let seconds = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let utc = seconds.div_euclid(86_400);
+        let today = CalendarDate::today();
+        let near = (utc - 1..=utc + 1).map(CalendarDate::from_days_since_epoch);
+        assert!(near.into_iter().any(|date| date == today), "{today}");
     }
 }

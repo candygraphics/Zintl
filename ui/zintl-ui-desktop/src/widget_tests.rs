@@ -465,6 +465,49 @@ fn optional_integer_field_steps_from_zero_when_empty() {
 }
 
 #[test]
+fn optional_date_picker_clears_and_picks_dates() {
+    // Verifies the clear button routes None, the placeholder button picks today, and picks route Some.
+    let leap = CalendarDate::new(2024, 2, 29).unwrap();
+    let (mut app, date) = Harness::mount(
+        move |cx| cx.store(Some(CalendarDate::new(2026, 11, 15).unwrap())),
+        |date| {
+            DatePicker::optional()
+                .placeholder("No date")
+                .bind(date)
+                .id("due")
+        },
+    );
+    let tree = app.render_tree();
+    assert!(matches!(
+        &tree.children[..],
+        [picker, clear] if matches!(
+            &picker.value,
+            RenderNode::View { kind: ViewKind::DatePicker { .. }, id: Some(id), .. } if id == "due"
+        ) && matches!(
+            &clear.value,
+            RenderNode::View { id: Some(id), .. } if id == "due-clear"
+        )
+    ));
+    assert!(app.dispatch_at(&[0, 0], Event::DateChanged { date: leap }));
+    assert_eq!(app.get(date), Some(leap));
+
+    assert!(app.dispatch_at(&[0, 1], Event::Activated));
+    assert_eq!(app.get(date), None);
+    let tree = app.render_tree();
+    assert!(matches!(
+        &tree.children[..],
+        [button] if matches!(
+            &button.value,
+            RenderNode::View { kind: ViewKind::Button(button), id: Some(id), .. }
+                if button.title == "No date" && id == "due"
+        )
+    ));
+
+    assert!(app.dispatch_at(&[0, 0], Event::Activated));
+    assert_eq!(app.get(date), Some(CalendarDate::today()));
+}
+
+#[test]
 fn number_field_clamps_entered_values() {
     // Verifies values outside the declared range are clamped before reaching the Store.
     let (mut app, value) = Harness::mount(
