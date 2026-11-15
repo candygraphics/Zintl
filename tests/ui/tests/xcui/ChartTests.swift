@@ -77,4 +77,16 @@ final class ChartTests: ZintlUITestCase {
     XCTAssertTrue(rent.waitToExist(timeout: 2))
     XCTAssertEqual(bar("expenses-food").frame.width, rent.frame.width / 2, accuracy: 1)
   }
+
+  /// Verifies charts with the same column widths start and end their tracks at the same x.
+  func testFixedColumnsLineUpCharts() throws {
+    try launch(scenario: "chart")
+
+    let rent = bar("expenses-rent")
+    let salary = bar("income-salary")
+    XCTAssertTrue(rent.waitToExist(timeout: 2))
+    XCTAssertEqual(rent.frame.minX, salary.frame.minX, accuracy: 1)
+    // Both bars fill their tracks.
+    XCTAssertEqual(rent.frame.width, salary.frame.width, accuracy: 1)
+  }
 }

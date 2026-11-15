@@ -58,6 +58,8 @@ pub struct BarChart {
     format: Rc<FormatValue>,
     color: Color,
     maximum: Option<f64>,
+    label_width: Option<f32>,
+    value_width: Option<f32>,
     id: Option<String>,
     attachments: Attachments,
 }
@@ -74,6 +76,8 @@ impl BarChart {
             format: Rc::new(|value| format!("{value}")),
             color: Color::rgb(0.0, 0.48, 1.0),
             maximum: None,
+            label_width: None,
+            value_width: None,
             id: None,
             attachments: Attachments::default(),
         }
@@ -96,6 +100,22 @@ impl BarChart {
     /// Larger values also fill the track. By default the largest value fills it.
     pub fn maximum(mut self, maximum: f64) -> Self {
         self.maximum = Some(maximum);
+        self
+    }
+
+    /// Fixes the label column's width, so several charts line up.
+    ///
+    /// By default the column fits the chart's longest label.
+    pub fn label_width(mut self, width: f32) -> Self {
+        self.label_width = Some(width);
+        self
+    }
+
+    /// Fixes the value column's width, so several charts line up.
+    ///
+    /// By default the column fits the chart's longest formatted value.
+    pub fn value_width(mut self, width: f32) -> Self {
+        self.value_width = Some(width);
         self
     }
 
@@ -213,21 +233,27 @@ impl BarChart {
         row.width = LayoutDimension::Percent(1.0);
         ElementFactory::new(zintl_ui_native::View::new(row, list![label, track, value]))
     }
-}
 
-impl NativeView for BarChart {
-    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        // Labels and values each share a column as wide as the longest one is estimated to be.
+    /// Returns the label and value column widths: the fixed ones, or the widest estimate.
+    fn columns(&self) -> (f32, f32) {
         let widest = |text: &dyn Fn(&ChartBar) -> String| {
             self.bars
                 .iter()
                 .map(|bar| Self::text_width(&text(bar)))
                 .fold(0.0, f32::max)
         };
-        let columns = (
-            widest(&|bar| bar.label.clone()),
-            widest(&|bar| (self.format)(bar.value)),
-        );
+        (
+            self.label_width
+                .unwrap_or_else(|| widest(&|bar| bar.label.clone())),
+            self.value_width
+                .unwrap_or_else(|| widest(&|bar| (self.format)(bar.value))),
+        )
+    }
+}
+
+impl NativeView for BarChart {
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        let columns = self.columns();
         let rows = self
             .bars
             .iter()

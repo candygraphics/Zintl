@@ -118,20 +118,35 @@ fn chart_parts(chart: BarChart) -> (RenderNode, Vec<RenderNode>) {
 }
 
 #[test]
-fn bar_chart_exposes_a_group_with_bar_ids() {
-    // Verifies the chart is a named group and bars carry their IDs.
-    let (group, bars) = chart_parts(
-        BarChart::new([
-            ChartBar::new("Food", 3480.0).id("expenses-food"),
-            ChartBar::new("Other", 300.0).id("expenses-other"),
-        ])
-        .id("expenses"),
-    );
+fn bar_chart_exposes_a_group_with_bar_ids_and_fixed_columns() {
+    // Verifies the chart is a named group, bars carry their IDs, and fixed column widths are kept.
+    let chart = BarChart::new([
+        ChartBar::new("Food", 3480.0).id("expenses-food"),
+        ChartBar::new("Other", 300.0).id("expenses-other"),
+    ])
+    .label_width(160.0)
+    .value_width(96.0)
+    .id("expenses");
+    let tree = App::new(chart.clone()).render_tree();
     assert!(matches!(
-        &group,
+        &tree.value,
         RenderNode::View { id: Some(id), accessibility, .. }
             if id == "expenses" && accessibility.role == Some(AccessibilityRole::Group)
     ));
+    let widths = |row: &RenderedNode| {
+        [0, 2].map(|column| match &row.children[column].value {
+            RenderNode::View { layout, .. } => layout.width,
+            _ => LayoutDimension::Auto,
+        })
+    };
+    assert_eq!(
+        widths(&tree.children[0]),
+        [
+            LayoutDimension::Points(160.0),
+            LayoutDimension::Points(96.0)
+        ]
+    );
+    let (_, bars) = chart_parts(chart);
     let ids = bars
         .iter()
         .map(|bar| match bar {

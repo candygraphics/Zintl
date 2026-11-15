@@ -1,7 +1,7 @@
 use zintl_ui_desktop::*;
 
 /// Three bars and a button that doubles the second one, a chart with short Japanese labels,
-/// and two charts that share a label.
+/// and two charts that share a label and fixed column widths.
 pub struct MainView {
     transport: Store<f64>,
 }
@@ -38,13 +38,15 @@ impl View for MainView {
         ])
         .value_format(whole)
         .id("cjk");
-        // Both charts have an "Other" bar, told apart by ID.
+        // Both charts have an "Other" bar and share column widths, so their bars line up.
         let expenses = BarChart::new([
             ChartBar::new("Rent", 2000.0).id("expenses-rent"),
             ChartBar::new("Food", 1000.0).id("expenses-food"),
             ChartBar::new("Other", 300.0).id("expenses-other"),
         ])
         .maximum(2000.0)
+        .label_width(160.0)
+        .value_width(96.0)
         .value_format(whole)
         .id("expenses");
         let income = BarChart::new([
@@ -52,6 +54,8 @@ impl View for MainView {
             ChartBar::new("Refunds", 1200.0).id("income-refunds"),
             ChartBar::new("Other", 600.0).id("income-other"),
         ])
+        .label_width(160.0)
+        .value_width(96.0)
         .value_format(whole)
         .id("income");
         Window::new(Rect::new(100.0, 100.0, 480.0, 520.0), "Zintl Chart UI Test")
