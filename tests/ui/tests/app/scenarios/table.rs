@@ -42,7 +42,7 @@ impl View for MainView {
             });
         let columns = [
             TableColumn::new("Name").width(200.0),
-            TableColumn::new("Length"),
+            TableColumn::new("Length").width(120.0),
         ];
         Window::new(Rect::new(100.0, 100.0, 480.0, 420.0), "Zintl Table UI Test")
             .id("main-window")

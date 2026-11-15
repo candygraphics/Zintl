@@ -17,6 +17,21 @@ final class TableTests: ZintlUITestCase {
     XCTAssertGreaterThan(first.frame.minX, app.staticTexts["name-1"].frame.maxX)
   }
 
+  /// Verifies a declared column width is the rendered width, and the last column fills the rest.
+  func testColumnWidthsMatchTheDeclaredWidths() throws {
+    try launch(scenario: "table")
+
+    let table = app.tables["sections"]
+    XCTAssertTrue(table.waitToExist(timeout: 2))
+    let name = table.buttons["Name"]
+    let length = table.buttons["Length"]
+    XCTAssertEqual(name.frame.width, 200, accuracy: 1)
+    XCTAssertGreaterThanOrEqual(length.frame.width, 119)
+    // The table fills the window's width, which the columns add up to.
+    let window = app.windows["main-window"]
+    XCTAssertEqual(name.frame.width + length.frame.width, window.frame.width, accuracy: 1)
+  }
+
   /// Verifies clicking a row writes its ID to the bound Store.
   func testClickingARowSelectsIt() throws {
     try launch(scenario: "table")

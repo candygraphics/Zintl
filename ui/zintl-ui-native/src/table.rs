@@ -28,7 +28,10 @@ impl TableColumn {
         }
     }
 
-    /// Sets the initial width in points; the user can still resize the column.
+    /// Sets the initial rendered width in points, including the space between columns.
+    ///
+    /// The widths of all columns add up to the table's width. The user can
+    /// still resize the column.
     pub fn width(mut self, width: f64) -> Self {
         self.width = Some(width);
         self
