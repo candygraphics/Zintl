@@ -332,6 +332,41 @@ fn text_field_commit_runs_only_when_editing_ends() {
 }
 
 #[test]
+fn integer_field_parses_and_formats_exact_integers() {
+    // Verifies grouping, signs, full-width digits, and range limits, and that decimals are rejected.
+    let field = zintl_ui_native::IntegerField::new().grouping(true);
+    assert_eq!(field.format(1234567), "1,234,567");
+    assert_eq!(field.format(-1234), "-1,234");
+    assert_eq!(field.format(999), "999");
+    assert_eq!(field.parse("1,234"), Some(1234));
+    assert_eq!(field.parse("１２３４"), Some(1234));
+    assert_eq!(field.parse("－５"), Some(-5));
+    assert_eq!(field.parse("12.5"), None);
+    assert_eq!(field.parse("abc"), None);
+    // 2^53 + 1 stays exact because it never becomes an f64.
+    assert_eq!(field.parse("9007199254740993"), Some(9_007_199_254_740_993));
+    let limited = zintl_ui_native::IntegerField::new()
+        .range(0, 100)
+        .suffix(" pcs");
+    assert_eq!(limited.parse("250 pcs"), Some(100));
+    assert_eq!(limited.parse("-3"), Some(0));
+    assert_eq!(limited.format(7), "7 pcs");
+}
+
+#[test]
+fn integer_field_steps_by_its_increment() {
+    // Verifies a stepper click moves the bound value by the step, whatever value the stepper reports.
+    let (mut app, value) = Harness::mount(
+        |cx| cx.store(9_007_199_254_740_993_i64),
+        |value| NumberField::integer().step(2).bind(value),
+    );
+    assert!(app.dispatch_at(&[0], Event::ValueChanged { value: 9.1e15 }));
+    assert_eq!(app.get(value), 9_007_199_254_740_995);
+    assert!(app.dispatch_at(&[0], Event::ValueChanged { value: 0.0 }));
+    assert_eq!(app.get(value), 9_007_199_254_740_993);
+}
+
+#[test]
 fn number_field_clamps_entered_values() {
     // Verifies values outside the declared range are clamped before reaching the Store.
     let (mut app, value) = Harness::mount(

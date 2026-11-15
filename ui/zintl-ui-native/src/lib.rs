@@ -24,7 +24,8 @@ pub use canvas::Canvas2D;
 pub use canvas::WgpuCanvas;
 pub use containers::{ScrollView, TabView, TabViewItem};
 pub use controls::{
-    ColorWell, ComboBox, NumberField, PopUpButton, SearchField, SegmentedControl, Slider, Switch,
+    ColorWell, ComboBox, IntegerField, NumberField, PopUpButton, SearchField, SegmentedControl,
+    Slider, Switch,
 };
 pub use indicators::{ProgressIndicator, Separator};
 pub use list::{List, ListRow, ListSection};

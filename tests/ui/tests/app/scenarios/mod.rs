@@ -50,6 +50,7 @@ scenarios! {
     help => "help": |_| help::MainView,
     hstack => "hstack": |_| hstack::MainView,
     indicators => "indicators": |_| indicators::MainView::new(),
+    integer_field => "integer-field": |_| integer_field::MainView::new(),
     list => "list": |_| list::MainView::new(),
     main_menu => "main-menu": |options| {
         main_menu::MainView::new(options.variable("ZINTL_UI_TEST_MENU_LANGUAGE").as_deref() == Some("ja"))

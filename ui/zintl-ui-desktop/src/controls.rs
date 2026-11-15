@@ -20,6 +20,7 @@ native_view!(
     ComboBox,
     Slider,
     NumberField,
+    IntegerField,
     SearchField,
     ColorWell,
     ScrollView,
@@ -515,6 +516,67 @@ impl NumberField {
 impl Default for NumberField {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl NumberField {
+    /// Creates a field for whole numbers bound to a `Store<i64>`, such as counts or money in cents.
+    pub fn integer() -> IntegerField {
+        IntegerField {
+            inner: zintl_ui_native::IntegerField::new(),
+        }
+    }
+}
+
+wrapper!(
+    /// A field for whole numbers with a stepper, whose values never pass through `f64`.
+    ///
+    /// Text that is not an integer, such as `12.5`, restores the current value.
+    IntegerField(zintl_ui_native::IntegerField)
+);
+
+impl IntegerField {
+    /// Shows `value`; a bound Store takes precedence.
+    pub fn value(mut self, value: i64) -> Self {
+        self.inner = self.inner.value(value);
+        self
+    }
+
+    pub fn bind(mut self, store: Store<i64>) -> Self {
+        self.inner = self.inner.bind(store);
+        self
+    }
+
+    pub fn range(mut self, range: RangeInclusive<i64>) -> Self {
+        self.inner = self.inner.range(*range.start(), *range.end());
+        self
+    }
+
+    pub fn step(mut self, step: i64) -> Self {
+        self.inner = self.inner.step(step);
+        self
+    }
+
+    /// Shows thousands separators, such as `1,234`.
+    pub fn grouping(mut self, grouping: bool) -> Self {
+        self.inner = self.inner.grouping(grouping);
+        self
+    }
+
+    /// Appends `suffix`, such as `" pcs"`, to the shown text; typed text may omit it.
+    pub fn suffix(mut self, suffix: impl Into<String>) -> Self {
+        self.inner = self.inner.suffix(suffix);
+        self
+    }
+
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.inner = self.inner.enabled(enabled);
+        self
+    }
+
+    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, i64) + 'static) -> Self {
+        self.inner = self.inner.on_change(action);
+        self
     }
 }
 

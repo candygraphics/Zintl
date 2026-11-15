@@ -62,6 +62,7 @@ control!(
     SegmentedControl,
     ComboBox,
     NumberField,
+    IntegerField,
     SearchField,
     ColorWell,
 );
@@ -72,6 +73,7 @@ enabled!(
     SegmentedControl,
     ComboBox,
     NumberField,
+    IntegerField,
     ColorWell,
 );
 
@@ -682,6 +684,182 @@ impl NativeView for NumberField {
             EventKind::TextCommitted,
             move |event| match event {
                 // Unchanged values are not reported again.
+                Event::TextCommitted { value: text } => {
+                    field.parse(&text).filter(|parsed| *parsed != value)
+                }
+                _ => None,
+            },
+        )
+    }
+}
+
+/// An integer field with a stepper whose values never pass through `f64`.
+///
+/// The field formats and parses `i64` itself, so values above 2^53 stay
+/// exact. Text that is not an integer, such as `12.5`, restores the current
+/// value; full-width digits from input methods are accepted.
+#[derive(Clone)]
+pub struct IntegerField {
+    value: i64,
+    minimum: i64,
+    maximum: i64,
+    step: i64,
+    grouping: bool,
+    suffix: String,
+    store: Option<Store<i64>>,
+    action: Option<Rc<Change<i64>>>,
+    enabled: bool,
+    layout: LayoutStyle,
+    id: Option<String>,
+    attachments: Attachments,
+}
+
+impl IntegerField {
+    pub fn new() -> Self {
+        Self {
+            value: 0,
+            minimum: i64::MIN,
+            maximum: i64::MAX,
+            step: 1,
+            grouping: false,
+            suffix: String::new(),
+            store: None,
+            action: None,
+            enabled: true,
+            layout: LayoutStyle::leaf(Size::new(100.0, 22.0)),
+            id: None,
+            attachments: Attachments::default(),
+        }
+    }
+
+    pub fn value(mut self, value: i64) -> Self {
+        self.value = value;
+        self
+    }
+
+    /// Limits accepted values to `minimum..=maximum`.
+    pub fn range(mut self, minimum: i64, maximum: i64) -> Self {
+        self.minimum = minimum;
+        self.maximum = maximum;
+        self
+    }
+
+    /// Sets the stepper increment.
+    pub fn step(mut self, step: i64) -> Self {
+        self.step = step;
+        self
+    }
+
+    /// Shows thousands separators, such as `1,234`; typed text may use them either way.
+    pub fn grouping(mut self, grouping: bool) -> Self {
+        self.grouping = grouping;
+        self
+    }
+
+    /// Appends `suffix`, such as `" pcs"`, to the shown text; typed text may omit it.
+    pub fn suffix(mut self, suffix: impl Into<String>) -> Self {
+        self.suffix = suffix.into();
+        self
+    }
+
+    pub fn bind(mut self, store: Store<i64>) -> Self {
+        self.store = Some(store);
+        self
+    }
+
+    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, i64) + 'static) -> Self {
+        self.action = Some(Rc::new(action));
+        self
+    }
+
+    /// Formats `value` with the separators and suffix this field shows.
+    pub fn format(&self, value: i64) -> String {
+        let digits = value.unsigned_abs().to_string();
+        let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
+        for (index, digit) in digits.chars().enumerate() {
+            if self.grouping && index > 0 && (digits.len() - index).is_multiple_of(3) {
+                grouped.push(',');
+            }
+            grouped.push(digit);
+        }
+        let sign = if value < 0 { "-" } else { "" };
+        format!("{sign}{grouped}{}", self.suffix)
+    }
+
+    /// Parses an integer, ignoring separators and the suffix, and limits it to the range.
+    ///
+    /// Full-width digits and minus signs from input methods are accepted.
+    pub fn parse(&self, text: &str) -> Option<i64> {
+        let text = text.trim();
+        let text = text.strip_suffix(self.suffix.trim()).unwrap_or(text).trim();
+        let normalized =
+            text.chars()
+                .filter(|character| !matches!(character, ',' | '，' | ' ' | '_'))
+                .map(|character| match character {
+                    '０'..='９' => char::from_u32(character as u32 - '０' as u32 + '0' as u32)
+                        .unwrap_or(character),
+                    '－' | '−' => '-',
+                    _ => character,
+                })
+                .collect::<String>();
+        let value: i128 = normalized.parse().ok()?;
+        let clamped = value.clamp(i128::from(self.minimum), i128::from(self.maximum));
+        i64::try_from(clamped).ok()
+    }
+}
+
+impl Default for IntegerField {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl NativeView for IntegerField {
+    attachments!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        let value = self.store.map_or(self.value, |store| *cx.get(store));
+        // The field shows text formatted here; the stepper only needs the direction of a click.
+        let element = Element::node(RenderNode::View {
+            kind: ViewKind::NumberField {
+                value: value as f64,
+                format: zintl_ui_backend_core::NumberFormat {
+                    minimum: self.minimum as f64,
+                    maximum: self.maximum as f64,
+                    step: self.step as f64,
+                    fraction_digits: 0,
+                },
+                text: Some(self.format(value)),
+            },
+            layout: self.layout,
+            id: self.id.clone(),
+            enabled: self.enabled,
+            title_bar_interactive: false,
+            help: None,
+            accessibility: Default::default(),
+        });
+        let binding = || Binding {
+            store: self.store,
+            action: self.action.clone(),
+        };
+        let (minimum, maximum, step) = (self.minimum, self.maximum, self.step);
+        let element = binding().route(element, EventKind::ValueChanged, move |event| match event {
+            // The stepper reports a rounded value, so only its direction from `value` is used.
+            Event::ValueChanged { value: stepped } => {
+                let next = if stepped > value as f64 {
+                    value.saturating_add(step)
+                } else {
+                    value.saturating_sub(step)
+                };
+                Some(next.clamp(minimum, maximum)).filter(|next| *next != value)
+            }
+            _ => None,
+        });
+        let field = self.clone();
+        binding().route(
+            element,
+            EventKind::TextCommitted,
+            move |event| match event {
                 Event::TextCommitted { value: text } => {
                     field.parse(&text).filter(|parsed| *parsed != value)
                 }
