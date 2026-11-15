@@ -1,8 +1,6 @@
 use std::rc::Rc;
 
-use zintl_ui::element::IntoElement;
 use zintl_ui::store::Store;
-use zintl_ui::view::View;
 use zintl_ui_backend_core::{Color, ViewKind};
 use zintl_ui_layout::{LayoutStyle, Size};
 
@@ -252,10 +250,4 @@ impl NativeView for Button {
     }
 }
 
-impl View for Button {
-    type Output = RenderNode;
-
-    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
-        self.native_element(cx)
-    }
-}
+native_view!(Button);

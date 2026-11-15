@@ -309,52 +309,41 @@ macro_rules! modifiers {
 
 #[cfg(test)]
 mod tests {
-    use zintl_ui::composer::Composer;
     use zintl_ui::element::IntoElement;
-    use zintl_ui::renderer::RenderBackend;
-    use zintl_ui_backend_core::HeadlessBackend;
     use zintl_ui_layout::{Axis, LayoutDimension, LayoutStyle, Size};
 
+    use crate::testing::Harness;
     use crate::{
         Attach, Button, Container, Control, Layout, RenderNode, ScrollView, Slider, Table,
         TableColumn, TableRow, Text, TextField,
     };
 
-    /// A view mounted on the headless backend, read back as render nodes.
-    struct Mounted(Composer<RenderNode, HeadlessBackend>);
+    /// A mounted view, read back as render nodes.
+    struct Mounted(Harness);
 
     impl Mounted {
         fn new(root: impl IntoElement<Output = RenderNode>) -> Self {
-            let mut composer = Composer::new(HeadlessBackend::new());
-            composer.mount(root);
-            Self(composer)
+            Self(Harness::new(root))
         }
 
-        /// Returns the node at `path` below the root view.
-        fn node(&self, path: &[usize]) -> crate::NodeId {
-            let backend = self.0.backend();
-            let mut node = backend.children(backend.root())[0];
-            for index in path {
-                node = backend.children(node)[*index];
-            }
-            node
-        }
-
-        /// Returns whether the view at `path` and every view above it are enabled.
+        /// Returns whether the view at `path` below the root view and every view above it are enabled.
         fn is_enabled(&self, path: &[usize]) -> bool {
-            self.0.backend().is_enabled(self.node(path))
+            self.0.is_enabled(&[&[0], path].concat())
         }
 
-        /// Returns the layout, ID, and enabled state declared on the node at `path`.
+        /// Returns the layout, ID, and enabled state declared on the node at `path` below the root view.
         fn view(&self, path: &[usize]) -> (LayoutStyle, Option<String>, bool) {
-            let backend = self.0.backend();
-            match backend.value(self.node(path)) {
-                Some(RenderNode::View {
+            let mut node = self.0.tree();
+            for index in path {
+                node = node.children.swap_remove(*index);
+            }
+            match node.value {
+                RenderNode::View {
                     layout,
                     id,
                     enabled,
                     ..
-                }) => (*layout, id.clone(), *enabled),
+                } => (layout, id, enabled),
                 other => panic!("expected a view, got {other:?}"),
             }
         }

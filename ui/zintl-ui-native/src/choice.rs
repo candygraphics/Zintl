@@ -8,13 +8,11 @@ use zintl_ui_layout::{Axis, LayoutStyle, MainAxisDistribution, Size};
 
 use crate::modifiers;
 use crate::{
-    Attach, Button, ButtonType, Container, Context, Control, Element, Layout, ListFactory,
+    Attach, Button, ButtonType, Change, Container, Context, Control, Element, Layout, ListFactory,
     NativeView, PopUpButton, RenderNode, SegmentedControl, Switch, Text, ViewModifiers, list,
 };
 
-type Change<T> = dyn for<'a> Fn(&mut Context<'a>, T);
-
-view!(Toggle, Picker);
+native_view!(Toggle, Picker);
 
 /// How a [`Toggle`] is drawn.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

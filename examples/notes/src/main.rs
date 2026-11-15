@@ -5,6 +5,8 @@ mod storage;
 
 use model::{Folder, Library, Note, NoteId, SmartFolder};
 use storage::{Saver, Storage};
+use zintl_ui_desktop::accessibility::*;
+use zintl_ui_desktop::menu::*;
 use zintl_ui_desktop::*;
 
 /// Stores shared by the views and their actions.

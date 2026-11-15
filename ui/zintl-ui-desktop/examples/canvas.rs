@@ -6,6 +6,8 @@
 
 use std::f64::consts::TAU;
 
+use zintl_ui_desktop::canvas::*;
+use zintl_ui_desktop::graphics::*;
 use zintl_ui_desktop::*;
 
 /// Declarations the canvas receives on each render.

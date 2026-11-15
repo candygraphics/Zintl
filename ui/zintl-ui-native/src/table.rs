@@ -4,7 +4,6 @@ use std::rc::Rc;
 
 use zintl_ui::element::{ElementFactory, IntoElement, KeyedElement, ListFactory};
 use zintl_ui::store::Store;
-use zintl_ui::view::View;
 use zintl_ui_backend_core::{SortOrder, TextAlignment, ViewKind};
 use zintl_ui_layout::{Arrangement, Axis, CrossAxisAlignment, LayoutStyle, Size};
 
@@ -351,10 +350,4 @@ impl Table {
     }
 }
 
-impl View for Table {
-    type Output = RenderNode;
-
-    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
-        self.native_element(cx)
-    }
-}
+native_view!(Table);

@@ -4,7 +4,6 @@ use std::rc::Rc;
 
 use zintl_ui::element::{ElementFactory, IntoElement, KeyedElement};
 use zintl_ui::store::Store;
-use zintl_ui::view::View;
 use zintl_ui_backend_core::{ListStyle, ViewKind};
 use zintl_ui_layout::{LayoutStyle, Size};
 
@@ -153,10 +152,4 @@ impl NativeView for List {
     }
 }
 
-impl View for List {
-    type Output = RenderNode;
-
-    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
-        self.native_element(cx)
-    }
-}
+native_view!(List);

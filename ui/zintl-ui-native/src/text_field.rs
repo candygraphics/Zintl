@@ -1,8 +1,6 @@
 use std::rc::Rc;
 
-use zintl_ui::element::IntoElement;
 use zintl_ui::store::Store;
-use zintl_ui::view::View;
 use zintl_ui_backend_core::graphics::{AttributedText, Font};
 use zintl_ui_backend_core::{TextAlignment, TextColor, TextStyle, ViewKind};
 use zintl_ui_layout::{LayoutDimension, LayoutStyle, Size};
@@ -167,13 +165,7 @@ impl Default for TextField {
     }
 }
 
-impl View for TextField {
-    type Output = RenderNode;
-
-    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
-        self.native_element(cx)
-    }
-}
+native_view!(TextField);
 
 impl NativeView for TextField {
     modifiers!();
@@ -329,10 +321,4 @@ impl NativeView for TextEditor {
     }
 }
 
-impl View for TextEditor {
-    type Output = RenderNode;
-
-    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
-        self.native_element(cx)
-    }
-}
+native_view!(TextEditor);

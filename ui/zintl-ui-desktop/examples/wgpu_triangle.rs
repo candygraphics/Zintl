@@ -3,6 +3,7 @@
 //! "Spin" switches between continuous and on-demand redraw. Drag the canvas to
 //! turn the triangle, and click it to change its color.
 
+use zintl_ui_desktop::canvas::*;
 use zintl_ui_desktop::*;
 
 const SHADER: &str = r#"

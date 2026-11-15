@@ -57,4 +57,4 @@ impl NativeView for Text {
     }
 }
 
-view!(Text);
+native_view!(Text);

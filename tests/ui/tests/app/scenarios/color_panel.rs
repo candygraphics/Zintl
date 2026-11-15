@@ -1,3 +1,4 @@
+use zintl_ui_desktop::dialog::*;
 use zintl_ui_desktop::*;
 
 /// A bound color well and the shared color panel, with buttons that set the color and show the panel.

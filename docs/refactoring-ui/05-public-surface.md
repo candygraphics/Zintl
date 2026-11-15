@@ -144,3 +144,17 @@ desktop 側は `lib.rs`(再エクスポート)と `app.rs`(`App`、バックエ�
 1. `testing` モジュールを `testing` フィーチャの裏に置くか。`HeadlessBackend` は `backend-core` に常時入っているので、置かなくてもビルド時間への影響は小さいです。
 2. `zintl-ui-test` クレート(中核用の `TestBackend`)との関係。役割が違う(中核の差分操作の検証 vs ウィジェットの検査)ので併存させる想定ですが、名前が紛らわしければ `zintl-ui-test` を `zintl-ui-core-test` に改名します。
 3. モジュール名 `render` は `View::render` と紛らわしい可能性があります。代案は `custom` または `raw`。
+
+## 実装メモ
+
+手順 1、2、4 と「重複の整理」を実装しました。手順 3(ファイル分割と `widget_tests.rs` の解体)は、仕様どおり移動だけの変更として別に行います。
+
+- 未決 1: `testing` はフィーチャフラグの裏に置いていません。
+- 未決 2: `zintl-ui-test` はそのままです。
+- 未決 3: モジュール名は `render` のままです。
+- `Harness` には仕様の API に加えて `empty` / `mount`(Store を作ってからマウントする)、`set`、`context`、`is_enabled` があります。
+- `IntoElement`、`RenderNode`、`ElementFactory`、`ListFactory` はクレート直下にも残しました。アプリが自分の `View` を実装するときに必ず使うためです。`render` からも取れます。
+- `Font`、`FontWeight`、`AttributedText` もクレート直下に残しました。`Text::font` と `TextEditor::bind` の引数だからです。ほかの描画型は `graphics` から取ります。
+- ビルダーの引数になる型(`TextColor`、`TitleBar`、`ScrollAxes`、`PaletteColor` など)はクレート直下です。
+- `App` は macOS と Windows では常に実バックエンドを使います。desktop のテストは `Harness` だけを使います。
+- `native_view!` は native のクレート内マクロです。`init` を持つ型とジェネリックな型は手書きの `View` 実装のままです。

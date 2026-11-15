@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use zintl_ui_desktop::dialog::*;
+use zintl_ui_desktop::graphics::*;
 use zintl_ui_desktop::*;
 
 /// Save and open dialogs that start in a directory the test provides.
