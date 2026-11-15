@@ -1,8 +1,28 @@
-//! Declarative native desktop views that render core `RenderNode` descriptions.
+//! Declarative desktop views that render core `RenderNode` descriptions.
 
+/// Implements `View` for native views through their native element.
+macro_rules! view {
+    ($($view:ident),* $(,)?) => {$(
+        impl zintl_ui::view::View for $view {
+            type Output = $crate::RenderNode;
+
+            fn render(
+                &self,
+                cx: &mut $crate::Context<'_>,
+            ) -> impl zintl_ui::element::IntoElement<Output = Self::Output> {
+                $crate::NativeView::native_element(self, cx)
+            }
+        }
+    )*};
+}
+
+mod arrangements;
 mod attach;
 mod button;
 mod canvas;
+mod chart;
+mod choice;
+mod container;
 mod containers;
 mod controls;
 mod indicators;
@@ -10,23 +30,37 @@ mod list;
 mod menu;
 mod presentation;
 mod sidebar;
+mod split_view;
+mod stack;
 mod table;
+mod text;
 mod text_field;
 mod toolbar;
 mod types;
-mod view;
 mod window;
 
+#[cfg(test)]
+mod testing;
+#[cfg(test)]
+mod view_tests;
+#[cfg(test)]
+mod widget_tests;
+
+pub use arrangements::{DisclosureGroup, Grid, GridCell, ZStack};
 pub use attach::{Attach, Control, Layout, LayoutOverrides, NativeView, ViewModifiers};
-pub use button::Button;
+pub use button::{Button, ButtonStyle};
 pub use canvas::Canvas2D;
 #[cfg(feature = "wgpu")]
 pub use canvas::WgpuCanvas;
-pub use containers::{ScrollView, TabView, TabViewItem};
+pub use chart::{BarChart, ChartBar};
+pub use choice::{Picker, PickerStyle, Toggle, ToggleStyle};
+pub(crate) use container::Container;
+pub use containers::{ScrollView, Tab, TabView};
 pub use controls::{
     ColorWell, ComboBox, DatePicker, IntegerField, IntegerValue, NumberField, OptionalDatePicker,
-    PopUpButton, SearchField, SegmentedControl, Slider, Switch,
+    SearchField, Slider,
 };
+pub(crate) use controls::{PopUpButton, SegmentedControl, Switch};
 pub use indicators::{ProgressIndicator, Separator};
 pub use list::{List, ListRow, ListSection};
 pub use menu::{
@@ -36,25 +70,29 @@ pub use menu::{
 };
 pub use presentation::{Alert, AlertButton, ColorPanel, FileDialog, Popover};
 pub use sidebar::{Sidebar, SidebarItem, SidebarSection};
+pub use split_view::SplitView;
+pub use stack::{HStack, Spacer, VStack};
 pub use table::{Table, TableColumn, TableRow};
+pub use text::Text;
 pub use text_field::{TextEditor, TextField};
 pub use toolbar::{Toolbar, ToolbarItem};
 pub use types::{ButtonRole, ScrollStatus};
-pub use view::View;
 pub use window::{UndoHandler, Window};
 pub use zintl_ui::element::{Element, IntoElement, ListFactory};
 pub use zintl_ui::list;
 pub use zintl_ui::store::Store;
 pub use zintl_ui_backend_core::{
-    Accessibility, AccessibilityRole, AlertStyle, AnnouncementPriority, BezelStyle, ButtonType,
-    CalendarDate, Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasId, CanvasNode,
-    CanvasSetup, Color, Cursor, DatePickerStyle, DocumentState, Event, EventKind, Frame,
-    GesturePhase, Invalidator, Key, KeyEvent, KeyPhase, ListStyle, MagnifyEvent, Modifiers,
-    NamedKey, NodeId, Palette, PaletteColor, PointerButton, PointerEvent, PointerPhase,
-    PopoverEdge, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAlignment, ScrollAxes, ScrollEvent,
-    ScrollTarget, ShortcutKey, Signal, SortOrder, StoreSender, SystemColor, TextAlignment,
-    TextColor, TextStyle, TitleBar, UndoState, ViewKind, WindowStyle, graphics,
+    Accessibility, AccessibilityRole, AlertStyle, AnnouncementPriority, CalendarDate,
+    Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasId, CanvasNode, CanvasSetup, Color,
+    Cursor, DatePickerStyle, DocumentState, Event, EventKind, Frame, GesturePhase, Invalidator,
+    Key, KeyEvent, KeyPhase, ListStyle, MagnifyEvent, Modifiers, NamedKey, NodeId, Palette,
+    PaletteColor, PointerButton, PointerEvent, PointerPhase, PopoverEdge, Rect, Redraw,
+    RedrawPolicy, RenderNode, ScrollAlignment, ScrollAxes, ScrollEvent, ScrollTarget, ShortcutKey,
+    Signal, SortOrder, StoreSender, SystemColor, TextAlignment, TextColor, TextStyle, TitleBar,
+    UndoState, ViewKind, graphics,
 };
+// Bezels and button types are AppKit vocabulary, so only the views here name them.
+pub(crate) use zintl_ui_backend_core::{BezelStyle, ButtonType};
 #[cfg(feature = "wgpu")]
 pub use zintl_ui_backend_core::{
     WgpuCanvasHandler, WgpuContext, WgpuError, WgpuSetup, WgpuTarget, wgpu,
@@ -71,7 +109,7 @@ mod tests {
 
     use zintl_ui::composer::Composer;
     use zintl_ui::renderer::{RenderBackend, RenderNode as _};
-    use zintl_ui::view::View as ViewTrait;
+    use zintl_ui::view::View;
     use zintl_ui_backend_core::{HeadlessBackend, ViewKind};
     use zintl_ui_layout::{Axis, LayoutStyle};
 
@@ -94,21 +132,21 @@ mod tests {
             .expect("the test tree must contain a root")
     }
 
-    fn assert_view<T: ViewTrait<Output = RenderNode>>() {}
+    fn assert_view<T: View<Output = RenderNode>>() {}
 
     #[test]
     fn native_widgets_are_zintl_views() {
         // Verifies each native widget participates in declarative composition.
         assert_view::<Button>();
         assert_view::<TextField>();
-        assert_view::<View>();
+        assert_view::<Container>();
         assert_view::<Window>();
     }
 
     #[test]
     fn list_children_preserve_mixed_view_order() {
         // Verifies containers accept ordered heterogeneous list children.
-        let composer = composer(View::new(
+        let composer = composer(Container::new(
             LayoutStyle::stack(Axis::Vertical, 8.0),
             list![Button::new("First"), TextField::new(), Button::new("Last")],
         ));
@@ -135,7 +173,7 @@ mod tests {
     #[test]
     fn text_field_presentations_share_one_native_kind() {
         // Verifies labels and editable fields are configurations of one text field node.
-        let label = composer(TextField::label_with_string("Label"));
+        let label = composer(Text::new("Label"));
         let field = composer(TextField::new());
         let label = label.backend().value(root_id(&label)).unwrap();
         let field = field.backend().value(root_id(&field)).unwrap();
@@ -232,7 +270,7 @@ mod tests {
         let value = composer.context(|cx: &mut Context<'_>| cx.store(String::new()));
         let changes = Rc::new(Cell::new(0));
         let received = changes.clone();
-        composer.mount(View::new(
+        composer.mount(Container::new(
             LayoutStyle::stack(Axis::Vertical, 8.0),
             list![
                 TextField::new().bind(value),

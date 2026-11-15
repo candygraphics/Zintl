@@ -4,24 +4,15 @@ use zintl_ui::element::{ElementFactory, IntoElement};
 use zintl_ui::view::View;
 use zintl_ui_layout::{Arrangement, Axis, LayoutStyle, Size};
 
+use crate::graphics::Graphics2D;
+use crate::modifiers;
 use crate::{
-    AccessibilityRole, Attach, Canvas2D, Canvas2DHandler, Color, Context, Element, Frame,
-    Graphics2D, Layout, ListFactory, NativeView, RenderNode, Store, Text, ViewModifiers, list,
+    AccessibilityRole, Attach, BezelStyle, Button, ButtonType, Canvas2D, Canvas2DHandler, Color,
+    Container, Context, Element, Frame, HStack, Layout, ListFactory, NativeView, RenderNode, Store,
+    Text, VStack, ViewModifiers, list,
 };
 
-/// A plain native container for the arrangements below.
-struct Container;
-
-impl Container {
-    /// Renders `children` laid out by `layout`.
-    fn element(
-        layout: LayoutStyle,
-        children: ListFactory<RenderNode>,
-        cx: &mut Context<'_>,
-    ) -> Element<RenderNode> {
-        zintl_ui_native::View::new(layout, children).native_element(cx)
-    }
-}
+view!(ZStack, Grid, GridCell);
 
 /// Stacks its children on top of each other, later children in front.
 ///
@@ -48,16 +39,10 @@ impl ZStack {
 
 impl NativeView for ZStack {
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        Container::element(self.layout, self.children.clone(), cx)
+        Container::new(self.layout, self.children.clone()).native_element(cx)
     }
 
-    fn modifiers(&self) -> &ViewModifiers {
-        &self.modifiers
-    }
-
-    fn modifiers_mut(&mut self) -> &mut ViewModifiers {
-        &mut self.modifiers
-    }
+    modifiers!();
 }
 
 /// Fills its frame with one color, behind a grid row.
@@ -124,23 +109,17 @@ impl NativeView for Grid {
                     column: 0,
                     column_span: 0,
                 });
-                children.push(ElementFactory::new(zintl_ui_native::View::new(
+                children.push(ElementFactory::new(crate::Container::new(
                     layout,
                     list![Canvas2D::new(Stripe).grow()],
                 )));
             }
         }
         children.extend(self.children.iter().cloned());
-        Container::element(self.layout, children, cx)
+        Container::new(self.layout, children).native_element(cx)
     }
 
-    fn modifiers(&self) -> &ViewModifiers {
-        &self.modifiers
-    }
-
-    fn modifiers_mut(&mut self) -> &mut ViewModifiers {
-        &mut self.modifiers
-    }
+    modifiers!();
 }
 
 /// A [`Grid`] child that covers several columns, such as a heading between groups of rows.
@@ -178,16 +157,10 @@ impl NativeView for GridCell {
         // The content stretches across the columns the cell covers.
         let mut layout = LayoutStyle::stack(Axis::Vertical, 0.0);
         layout.column_span = self.column_span;
-        Container::element(layout, vec![self.content.clone()], cx)
+        Container::new(layout, vec![self.content.clone()]).native_element(cx)
     }
 
-    fn modifiers(&self) -> &ViewModifiers {
-        &self.modifiers
-    }
-
-    fn modifiers_mut(&mut self) -> &mut ViewModifiers {
-        &mut self.modifiers
-    }
+    modifiers!();
 }
 
 /// A titled section whose content shows only while it is expanded.
@@ -243,9 +216,9 @@ impl NativeView for DisclosureGroup {
         let expanded = self.expanded;
         let open = *cx.get(expanded);
         // The triangle carries the title for VoiceOver, so the visible title is not read twice.
-        let mut toggle = zintl_ui_native::Button::new("")
-            .bezel_style(Some(zintl_ui_native::BezelStyle::Disclosure))
-            .button_type(zintl_ui_native::ButtonType::PushOnPushOff)
+        let mut toggle = Button::new("")
+            .bezel_style(Some(BezelStyle::Disclosure))
+            .button_type(ButtonType::PushOnPushOff)
             .minimum_size(Size::new(13.0, 13.0))
             .bind_state(expanded)
             .accessibility_label(self.title.clone());
@@ -253,23 +226,17 @@ impl NativeView for DisclosureGroup {
             toggle = toggle.id(id);
         }
         let title = Text::new(self.title.clone()).accessibility_hidden();
-        let header = crate::HStack::new(list![toggle, title]).spacing(4.0);
+        let header = HStack::new(list![toggle, title]).spacing(4.0);
         let mut rows = list![header];
         if open {
             rows.push(self.content.clone());
         }
-        crate::VStack::new(rows)
+        VStack::new(rows)
             .spacing(6.0)
             .accessibility_label(self.title.clone())
             .accessibility_role(AccessibilityRole::Group)
             .native_element(cx)
     }
 
-    fn modifiers(&self) -> &ViewModifiers {
-        &self.modifiers
-    }
-
-    fn modifiers_mut(&mut self) -> &mut ViewModifiers {
-        &mut self.modifiers
-    }
+    modifiers!();
 }

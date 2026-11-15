@@ -32,12 +32,8 @@ pub struct TextField {
 
 impl TextField {
     pub fn new() -> Self {
-        Self::with_string("")
-    }
-
-    pub fn with_string(value: impl Into<String>) -> Self {
         Self {
-            value: value.into(),
+            value: String::new(),
             binding: None,
             action: None,
             commit: None,
@@ -54,13 +50,15 @@ impl TextField {
         }
     }
 
-    pub fn label_with_string(value: impl Into<String>) -> Self {
+    /// Creates the static label behind [`crate::Text`].
+    pub(crate) fn label(value: impl Into<String>) -> Self {
         let mut label = Self {
+            value: value.into(),
             editable: false,
             selectable: false,
             bordered: false,
             draws_background: false,
-            ..Self::with_string(value)
+            ..Self::new()
         };
         label.layout = LayoutStyle::leaf(Size::default());
         label.resize_label();

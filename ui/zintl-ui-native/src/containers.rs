@@ -109,12 +109,12 @@ impl View for ScrollView {
 
 /// One page of a [`TabView`].
 #[derive(Clone)]
-pub struct TabViewItem {
+pub struct Tab {
     title: String,
     content: ElementFactory<RenderNode>,
 }
 
-impl TabViewItem {
+impl Tab {
     pub fn new<V>(title: impl Into<String>, content: V) -> Self
     where
         V: Clone + IntoElement<Output = RenderNode> + 'static,
@@ -129,7 +129,7 @@ impl TabViewItem {
 /// A native tab view that shows one page at a time.
 #[derive(Clone)]
 pub struct TabView {
-    items: Vec<TabViewItem>,
+    items: Vec<Tab>,
     selected: usize,
     store: Option<Store<usize>>,
     action: Option<Rc<SelectionAction>>,
@@ -141,7 +141,7 @@ impl TabView {
     /// Inset between the tab view's content area and each page.
     const PAGE_PADDING: f32 = 12.0;
 
-    pub fn new(items: impl IntoIterator<Item = TabViewItem>) -> Self {
+    pub fn new(items: impl IntoIterator<Item = Tab>) -> Self {
         Self {
             items: items.into_iter().collect(),
             selected: 0,

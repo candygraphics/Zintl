@@ -33,7 +33,7 @@ impl View for MainView {
             .id("main-window")
             .content(
                 VStack::new(list![
-                    NumberField::integer()
+                    IntegerField::new()
                         .range(0..=i64::MAX)
                         .grouping(true)
                         .bind(quantity)
@@ -55,7 +55,7 @@ impl View for MainView {
                         let copied = copied.map_or("-".to_owned(), |value| value.to_string());
                         Text::new(format!("Copied: {copied}")).id("copied-value")
                     }),
-                    NumberField::integer_optional()
+                    IntegerField::optional()
                         .range(0..=100)
                         .placeholder("None")
                         .bind(count)

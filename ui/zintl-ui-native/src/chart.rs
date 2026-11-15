@@ -6,9 +6,11 @@ use zintl_ui::element::{ElementFactory, IntoElement};
 use zintl_ui::view::View;
 use zintl_ui_layout::{Axis, CrossAxisAlignment, LayoutDimension, LayoutStyle, Size};
 
+use crate::graphics::Graphics2D;
+use crate::modifiers;
 use crate::{
-    AccessibilityRole, Attach, Canvas2D, Canvas2DHandler, Color, Context, Element, Frame,
-    Graphics2D, Layout, ListFactory, NativeView, PaletteColor, RenderNode, Text, TextAlignment,
+    AccessibilityRole, Attach, Canvas2D, Canvas2DHandler, Color, Container, Context, Element,
+    Frame, Layout, ListFactory, NativeView, PaletteColor, RenderNode, Text, TextAlignment,
     ViewModifiers, list,
 };
 
@@ -180,7 +182,7 @@ impl BarChart {
     /// Returns a column of `width` points that shows `text` on one line, truncated if longer.
     ///
     /// Fixed columns give every row's bar the same track width, so bars share one scale.
-    fn column(text: String, width: f32, alignment: TextAlignment) -> zintl_ui_native::View {
+    fn column(text: String, width: f32, alignment: TextAlignment) -> Container {
         let mut layout = LayoutStyle::stack(Axis::Vertical, 0.0);
         layout.width = LayoutDimension::Points(width);
         // The bar carries the label and value for accessibility, so the texts are hidden.
@@ -189,7 +191,7 @@ impl BarChart {
             .line_limit(1)
             .fill_width()
             .accessibility_hidden();
-        zintl_ui_native::View::new(layout, list![text])
+        Container::new(layout, list![text])
     }
 
     /// Builds the row for `bar`, whose bar takes `fraction` of the track.
@@ -214,16 +216,16 @@ impl BarChart {
         let mut bar_layout = LayoutStyle::stack(Axis::Vertical, 0.0);
         bar_layout.width = LayoutDimension::Percent(fraction);
         bar_layout.height = LayoutDimension::Points(Self::BAR_HEIGHT);
-        let bar_view = zintl_ui_native::View::new(bar_layout, list![fill]);
+        let bar_view = Container::new(bar_layout, list![fill]);
         let mut track = LayoutStyle::stack(Axis::Horizontal, 0.0);
         track.grow = 1.0;
         track.minimum_size = Some(Size::new(0.0, Self::BAR_HEIGHT));
-        let track = zintl_ui_native::View::new(track, list![bar_view]);
+        let track = Container::new(track, list![bar_view]);
         let value = Self::column(value, value_width, TextAlignment::Trailing);
         let mut row = LayoutStyle::stack(Axis::Horizontal, 8.0);
         row.cross_axis_alignment = CrossAxisAlignment::Center;
         row.width = LayoutDimension::Percent(1.0);
-        ElementFactory::new(zintl_ui_native::View::new(row, list![label, track, value]))
+        ElementFactory::new(Container::new(row, list![label, track, value]))
     }
 
     /// Returns the label and value column widths: the fixed ones, or the widest estimate.
@@ -255,18 +257,12 @@ impl NativeView for BarChart {
         let mut layout = LayoutStyle::stack(Axis::Vertical, 6.0);
         layout.width = LayoutDimension::Percent(1.0);
         // The group carries the chart's ID and scopes its bars for assistive apps and UI tests.
-        zintl_ui_native::View::new(layout, rows)
+        Container::new(layout, rows)
             .accessibility_role(AccessibilityRole::Group)
             .native_element(cx)
     }
 
-    fn modifiers(&self) -> &ViewModifiers {
-        &self.modifiers
-    }
-
-    fn modifiers_mut(&mut self) -> &mut ViewModifiers {
-        &mut self.modifiers
-    }
+    modifiers!();
 }
 
 impl View for BarChart {

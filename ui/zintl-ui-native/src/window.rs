@@ -5,10 +5,12 @@ use zintl_ui::list;
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
 
+use zintl_ui_backend_core::WindowStyle;
+
 use crate::menu::MenuActions;
 use crate::{
     Alert, ColorPanel, Context, DocumentState, Element, EventKind, FileDialog, Rect, RenderNode,
-    Sidebar, TitleBar, Toolbar, UndoState, WindowStyle,
+    Sidebar, TitleBar, Toolbar, UndoState,
 };
 
 type Action = dyn for<'a> Fn(&mut Context<'a>);
@@ -108,6 +110,14 @@ impl Window {
         }
     }
 
+    /// Creates a floating utility panel, such as an inspector or palette.
+    pub fn panel(bounds: Rect, title: impl Into<String>) -> Self {
+        Self {
+            style: WindowStyle::Panel,
+            ..Self::new(bounds, title)
+        }
+    }
+
     pub fn sidebar(mut self, sidebar: Sidebar) -> Self {
         self.sidebar = Some(sidebar);
         self
@@ -131,12 +141,6 @@ impl Window {
 
     pub fn title_bar(mut self, title_bar: TitleBar) -> Self {
         self.title_bar = title_bar;
-        self
-    }
-
-    /// Selects the native window class; changing it recreates the window.
-    pub fn style(mut self, style: WindowStyle) -> Self {
-        self.style = style;
         self
     }
 

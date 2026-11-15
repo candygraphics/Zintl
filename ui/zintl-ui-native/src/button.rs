@@ -15,6 +15,26 @@ use crate::{
 type Action = dyn for<'a> Fn(&mut Context<'a>);
 type StateAction = dyn for<'a> Fn(&mut Context<'a>, bool);
 
+/// The bezel drawn around a [`Button`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ButtonStyle {
+    /// The standard rounded push button.
+    #[default]
+    Push,
+    /// A push button that grows to fit multi-line titles.
+    Flexible,
+    /// Only the title or symbol.
+    Borderless,
+    Toolbar,
+    /// A compact button for accessory bars.
+    Accessory,
+    Circular,
+    /// The round question mark button.
+    Help,
+    /// A disclosure triangle in a push button.
+    Disclosure,
+}
+
 #[derive(Clone)]
 pub struct Button {
     title: String,
@@ -54,7 +74,7 @@ impl Button {
     }
 
     /// Creates a checkbox whose title is drawn beside the box.
-    pub fn checkbox(title: impl Into<String>) -> Self {
+    pub(crate) fn checkbox(title: impl Into<String>) -> Self {
         let title = title.into();
         let width = title.chars().count() as f32 * 7.0 + 24.0;
         let mut button = Self::new(title).button_type(ButtonType::Checkbox);
@@ -63,7 +83,7 @@ impl Button {
     }
 
     /// Creates a radio button; group radios by binding them to one selection.
-    pub fn radio(title: impl Into<String>) -> Self {
+    pub(crate) fn radio(title: impl Into<String>) -> Self {
         let title = title.into();
         let width = title.chars().count() as f32 * 7.0 + 24.0;
         let mut button = Self::new(title).button_type(ButtonType::Radio);
@@ -71,17 +91,32 @@ impl Button {
         button
     }
 
-    pub fn button_type(mut self, button_type: ButtonType) -> Self {
+    pub(crate) fn button_type(mut self, button_type: ButtonType) -> Self {
         self.button_type = button_type;
         self
     }
 
     /// Sets the bezel; `None` draws a borderless button.
-    pub fn bezel_style(mut self, bezel: Option<BezelStyle>) -> Self {
+    pub(crate) fn bezel_style(mut self, bezel: Option<BezelStyle>) -> Self {
         self.bezel = bezel;
         self
     }
 
+    /// Selects the bezel drawn around the button.
+    pub fn style(self, style: ButtonStyle) -> Self {
+        self.bezel_style(match style {
+            ButtonStyle::Push => Some(BezelStyle::Push),
+            ButtonStyle::Flexible => Some(BezelStyle::FlexiblePush),
+            ButtonStyle::Borderless => None,
+            ButtonStyle::Toolbar => Some(BezelStyle::Toolbar),
+            ButtonStyle::Accessory => Some(BezelStyle::AccessoryBarAction),
+            ButtonStyle::Circular => Some(BezelStyle::Circular),
+            ButtonStyle::Help => Some(BezelStyle::Help),
+            ButtonStyle::Disclosure => Some(BezelStyle::PushDisclosure),
+        })
+    }
+
+    /// `Default` answers Return, `Cancel` answers Escape, and `Destructive` warns.
     pub fn role(mut self, role: ButtonRole) -> Self {
         self.role = role;
         self
@@ -103,18 +138,17 @@ impl Button {
     }
 
     /// Sets the initial state of a toggle, checkbox, or radio button.
-    pub fn on(mut self, on: bool) -> Self {
+    pub(crate) fn on(mut self, on: bool) -> Self {
         self.on = on;
         self
     }
 
     /// Reads and writes the on state of a toggle, checkbox, or radio button.
-    pub fn bind_state(mut self, store: Store<bool>) -> Self {
+    pub(crate) fn bind_state(mut self, store: Store<bool>) -> Self {
         self.state = Some(store);
         self
     }
 
-    /// Schedules `action` when the user activates this button.
     /// Shows `menu` below the button when clicked, like a pull-down button.
     ///
     /// The button then runs the chosen item's action instead of `on_click`.
@@ -140,7 +174,7 @@ impl Button {
     }
 
     /// Runs after a toggle, checkbox, or radio button changes state.
-    pub fn on_state_change(
+    pub(crate) fn on_state_change(
         mut self,
         action: impl for<'a> Fn(&mut Context<'a>, bool) + 'static,
     ) -> Self {

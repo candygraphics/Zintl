@@ -215,7 +215,7 @@ impl Table {
     fn cells(&self, row: &TableRow) -> impl Iterator<Item = ElementFactory<RenderNode>> {
         // Each cell needs exactly one native view, so blanks are empty containers.
         let blank = || {
-            ElementFactory::new(crate::View::new(
+            ElementFactory::new(crate::Container::new(
                 LayoutStyle::leaf(Size::new(0.0, 0.0)),
                 Vec::new(),
             ))
@@ -225,8 +225,9 @@ impl Table {
         // The table shows the menu of the clicked row's first cell, so it carries the row's menu.
         if let Some(menu) = row.menu.clone() {
             let first = cells.remove(0);
-            let wrapper = crate::View::new(LayoutStyle::stack(Axis::Vertical, 0.0), vec![first])
-                .context_menu(menu);
+            let wrapper =
+                crate::Container::new(LayoutStyle::stack(Axis::Vertical, 0.0), vec![first])
+                    .context_menu(menu);
             cells.insert(0, ElementFactory::new(wrapper));
         }
         cells.into_iter()

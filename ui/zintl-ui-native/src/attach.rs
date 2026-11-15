@@ -316,8 +316,8 @@ mod tests {
     use zintl_ui_layout::{Axis, LayoutDimension, LayoutStyle, Size};
 
     use crate::{
-        Attach, Button, Control, Layout, RenderNode, ScrollView, Slider, Table, TableColumn,
-        TableRow, TextField, View,
+        Attach, Button, Container, Control, Layout, RenderNode, ScrollView, Slider, Table,
+        TableColumn, TableRow, Text, TextField,
     };
 
     /// A view mounted on the headless backend, read back as render nodes.
@@ -380,8 +380,8 @@ mod tests {
             assert_eq!(id.as_deref(), Some("target"));
         }
 
-        fn empty() -> View {
-            View::new(LayoutStyle::stack(Axis::Vertical, 0.0), Vec::new())
+        fn empty() -> Container {
+            Container::new(LayoutStyle::stack(Axis::Vertical, 0.0), Vec::new())
         }
     }
 
@@ -390,8 +390,8 @@ mod tests {
         // Verifies controls, text, and containers share the same size and ID modifiers.
         Mounted::assert_modifiers_reach(Button::new("Save"));
         Mounted::assert_modifiers_reach(TextField::new());
-        Mounted::assert_modifiers_reach(TextField::label_with_string("Label"));
-        Mounted::assert_modifiers_reach(Slider::new(0.0, 1.0));
+        Mounted::assert_modifiers_reach(Text::new("Label"));
+        Mounted::assert_modifiers_reach(Slider::new(0.0..=1.0));
         Mounted::assert_modifiers_reach(ScrollView::new(Mounted::empty()));
         Mounted::assert_modifiers_reach(Mounted::empty());
     }
@@ -441,9 +441,8 @@ mod tests {
     fn label_given_a_width_wraps_to_it() {
         // Verifies a label that takes its parent's width wraps instead of reserving its text's width.
         let text = "A sentence that is long enough to wrap";
-        let (natural, _, _) = Mounted::new(TextField::label_with_string(text)).view(&[]);
-        let (filling, _, _) =
-            Mounted::new(TextField::label_with_string(text).fill_width()).view(&[]);
+        let (natural, _, _) = Mounted::new(Text::new(text)).view(&[]);
+        let (filling, _, _) = Mounted::new(Text::new(text).fill_width()).view(&[]);
 
         assert!(!natural.wraps);
         assert!(natural.minimum_size.is_some_and(|size| size.width > 0.0));
@@ -456,11 +455,11 @@ mod tests {
     fn disabling_a_container_disables_the_views_inside_it() {
         // Verifies a disabled container disables its descendants, whatever they declare themselves.
         let mounted = Mounted::new(
-            View::new(
+            Container::new(
                 LayoutStyle::stack(Axis::Vertical, 0.0),
                 crate::list![
                     Button::new("Save").enabled(true),
-                    View::new(
+                    Container::new(
                         LayoutStyle::stack(Axis::Vertical, 0.0),
                         crate::list![TextField::new()],
                     ),
@@ -468,7 +467,7 @@ mod tests {
             )
             .enabled(false),
         );
-        let enabled = Mounted::new(View::new(
+        let enabled = Mounted::new(Container::new(
             LayoutStyle::stack(Axis::Vertical, 0.0),
             crate::list![Button::new("Save")],
         ));
@@ -497,7 +496,7 @@ mod tests {
     fn table_with_a_placeholder_keeps_its_id_on_the_table() {
         // Verifies the ID names the native table, not the container that overlays the placeholder.
         let table = Table::new([TableColumn::new("Name")], Vec::<TableRow>::new())
-            .empty_content(TextField::label_with_string("No rows"))
+            .empty_content(Text::new("No rows"))
             .id("items");
         let mounted = Mounted::new(table);
 
