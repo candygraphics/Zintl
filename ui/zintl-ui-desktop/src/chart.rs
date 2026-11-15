@@ -48,7 +48,8 @@ impl ChartBar {
 /// Horizontal bars whose lengths are proportional to their values, such as a breakdown of a total.
 ///
 /// Each row shows a label, the bar, and the formatted value. The largest
-/// value fills the width beside the labels; negative values show no bar.
+/// value, or [`BarChart::maximum`], fills the width beside the labels;
+/// negative values show no bar.
 /// Accessibility reports the chart as a group and each bar with its label
 /// and formatted value.
 #[derive(Clone)]
@@ -56,6 +57,7 @@ pub struct BarChart {
     bars: Vec<ChartBar>,
     format: Rc<FormatValue>,
     color: Color,
+    maximum: Option<f64>,
     id: Option<String>,
     attachments: Attachments,
 }
@@ -71,6 +73,7 @@ impl BarChart {
             bars: bars.into_iter().collect(),
             format: Rc::new(|value| format!("{value}")),
             color: Color::rgb(0.0, 0.48, 1.0),
+            maximum: None,
             id: None,
             attachments: Attachments::default(),
         }
@@ -88,19 +91,33 @@ impl BarChart {
         self
     }
 
+    /// Sets the value that fills the track, such as the total of a breakdown.
+    ///
+    /// Larger values also fill the track. By default the largest value fills it.
+    pub fn maximum(mut self, maximum: f64) -> Self {
+        self.maximum = Some(maximum);
+        self
+    }
+
     /// Identifies the chart's accessibility group.
     pub fn id(mut self, id: impl Into<String>) -> Self {
         self.id = Some(id.into());
         self
     }
 
-    /// Returns each bar's length as a fraction of the longest one.
-    pub fn fractions(bars: &[ChartBar]) -> Vec<f32> {
-        let largest = bars.iter().map(|bar| bar.value).fold(0.0_f64, f64::max);
-        bars.iter()
+    /// Returns each bar's length as a fraction of the track.
+    pub fn fractions(&self) -> Vec<f32> {
+        let maximum = self.maximum.unwrap_or_else(|| {
+            self.bars
+                .iter()
+                .map(|bar| bar.value)
+                .fold(0.0_f64, f64::max)
+        });
+        self.bars
+            .iter()
             .map(|bar| {
-                if largest > 0.0 {
-                    (bar.value.max(0.0) / largest) as f32
+                if maximum > 0.0 {
+                    (bar.value.max(0.0) / maximum).clamp(0.0, 1.0) as f32
                 } else {
                     0.0
                 }
@@ -214,7 +231,7 @@ impl NativeView for BarChart {
         let rows = self
             .bars
             .iter()
-            .zip(Self::fractions(&self.bars))
+            .zip(self.fractions())
             .map(|(bar, fraction)| self.row(bar, fraction, columns))
             .collect::<ListFactory<RenderNode>>();
         let mut layout = LayoutStyle::stack(Axis::Vertical, 6.0);

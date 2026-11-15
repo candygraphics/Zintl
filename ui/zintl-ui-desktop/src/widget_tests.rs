@@ -78,8 +78,23 @@ fn bar_lengths_follow_their_values() {
         ChartBar::new("Transport", 1740.0),
         ChartBar::new("Refund", -20.0),
     ];
-    assert_eq!(BarChart::fractions(&bars), [1.0, 0.5, 0.0]);
-    assert_eq!(BarChart::fractions(&[ChartBar::new("Empty", 0.0)]), [0.0]);
+    assert_eq!(BarChart::new(bars).fractions(), [1.0, 0.5, 0.0]);
+    assert_eq!(
+        BarChart::new([ChartBar::new("Empty", 0.0)]).fractions(),
+        [0.0]
+    );
+}
+
+#[test]
+fn bar_chart_maximum_sets_the_value_that_fills_the_track() {
+    // Verifies bars are a share of the given maximum, and values above it fill the track.
+    let chart = BarChart::new([
+        ChartBar::new("Utilities", 52.0),
+        ChartBar::new("Food", 25.0),
+        ChartBar::new("Over", 150.0),
+    ])
+    .maximum(100.0);
+    assert_eq!(chart.fractions(), [0.52, 0.25, 1.0]);
 }
 
 #[test]

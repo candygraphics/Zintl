@@ -68,4 +68,13 @@ final class ChartTests: ZintlUITestCase {
     XCTAssertEqual(app.groups["expenses"].images.count, 3)
     XCTAssertEqual(app.groups["income"].images.count, 3)
   }
+
+  /// Verifies a bar at half the chart's maximum fills half the track.
+  func testMaximumSetsTheValueThatFillsTheTrack() throws {
+    try launch(scenario: "chart")
+
+    let rent = bar("expenses-rent")
+    XCTAssertTrue(rent.waitToExist(timeout: 2))
+    XCTAssertEqual(bar("expenses-food").frame.width, rent.frame.width / 2, accuracy: 1)
+  }
 }

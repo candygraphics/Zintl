@@ -44,6 +44,7 @@ impl View for MainView {
             ChartBar::new("Food", 1000.0).id("expenses-food"),
             ChartBar::new("Other", 300.0).id("expenses-other"),
         ])
+        .maximum(2000.0)
         .value_format(whole)
         .id("expenses");
         let income = BarChart::new([
