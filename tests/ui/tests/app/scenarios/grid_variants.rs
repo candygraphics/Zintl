@@ -1,9 +1,25 @@
 use zintl_ui_desktop::*;
 
-/// Two one-column grids of rows, one striped and one plain.
+/// Two one-column grids of rows, one striped and one plain, and a four-column grid whose heading
+/// spans every column between two groups of rows.
 pub struct MainView;
 
 impl MainView {
+    /// Builds one row of four cells whose IDs start with `prefix`; each cell fills its column.
+    fn cells(prefix: &str, titles: [&str; 4]) -> ListFactory<RenderNode> {
+        titles
+            .iter()
+            .enumerate()
+            .map(|(column, title)| {
+                ElementFactory::new(
+                    Text::new(*title)
+                        .id(format!("{prefix}-{column}"))
+                        .fill_width(),
+                )
+            })
+            .collect()
+    }
+
     /// Builds four rows whose IDs start with `prefix`.
     fn rows(prefix: &str) -> ListFactory<RenderNode> {
         (0..4)
@@ -22,7 +38,7 @@ impl View for MainView {
     type Output = RenderNode;
 
     fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
-        Window::new(Rect::new(100.0, 100.0, 360.0, 360.0), "Zintl Grid Variants UI Test")
+        Window::new(Rect::new(100.0, 100.0, 360.0, 420.0), "Zintl Grid Variants UI Test")
             .id("main-window")
             .content(
                 VStack::new(list![
@@ -31,6 +47,17 @@ impl View for MainView {
                         .spacing(0.0)
                         .fill_width(),
                     Grid::new(1, Self::rows("plain")).spacing(0.0).fill_width(),
+                    Grid::new(4, {
+                        let mut children = Self::cells("food", ["Food", "Bar", "3480", "62%"]);
+                        children.push(ElementFactory::new(
+                            GridCell::new(Text::new("Transport").id("heading").fill_width())
+                                .column_span(4),
+                        ));
+                        children.extend(Self::cells("bus", ["Bus pass", "Bar", "1200", "21%"]));
+                        children
+                    })
+                    .spacing(6.0)
+                    .fill_width(),
                 ])
                 .spacing(24.0)
                 .fill_width(),

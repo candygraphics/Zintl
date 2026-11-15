@@ -125,6 +125,10 @@ pub struct LayoutStyle {
     pub arrangement: Arrangement,
     /// This node's cell when its parent is a grid.
     pub grid_cell: Option<GridCell>,
+    /// Columns this node covers when its grid parent places it without a `grid_cell`.
+    ///
+    /// A span that does not fit the rest of the row starts the next row.
+    pub column_span: u16,
     /// Stretches across the parent's cross axis even when the parent centers its children.
     pub stretches: bool,
     /// A leaf whose height depends on the width it gets, such as wrapping text.
@@ -150,6 +154,7 @@ impl LayoutStyle {
             ignores_safe_area: false,
             arrangement: Arrangement::Flex,
             grid_cell: None,
+            column_span: 1,
             wraps: false,
             stretches: false,
         }
@@ -180,6 +185,7 @@ impl LayoutStyle {
             ignores_safe_area: false,
             arrangement: Arrangement::Flex,
             grid_cell: None,
+            column_span: 1,
             wraps: false,
             stretches: false,
         }
@@ -303,9 +309,17 @@ impl LayoutTree {
                     let mut child_style = self.tree.style(*child)?.clone();
                     // Declared cells come from `to_taffy_style`; the rest follow in order.
                     if child_style.grid_row.start == GridPlacement::Auto {
+                        let span = match child_style.grid_column.end {
+                            GridPlacement::Span(span) => span.clamp(1, columns),
+                            _ => 1,
+                        };
+                        // A span that does not fit the rest of the row starts the next one.
+                        if next % columns + span > columns {
+                            next += columns - next % columns;
+                        }
                         child_style.grid_row = Self::cell_line(next / columns, 1);
-                        child_style.grid_column = Self::cell_line(next % columns, 1);
-                        next += 1;
+                        child_style.grid_column = Self::cell_line(next % columns, span);
+                        next += span;
                     }
                     self.tree.set_style(*child, child_style)?;
                 }
@@ -501,6 +515,14 @@ fn to_taffy_style(style: LayoutStyle) -> TaffyStyle {
                 } else {
                     span(cell.column_span)
                 },
+            },
+        ),
+        // Auto-placed spans are read back when the grid parent places its children.
+        None if style.column_span > 1 => (
+            Line::default(),
+            Line {
+                start: GridPlacement::Auto,
+                end: span(style.column_span),
             },
         ),
         None => (Line::default(), Line::default()),
@@ -1019,5 +1041,37 @@ mod tests {
         let field = tree.layout(field).unwrap();
         assert_eq!((field.y, field.height), (39.0, 22.0));
         assert_eq!(tree.layout(table).unwrap().height, 100.0);
+    }
+
+    #[test]
+    fn spanning_children_cover_whole_rows() {
+        // Verifies a child spanning every column takes a row of its own and the next child starts a new row.
+        let mut tree = LayoutTree::new();
+        let cell = |tree: &mut LayoutTree, width: f32| {
+            tree.create_node(LayoutStyle::leaf(Size::new(width, 20.0)), &[])
+                .unwrap()
+        };
+        let first = cell(&mut tree, 40.0);
+        let mut heading_style = LayoutStyle::leaf(Size::new(10.0, 20.0));
+        heading_style.column_span = 3;
+        let heading = tree.create_node(heading_style, &[]).unwrap();
+        let second = cell(&mut tree, 60.0);
+        let third = cell(&mut tree, 50.0);
+        let mut grid_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        grid_style.arrangement = Arrangement::Grid { columns: 3 };
+        grid_style.cross_axis_alignment = CrossAxisAlignment::Start;
+        let grid = tree
+            .create_node(grid_style, &[first, heading, second, third])
+            .unwrap();
+
+        tree.compute_fitting(grid, None, None).unwrap();
+
+        let heading = tree.layout(heading).unwrap();
+        // The first row has one cell; the heading moves to the next row and covers all three columns.
+        assert_eq!((heading.x, heading.y), (0.0, 20.0));
+        assert_eq!(heading.width, tree.layout(grid).unwrap().width);
+        let second = tree.layout(second).unwrap();
+        assert_eq!((second.x, second.y), (0.0, 40.0));
+        assert_eq!(tree.layout(third).unwrap().x, second.width);
     }
 }

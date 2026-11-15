@@ -15,7 +15,7 @@ mod arrangements;
 mod controls;
 mod split_view;
 
-pub use arrangements::{DisclosureGroup, Grid, ZStack};
+pub use arrangements::{DisclosureGroup, Grid, GridCell, ZStack};
 pub use controls::{
     ColorWell, ComboBox, NumberField, Picker, PickerStyle, ScrollView, SearchField, Slider, Tab,
     TabView, Toggle, ToggleStyle,
@@ -55,7 +55,7 @@ pub use zintl_ui_native::{
 };
 
 native_view!(
-    Text, Button, TextField, HStack, VStack, Spacer, ZStack, Grid
+    Text, Button, TextField, HStack, VStack, Spacer, ZStack, Grid, GridCell
 );
 
 #[derive(Clone)]

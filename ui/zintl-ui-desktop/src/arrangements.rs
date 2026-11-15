@@ -2,7 +2,7 @@
 
 use zintl_ui::element::{ElementFactory, IntoElement};
 use zintl_ui::view::View;
-use zintl_ui_layout::{Arrangement, Axis, GridCell, LayoutDimension, LayoutStyle, Size};
+use zintl_ui_layout::{Arrangement, Axis, LayoutDimension, LayoutStyle, Size};
 
 use crate::{
     AccessibilityRole, Attach, Attachments, Canvas2D, Canvas2DHandler, Color, Context, Element,
@@ -154,7 +154,7 @@ impl NativeView for Grid {
         if self.striped {
             for row in (1..rows).step_by(2) {
                 let mut layout = LayoutStyle::stack(Axis::Horizontal, 0.0);
-                layout.grid_cell = Some(GridCell {
+                layout.grid_cell = Some(zintl_ui_layout::GridCell {
                     row: row as u16,
                     column: 0,
                     column_span: 0,
@@ -167,6 +167,53 @@ impl NativeView for Grid {
         }
         children.extend(self.children.iter().cloned());
         Container::element(self.layout, &self.id, children, cx)
+    }
+
+    fn attachments(&self) -> &Attachments {
+        &self.attachments
+    }
+
+    fn attachments_mut(&mut self) -> &mut Attachments {
+        &mut self.attachments
+    }
+}
+
+/// A [`Grid`] child that covers several columns, such as a heading between groups of rows.
+///
+/// A span that does not fit the rest of its row starts the next row. Striped
+/// grids count one cell per child, so their stripes do not account for spans.
+#[derive(Clone)]
+pub struct GridCell {
+    content: ElementFactory<RenderNode>,
+    column_span: u16,
+    attachments: Attachments,
+}
+
+impl GridCell {
+    pub fn new<V>(content: V) -> Self
+    where
+        V: Clone + IntoElement<Output = RenderNode> + 'static,
+    {
+        Self {
+            content: ElementFactory::new(content),
+            column_span: 1,
+            attachments: Attachments::default(),
+        }
+    }
+
+    /// Covers `columns` columns, at most the grid's column count.
+    pub fn column_span(mut self, columns: u16) -> Self {
+        self.column_span = columns.max(1);
+        self
+    }
+}
+
+impl NativeView for GridCell {
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        // The content stretches across the columns the cell covers.
+        let mut layout = LayoutStyle::stack(Axis::Vertical, 0.0);
+        layout.column_span = self.column_span;
+        Container::element(layout, &None, vec![self.content.clone()], cx)
     }
 
     fn attachments(&self) -> &Attachments {
