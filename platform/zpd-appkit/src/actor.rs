@@ -103,6 +103,10 @@ pub enum WindowEventKind {
     RowActivated {
         id: String,
     },
+    /// The user pressed Delete or Forward Delete while a list row was selected.
+    RowDeleteRequested {
+        id: String,
+    },
     /// A continuous control such as a slider or stepper changed.
     ValueChanged {
         value: f64,

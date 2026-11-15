@@ -22,6 +22,7 @@ pub enum EventKind {
     SidebarSelectionChanged,
     ListSelectionChanged,
     RowActivated,
+    RowDeleteRequested,
     ToolbarItemClicked,
     ToolbarSearchChanged,
     SidebarSearchChanged,
@@ -99,6 +100,10 @@ pub enum Event {
     RowActivated {
         id: String,
     },
+    /// The user pressed Delete or Forward Delete while a table row was selected.
+    RowDeleteRequested {
+        id: String,
+    },
     SidebarSearchChanged {
         value: String,
     },
@@ -146,6 +151,7 @@ impl EventTrait for Event {
             Self::SidebarSelectionChanged { .. } => EventKind::SidebarSelectionChanged,
             Self::ListSelectionChanged { .. } => EventKind::ListSelectionChanged,
             Self::RowActivated { .. } => EventKind::RowActivated,
+            Self::RowDeleteRequested { .. } => EventKind::RowDeleteRequested,
             Self::ToolbarItemClicked { .. } => EventKind::ToolbarItemClicked,
             Self::ToolbarSearchChanged { .. } => EventKind::ToolbarSearchChanged,
             Self::SidebarSearchChanged { .. } => EventKind::SidebarSearchChanged,

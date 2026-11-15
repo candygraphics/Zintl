@@ -187,10 +187,12 @@ unsafe extern "C" fn activate_clicked_row(object: Id, _: zpd_objc::Sel, _: Id) {
     });
 }
 
-/// Activates the selected row on Return, and passes other keys to `NSTableView`.
+/// Activates the selected row on Return, reports Delete for it, and passes other keys on.
 unsafe extern "C" fn table_key_down(object: Id, _: zpd_objc::Sel, event: Id) {
     const RETURN: u16 = 36;
     const ENTER: u16 = 76;
+    const DELETE: u16 = 51;
+    const FORWARD_DELETE: u16 = 117;
     let shortcut_flags = native::NS_EVENT_MODIFIER_FLAG_COMMAND
         | native::NS_EVENT_MODIFIER_FLAG_CONTROL
         | native::NS_EVENT_MODIFIER_FLAG_OPTION;
@@ -206,6 +208,10 @@ unsafe extern "C" fn table_key_down(object: Id, _: zpd_objc::Sel, event: Id) {
         && match key {
             RETURN | ENTER => with_table_state(object, |state| {
                 state.emit_row(row, |id| WindowEventKind::RowActivated { id })
+            }),
+            // Without a selected row, the table handles the key as before.
+            DELETE | FORWARD_DELETE => with_table_state(object, |state| {
+                state.emit_row(row, |id| WindowEventKind::RowDeleteRequested { id })
             }),
             _ => false,
         };

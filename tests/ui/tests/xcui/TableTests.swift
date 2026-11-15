@@ -104,4 +104,36 @@ final class TableTests: ZintlUITestCase {
     app.typeKey(.return, modifierFlags: [])
     assertLabel("activated", "Activated: section-5")
   }
+
+  /// Verifies Delete reports the selected row, and does nothing without a selection.
+  func testDeleteKeyReportsTheSelectedRow() throws {
+    try launch(scenario: "table")
+
+    let fourth = app.staticTexts["name-4"]
+    XCTAssertTrue(fourth.waitToExist(timeout: 2))
+    fourth.click()
+    assertLabel("selection", "Selected: section-4")
+    app.typeKey(.delete, modifierFlags: [])
+    assertLabel("deleted", "Deleted: section-4")
+
+    // With the selection cleared by the app, Delete in the focused table reports nothing.
+    app.buttons["clear-selection"].click()
+    assertLabel("selection", "Selected: none")
+    app.typeKey(.delete, modifierFlags: [])
+    assertLabel("deleted", "Deleted: section-4")
+  }
+
+  /// Verifies Delete in a focused text field edits its text instead of reaching the table.
+  func testDeleteInATextFieldStaysInTheField() throws {
+    try launch(scenario: "table")
+
+    app.staticTexts["name-4"].click()
+    assertLabel("selection", "Selected: section-4")
+    let note = app.textFields["note"]
+    note.click()
+    note.typeKey(.end, modifierFlags: [])
+    note.typeKey(.delete, modifierFlags: [])
+    XCTAssertTrue(waitForValue(note, "draf"))
+    assertLabel("deleted", "Deleted: ")
+  }
 }

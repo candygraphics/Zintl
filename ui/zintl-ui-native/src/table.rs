@@ -81,6 +81,7 @@ pub struct Table {
     selection: Option<Store<Option<String>>>,
     action: Option<Rc<SelectionAction>>,
     activate: Option<Rc<RowAction>>,
+    delete: Option<Rc<RowAction>>,
     layout: LayoutStyle,
     id: Option<String>,
     attachments: Attachments,
@@ -98,6 +99,7 @@ impl Table {
             selection: None,
             action: None,
             activate: None,
+            delete: None,
             layout: LayoutStyle::fill(Size::new(0.0, 0.0)),
             id: None,
             attachments: Attachments::default(),
@@ -131,6 +133,14 @@ impl Table {
         action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static,
     ) -> Self {
         self.activate = Some(Rc::new(action));
+        self
+    }
+
+    /// Runs with the selected row's ID when Delete or Forward Delete is pressed in the table.
+    ///
+    /// The app decides what to do, for example ask before deleting.
+    pub fn on_delete(mut self, action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static) -> Self {
+        self.delete = Some(Rc::new(action));
         self
     }
 
@@ -204,6 +214,14 @@ impl NativeView for Table {
             Some(activate) => element.on_event(EventKind::RowActivated, move |cx, event| {
                 if let Event::RowActivated { id } = event {
                     activate(cx, &id);
+                }
+            }),
+            None => element,
+        };
+        let element = match self.delete.clone() {
+            Some(delete) => element.on_event(EventKind::RowDeleteRequested, move |cx, event| {
+                if let Event::RowDeleteRequested { id } = event {
+                    delete(cx, &id);
                 }
             }),
             None => element,
