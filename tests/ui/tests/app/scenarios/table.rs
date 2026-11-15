@@ -6,6 +6,7 @@ pub struct MainView {
     activated: Store<String>,
     deleted: Store<String>,
     note: Store<String>,
+    log: Store<String>,
 }
 
 impl MainView {
@@ -15,6 +16,7 @@ impl MainView {
             activated: Store::default(),
             deleted: Store::default(),
             note: Store::default(),
+            log: Store::default(),
         }
     }
 }
@@ -27,18 +29,27 @@ impl View for MainView {
         self.activated = cx.store(String::new());
         self.deleted = cx.store(String::new());
         self.note = cx.store("draft".into());
+        self.log = cx.store(String::new());
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
-        let (selected, activated, deleted) = (self.selected, self.activated, self.deleted);
+        let (selected, activated, deleted, log) =
+            (self.selected, self.activated, self.deleted, self.log);
         let rows = (1..=50).map(|row| {
-            TableRow::new(
+            let table_row = TableRow::new(
                 format!("section-{row}"),
                 list![
                     Text::new(format!("Section {row}")).id(format!("name-{row}")),
                     Text::new(format!("{row}k000")).id(format!("length-{row}")),
                 ],
-            )
+            );
+            // Every row but the seventh has a menu.
+            if row == 7 {
+                return table_row;
+            }
+            let title = format!("Archive Section {row}");
+            table_row.context_menu([MenuItem::new(title.clone())
+                .on_select(move |cx| cx.update(log, |log| log.clone_from(&title)))])
         });
         let status = cx.watch(selected, |selected| {
             let selected = selected.as_deref().unwrap_or("none");
@@ -68,6 +79,7 @@ impl View for MainView {
                     HStack::new(list![select, clear]).spacing(8.0),
                     cx.watch(activated, |id| Text::new(format!("Activated: {id}")).id("activated")),
                     cx.watch(deleted, |id| Text::new(format!("Deleted: {id}")).id("deleted")),
+                    cx.watch(log, |log| Text::new(format!("Log: {log}")).id("log")),
                     // Delete typed here edits the text instead of reaching the table.
                     TextField::new().id("note").bind(self.note),
                     Table::new(columns, rows)

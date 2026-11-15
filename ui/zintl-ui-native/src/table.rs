@@ -6,10 +6,10 @@ use zintl_ui::element::{ElementFactory, IntoElement, KeyedElement, ListFactory};
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
 use zintl_ui_backend_core::{TextAlignment, ViewKind};
-use zintl_ui_layout::{LayoutDimension, LayoutStyle, Size};
+use zintl_ui_layout::{Axis, LayoutDimension, LayoutStyle, Size};
 
 use crate::attach::attachments;
-use crate::{Attachments, Context, Element, Event, EventKind, NativeView, RenderNode};
+use crate::{Attach, Attachments, Context, Element, Event, EventKind, Menu, NativeView, RenderNode};
 
 type SelectionAction = dyn for<'a> Fn(&mut Context<'a>, Option<&str>);
 type RowAction = dyn for<'a> Fn(&mut Context<'a>, &str);
@@ -54,6 +54,7 @@ impl TableColumn {
 pub struct TableRow {
     id: String,
     cells: ListFactory<RenderNode>,
+    menu: Option<Menu>,
 }
 
 impl TableRow {
@@ -64,7 +65,14 @@ impl TableRow {
         Self {
             id: id.into(),
             cells,
+            menu: None,
         }
+    }
+
+    /// Shows `menu` when the row is right-clicked, without changing the selection.
+    pub fn context_menu(mut self, menu: impl Into<Menu>) -> Self {
+        self.menu = Some(menu.into());
+        self
     }
 }
 
@@ -173,6 +181,13 @@ impl Table {
         };
         let mut cells = row.cells.clone();
         cells.resize_with(self.columns.len().max(1), blank);
+        // The table shows the menu of the clicked row's first cell, so it carries the row's menu.
+        if let Some(menu) = row.menu.clone() {
+            let first = cells.remove(0);
+            let wrapper = crate::View::new(LayoutStyle::stack(Axis::Vertical, 0.0), vec![first])
+                .context_menu(menu);
+            cells.insert(0, ElementFactory::new(wrapper));
+        }
         cells.into_iter()
     }
 }

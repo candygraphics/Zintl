@@ -136,4 +136,25 @@ final class TableTests: ZintlUITestCase {
     XCTAssertTrue(waitForValue(note, "draf"))
     assertLabel("deleted", "Deleted: ")
   }
+
+  /// Verifies right-clicking a row shows that row's menu, and rows without one show none.
+  func testRowContextMenusRunTheirItems() throws {
+    try launch(scenario: "table")
+
+    let second = app.staticTexts["name-2"]
+    XCTAssertTrue(second.waitToExist(timeout: 2))
+    second.rightClick()
+    let archive = app.menuItems["Archive Section 2"]
+    XCTAssertTrue(archive.waitToExist(timeout: 2))
+    // Only the clicked row's items are shown.
+    XCTAssertFalse(app.menuItems["Archive Section 3"].exists)
+    archive.click()
+    assertLabel("log", "Log: Archive Section 2")
+    // Right-clicking does not select the row.
+    assertLabel("selection", "Selected: none")
+
+    app.staticTexts["name-7"].rightClick()
+    let items = app.menuItems.matching(NSPredicate(format: "title BEGINSWITH 'Archive'"))
+    XCTAssertFalse(waitUntil(timeout: 1) { items.count > 0 })
+  }
 }
