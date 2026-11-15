@@ -449,9 +449,14 @@ struct Stack {
 
 impl Stack {
     fn new(axis: Axis, children: ListFactory<RenderNode>) -> Self {
+        let mut layout = LayoutStyle::stack(axis, 8.0);
+        // Rows center their children, so a field beside a taller button keeps its own height.
+        if axis == Axis::Horizontal {
+            layout.cross_axis_alignment = CrossAxisAlignment::Center;
+        }
         Self {
             children,
-            layout: LayoutStyle::stack(axis, 8.0),
+            layout,
             id: None,
             attachments: Attachments::default(),
         }
@@ -520,7 +525,10 @@ macro_rules! stack {
                 self
             }
 
-            /// Positions children across the main axis; they stretch by default.
+            /// Positions children across the main axis.
+            ///
+            /// `HStack` centers its children by default and `VStack` stretches
+            /// them. Filling views such as tables stretch in either case.
             pub fn alignment(mut self, alignment: CrossAxisAlignment) -> Self {
                 self.stack.layout.cross_axis_alignment = alignment;
                 self
@@ -984,12 +992,15 @@ mod tests {
         );
         let tree = app.render_tree();
         let stack = &tree.children[0];
+        // Rows center their children by default.
+        let mut row = LayoutStyle::stack(Axis::Horizontal, 12.0);
+        row.cross_axis_alignment = CrossAxisAlignment::Center;
 
         assert_eq!(
             stack.value,
             RenderNode::View {
                 kind: ViewKind::Container,
-                layout: LayoutStyle::stack(Axis::Horizontal, 12.0),
+                layout: row,
                 id: None,
                 enabled: true,
                 title_bar_interactive: false,

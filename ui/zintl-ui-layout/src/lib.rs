@@ -125,6 +125,8 @@ pub struct LayoutStyle {
     pub arrangement: Arrangement,
     /// This node's cell when its parent is a grid.
     pub grid_cell: Option<GridCell>,
+    /// Stretches across the parent's cross axis even when the parent centers its children.
+    pub stretches: bool,
     /// A leaf whose height depends on the width it gets, such as wrapping text.
     ///
     /// Create it with [`LayoutTree::create_wrapping_leaf`], which measures it.
@@ -149,14 +151,16 @@ impl LayoutStyle {
             arrangement: Arrangement::Flex,
             grid_cell: None,
             wraps: false,
+            stretches: false,
         }
     }
 
-    /// A leaf that fills its parent's width and the remaining main-axis space.
+    /// A leaf that fills its parent's width, the remaining main-axis space, and the cross axis.
     pub const fn fill(minimum_size: Size) -> Self {
         let mut style = Self::leaf(minimum_size);
         style.width = LayoutDimension::Percent(1.0);
         style.grow = 1.0;
+        style.stretches = true;
         style
     }
 
@@ -177,6 +181,7 @@ impl LayoutStyle {
             arrangement: Arrangement::Flex,
             grid_cell: None,
             wraps: false,
+            stretches: false,
         }
     }
 }
@@ -529,6 +534,7 @@ fn to_taffy_style(style: LayoutStyle) -> TaffyStyle {
             CrossAxisAlignment::End => Some(AlignItems::END),
             CrossAxisAlignment::Stretch => Some(AlignItems::STRETCH),
         },
+        align_self: style.stretches.then_some(AlignItems::STRETCH),
         justify_content: match style.main_axis_distribution {
             MainAxisDistribution::Start => None,
             MainAxisDistribution::SpaceBetween => Some(JustifyContent::SPACE_BETWEEN),
@@ -990,5 +996,28 @@ mod tests {
         tree.compute_fitting(root, Some(150.0), None).unwrap();
         let wrapped = tree.layout(text).unwrap();
         assert_eq!((wrapped.width, wrapped.height), (150.0, 80.0));
+    }
+
+    #[test]
+    fn filling_leaves_stretch_in_centered_rows() {
+        // Verifies a filling view keeps the row's height while other children are centered.
+        let mut tree = LayoutTree::new();
+        let field = tree
+            .create_node(LayoutStyle::leaf(Size::new(100.0, 22.0)), &[])
+            .unwrap();
+        let table = tree
+            .create_node(LayoutStyle::fill(Size::new(0.0, 0.0)), &[])
+            .unwrap();
+        let mut row_style = LayoutStyle::stack(Axis::Horizontal, 0.0);
+        row_style.width = LayoutDimension::Points(400.0);
+        row_style.height = LayoutDimension::Points(100.0);
+        row_style.cross_axis_alignment = CrossAxisAlignment::Center;
+        let row = tree.create_node(row_style, &[field, table]).unwrap();
+
+        tree.compute(row, Size::new(400.0, 100.0)).unwrap();
+
+        let field = tree.layout(field).unwrap();
+        assert_eq!((field.y, field.height), (39.0, 22.0));
+        assert_eq!(tree.layout(table).unwrap().height, 100.0);
     }
 }

@@ -16,6 +16,18 @@ final class HStackLayoutTests: ZintlUITestCase {
     XCTAssertEqual(trailing.frame.minX - leading.frame.minX, 160 + 24, accuracy: 1)
   }
 
+  /// Verifies a row centers a text field beside a taller button instead of stretching it.
+  func testRowsCenterChildrenByDefault() throws {
+    try launch(scenario: "hstack")
+
+    let field = app.textFields["centered-field"]
+    let button = app.buttons["centered-button"]
+    XCTAssertTrue(field.waitToExist(timeout: 2))
+    XCTAssertLessThan(field.frame.height, 26)
+    XCTAssertGreaterThanOrEqual(field.frame.height, 20)
+    XCTAssertEqual(field.frame.midY, button.frame.midY, accuracy: 1)
+  }
+
   /// Verifies resizing relayouts children and later input does not restore the initial size.
   func testChildrenRelayoutWhenWindowResizes() throws {
     try launch(scenario: "hstack")
