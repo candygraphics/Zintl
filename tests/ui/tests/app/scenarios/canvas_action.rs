@@ -1,3 +1,5 @@
+use zintl_ui_desktop::canvas::*;
+use zintl_ui_desktop::graphics::*;
 use zintl_ui_desktop::*;
 
 /// What the strip reports to its view.

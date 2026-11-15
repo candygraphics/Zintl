@@ -12,7 +12,7 @@ use crate::{
     Text, VStack, ViewModifiers, list,
 };
 
-view!(ZStack, Grid, GridCell);
+native_view!(ZStack, Grid, GridCell);
 
 /// Stacks its children on top of each other, later children in front.
 ///

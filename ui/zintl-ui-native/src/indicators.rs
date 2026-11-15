@@ -1,7 +1,5 @@
 //! Views that show status without taking input.
 
-use zintl_ui::element::IntoElement;
-use zintl_ui::view::View;
 use zintl_ui_backend_core::ViewKind;
 use zintl_ui_layout::{Axis, LayoutDimension, LayoutStyle, Size};
 
@@ -54,13 +52,7 @@ impl NativeView for ProgressIndicator {
     }
 }
 
-impl View for ProgressIndicator {
-    type Output = RenderNode;
-
-    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
-        self.native_element(cx)
-    }
-}
+native_view!(ProgressIndicator);
 
 /// A thin line between groups of views.
 ///
@@ -114,10 +106,4 @@ impl NativeView for Separator {
     }
 }
 
-impl View for Separator {
-    type Output = RenderNode;
-
-    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
-        self.native_element(cx)
-    }
-}
+native_view!(Separator);

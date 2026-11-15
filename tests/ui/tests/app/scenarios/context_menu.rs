@@ -1,3 +1,4 @@
+use zintl_ui_desktop::menu::*;
 use zintl_ui_desktop::*;
 
 /// A label and a container, each with its own context menu.

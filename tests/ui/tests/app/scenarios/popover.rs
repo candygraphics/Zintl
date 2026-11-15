@@ -1,3 +1,4 @@
+use zintl_ui_desktop::dialog::*;
 use zintl_ui_desktop::*;
 
 /// A button that shows a popover holding a checkbox and a button that closes it from the app.

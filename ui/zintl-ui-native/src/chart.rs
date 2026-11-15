@@ -2,8 +2,7 @@
 
 use std::rc::Rc;
 
-use zintl_ui::element::{ElementFactory, IntoElement};
-use zintl_ui::view::View;
+use zintl_ui::element::ElementFactory;
 use zintl_ui_layout::{Axis, CrossAxisAlignment, LayoutDimension, LayoutStyle, Size};
 
 use crate::graphics::Graphics2D;
@@ -265,13 +264,7 @@ impl NativeView for BarChart {
     modifiers!();
 }
 
-impl View for BarChart {
-    type Output = RenderNode;
-
-    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
-        self.native_element(cx)
-    }
-}
+native_view!(BarChart);
 
 /// Fills a bar with one color, resolved for the appearance it is drawn in.
 #[derive(Clone)]

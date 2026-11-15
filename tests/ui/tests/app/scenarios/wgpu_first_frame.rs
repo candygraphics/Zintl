@@ -1,3 +1,5 @@
+use zintl_ui_desktop::canvas::*;
+use zintl_ui_desktop::thread::*;
 use zintl_ui_desktop::*;
 
 /// Reports its first setup and render; the view never changes its size or state.

@@ -11,13 +11,11 @@ use zintl_ui_layout::{LayoutStyle, Size};
 
 use crate::modifiers;
 use crate::{
-    Attach, Color, Context, Control, Element, Event, EventKind, NativeView, RenderNode,
+    Attach, Change, Color, Context, Control, Element, Event, EventKind, NativeView, RenderNode,
     ViewModifiers,
 };
 
-type Change<T> = dyn for<'a> Fn(&mut Context<'a>, T);
-
-view!(
+native_view!(
     Switch,
     Slider,
     PopUpButton,
@@ -1131,13 +1129,7 @@ impl NativeView for OptionalDatePicker {
     }
 }
 
-impl View for OptionalDatePicker {
-    type Output = RenderNode;
-
-    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
-        self.native_element(cx)
-    }
-}
+native_view!(OptionalDatePicker);
 
 /// A native search field that reports every edit.
 #[derive(Clone)]

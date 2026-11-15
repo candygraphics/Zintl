@@ -1,3 +1,5 @@
+use zintl_ui_desktop::canvas::*;
+use zintl_ui_desktop::menu::*;
 use zintl_ui_desktop::*;
 
 /// The standard menus with custom items, optionally translated to Japanese.

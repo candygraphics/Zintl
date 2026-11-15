@@ -1,3 +1,4 @@
+use zintl_ui_desktop::menu::*;
 use zintl_ui_desktop::*;
 
 /// A striped table of sections whose selection is shown below and can jump to a far row.

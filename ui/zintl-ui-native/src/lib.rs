@@ -1,7 +1,7 @@
 //! Declarative desktop views that render core `RenderNode` descriptions.
 
 /// Implements `View` for native views through their native element.
-macro_rules! view {
+macro_rules! native_view {
     ($($view:ident),* $(,)?) => {$(
         impl zintl_ui::view::View for $view {
             type Output = $crate::RenderNode;
@@ -33,14 +33,13 @@ mod sidebar;
 mod split_view;
 mod stack;
 mod table;
+pub mod testing;
 mod text;
 mod text_field;
 mod toolbar;
 mod types;
 mod window;
 
-#[cfg(test)]
-mod testing;
 #[cfg(test)]
 mod view_tests;
 #[cfg(test)]
@@ -99,6 +98,9 @@ pub use zintl_ui_backend_core::{
 };
 pub use zintl_ui_layout::{LayoutStyle, Size};
 
+/// An action that receives a control's new value.
+pub(crate) type Change<T> = dyn for<'a> Fn(&mut Context<'a>, T);
+
 /// The context views receive while rendering.
 pub type Context<'a> = <RenderNode as zintl_ui::renderer::RenderNode>::Context<'a>;
 
@@ -107,30 +109,13 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
-    use zintl_ui::composer::Composer;
-    use zintl_ui::renderer::{RenderBackend, RenderNode as _};
+    use zintl_ui::renderer::RenderNode as _;
     use zintl_ui::view::View;
-    use zintl_ui_backend_core::{HeadlessBackend, ViewKind};
+    use zintl_ui_backend_core::ViewKind;
     use zintl_ui_layout::{Axis, LayoutStyle};
 
     use super::*;
-
-    fn composer<E>(root: E) -> Composer<RenderNode, HeadlessBackend>
-    where
-        E: IntoElement<Output = RenderNode>,
-    {
-        let mut composer = Composer::new(HeadlessBackend::new());
-        composer.mount(root);
-        composer
-    }
-
-    fn root_id(composer: &Composer<RenderNode, HeadlessBackend>) -> NodeId {
-        let backend = composer.backend();
-        *backend
-            .children(backend.root())
-            .first()
-            .expect("the test tree must contain a root")
-    }
+    use crate::testing::Harness;
 
     fn assert_view<T: View<Output = RenderNode>>() {}
 
@@ -146,37 +131,36 @@ mod tests {
     #[test]
     fn list_children_preserve_mixed_view_order() {
         // Verifies containers accept ordered heterogeneous list children.
-        let composer = composer(Container::new(
+        let children = Harness::new(Container::new(
             LayoutStyle::stack(Axis::Vertical, 8.0),
             list![Button::new("First"), TextField::new(), Button::new("Last")],
-        ));
-        let children = composer.backend().children(root_id(&composer));
+        ))
+        .tree()
+        .children;
 
         assert_eq!(children.len(), 3);
         assert!(matches!(
-            composer.backend().value(children[0]),
-            Some(RenderNode::View { kind: ViewKind::Button(zintl_ui_backend_core::Button { title, .. }), .. }) if title == "First"
+            &children[0].value,
+            RenderNode::View { kind: ViewKind::Button(zintl_ui_backend_core::Button { title, .. }), .. } if title == "First"
         ));
         assert!(matches!(
-            composer.backend().value(children[1]),
-            Some(RenderNode::View {
+            children[1].value,
+            RenderNode::View {
                 kind: ViewKind::TextField { .. },
                 ..
-            })
+            }
         ));
         assert!(matches!(
-            composer.backend().value(children[2]),
-            Some(RenderNode::View { kind: ViewKind::Button(zintl_ui_backend_core::Button { title, .. }), .. }) if title == "Last"
+            &children[2].value,
+            RenderNode::View { kind: ViewKind::Button(zintl_ui_backend_core::Button { title, .. }), .. } if title == "Last"
         ));
     }
 
     #[test]
     fn text_field_presentations_share_one_native_kind() {
         // Verifies labels and editable fields are configurations of one text field node.
-        let label = composer(Text::new("Label"));
-        let field = composer(TextField::new());
-        let label = label.backend().value(root_id(&label)).unwrap();
-        let field = field.backend().value(root_id(&field)).unwrap();
+        let label = Harness::new(Text::new("Label")).tree().value;
+        let field = Harness::new(TextField::new()).tree().value;
 
         assert!(matches!(
             label,
@@ -204,16 +188,14 @@ mod tests {
                 ..
             }
         ));
-        assert!(label.same_kind(field));
+        assert!(label.same_kind(&field));
     }
 
     #[test]
     fn text_field_multiline_is_opt_in() {
         // Verifies text fields are single-line by default and opt into multiline rendering.
-        let single_line = composer(TextField::new());
-        let multiline = composer(TextField::new().multiline());
-        let single_line = single_line.backend().value(root_id(&single_line)).unwrap();
-        let multiline = multiline.backend().value(root_id(&multiline)).unwrap();
+        let single_line = Harness::new(TextField::new()).tree().value;
+        let multiline = Harness::new(TextField::new().multiline()).tree().value;
 
         assert!(matches!(
             single_line,
@@ -240,12 +222,11 @@ mod tests {
     #[test]
     fn window_title_bar_is_standard_by_default() {
         // Verifies Window::new keeps the standard title bar unless the builder changes it.
-        let normal = composer(Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Normal"));
-        let full_size = composer(
-            Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Hidden").title_bar(TitleBar::Hidden),
-        );
-        let normal = normal.backend().value(root_id(&normal)).unwrap();
-        let full_size = full_size.backend().value(root_id(&full_size)).unwrap();
+        let bounds = Rect::new(0.0, 0.0, 640.0, 480.0);
+        let normal = Harness::new(Window::new(bounds, "Normal")).tree().value;
+        let full_size = Harness::new(Window::new(bounds, "Hidden").title_bar(TitleBar::Hidden))
+            .tree()
+            .value;
 
         assert!(matches!(
             normal,
@@ -266,31 +247,26 @@ mod tests {
     #[test]
     fn text_binding_and_button_action_route_through_views() {
         // Verifies controls connect native events to Store updates and actions.
-        let mut composer = Composer::new(HeadlessBackend::new());
-        let value = composer.context(|cx: &mut Context<'_>| cx.store(String::new()));
+        let mut harness = Harness::empty();
+        let value = harness.store(String::new());
         let changes = Rc::new(Cell::new(0));
         let received = changes.clone();
-        composer.mount(Container::new(
+        harness.mount(Container::new(
             LayoutStyle::stack(Axis::Vertical, 8.0),
             list![
                 TextField::new().bind(value),
                 Button::new("Save").on_click(move |_| received.set(received.get() + 1)),
             ],
         ));
-        let root = root_id(&composer);
-        let field = composer.backend().children(root)[0];
-        let button = composer.backend().children(root)[1];
-        let field_route = composer.backend().event_route(field).unwrap();
-        let button_route = composer.backend().event_route(button).unwrap();
 
-        assert!(composer.dispatch_event(
-            field_route,
+        assert!(harness.dispatch(
+            &[0, 0],
             Event::TextChanged {
                 value: "typed".into(),
             },
         ));
-        assert!(composer.dispatch_event(button_route, Event::Activated));
-        assert_eq!(composer.context(|cx| cx.get(value).clone()), "typed");
+        assert!(harness.dispatch(&[0, 1], Event::Activated));
+        assert_eq!(harness.get(value), "typed");
         assert_eq!(changes.get(), 1);
     }
 
@@ -338,11 +314,11 @@ mod tests {
     #[test]
     fn canvas_rerender_reconciles_into_the_mounted_handler() {
         // Verifies a Store update keeps the mounted canvas and hands it the new handler.
-        let mut composer = Composer::new(HeadlessBackend::new());
-        let width = composer.context(|cx: &mut Context<'_>| cx.store(2.0));
+        let mut harness = Harness::empty();
+        let width = harness.store(2.0);
         let draws = Rc::new(Cell::new(0));
         let counter = draws.clone();
-        let root = composer.context(|cx| {
+        let root = harness.context(|cx| {
             cx.watch(width, move |width| {
                 Canvas2D::new(Bar {
                     width: *width,
@@ -350,14 +326,12 @@ mod tests {
                 })
             })
         });
-        composer.mount(root);
-        let node = root_id(&composer);
-        let mounted = canvas(composer.backend().value(node).unwrap());
+        harness.mount(root);
+        let mounted = canvas(&harness.tree().value);
         mounted.record(&frame());
 
-        composer.context(|cx| cx.update(width, |width| *width = 5.0));
-        composer.flush();
-        let current = canvas(composer.backend().value(root_id(&composer)).unwrap());
+        harness.set(width, 5.0);
+        let current = canvas(&harness.tree().value);
 
         assert_eq!(current, mounted);
         let commands = current.record(&frame());
@@ -371,9 +345,9 @@ mod tests {
     #[test]
     fn canvas_events_route_to_on_event() {
         // Verifies canvas input reaches the declared action with a Context.
-        let mut composer = Composer::new(HeadlessBackend::new());
-        let clicks = composer.context(|cx: &mut Context<'_>| cx.store(0));
-        composer.mount(
+        let mut harness = Harness::empty();
+        let clicks = harness.store(0);
+        harness.mount(
             Canvas2D::new(Bar {
                 width: 1.0,
                 draws: Rc::default(),
@@ -390,7 +364,6 @@ mod tests {
                 }
             }),
         );
-        let route = composer.backend().event_route(root_id(&composer)).unwrap();
         let down = CanvasEvent::Pointer(PointerEvent {
             phase: PointerPhase::Down,
             button: Some(PointerButton::Primary),
@@ -399,8 +372,8 @@ mod tests {
             click_count: 1,
         });
 
-        assert!(composer.dispatch_event(route, Event::Canvas(down)));
-        assert_eq!(composer.context(|cx| *cx.get(clicks)), 1);
+        assert!(harness.dispatch(&[0], Event::Canvas(down)));
+        assert_eq!(harness.get(clicks), 1);
     }
 
     /// Emits the click location's x as an `f64` and its count as a `u32`.
@@ -432,26 +405,26 @@ mod tests {
     #[test]
     fn canvas_actions_reach_the_on_action_of_their_type() {
         // Verifies each typed on_action sees only its actions, and raw input is not reported without on_event.
-        let mut composer = Composer::new(HeadlessBackend::new());
-        let seen = composer.context(|cx: &mut Context<'_>| cx.store(Vec::<String>::new()));
-        composer.mount(
+        let mut harness = Harness::empty();
+        let seen = harness.store(Vec::<String>::new());
+        harness.mount(
             Canvas2D::new(Emitter)
                 .on_action(move |cx, x: &f64| cx.update(seen, |seen| seen.push(format!("x={x}"))))
                 .on_action(move |cx, count: &u32| {
                     cx.update(seen, |seen| seen.push(format!("count={count}")))
                 }),
         );
-        let node = root_id(&composer);
-        let mounted = canvas(composer.backend().value(node).unwrap());
+        let node = harness.tree().value;
+        let mounted = canvas(&node);
         assert!(matches!(
-            composer.backend().value(node),
-            Some(RenderNode::View {
+            node,
+            RenderNode::View {
                 kind: ViewKind::Canvas2D {
                     reports_input: false,
                     ..
                 },
                 ..
-            })
+            }
         ));
         mounted.attach(Rc::new(NullHost), None);
         mounted.event(&CanvasEvent::Pointer(PointerEvent {
@@ -462,54 +435,50 @@ mod tests {
             click_count: 2,
         }));
 
-        let route = composer.backend().event_route(node).unwrap();
-        assert!(composer.dispatch_event(
-            route,
+        assert!(harness.dispatch(
+            &[0],
             Event::CanvasActions {
                 canvas: mounted.id()
             }
         ));
-        assert_eq!(
-            composer.context(|cx| cx.get(seen).clone()),
-            ["x=3", "count=2"]
-        );
+        assert_eq!(harness.get(seen), ["x=3", "count=2"]);
     }
 
     #[test]
     fn store_sender_writes_from_another_thread_on_the_main_thread() {
         // Verifies a write sent off the main thread waits for the main-thread task and then updates the Store.
-        let mut composer = Composer::new(HeadlessBackend::new());
+        let mut harness = Harness::empty();
         let tasks = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let queue = tasks.clone();
-        composer.backend().connect_main_tasks(move |task| {
+        harness.composer.backend().connect_main_tasks(move |task| {
             queue.lock().unwrap().push(task);
             true
         });
-        let status = composer.context(|cx: &mut Context<'_>| cx.store("Building".to_owned()));
-        let sender = composer.context(|cx| cx.sender(status));
+        let status = harness.store("Building".to_owned());
+        let sender = harness.context(|cx| cx.sender(status));
 
         std::thread::spawn(move || assert!(sender.set("Done".to_owned())))
             .join()
             .unwrap();
-        assert_eq!(composer.context(|cx| cx.get(status).clone()), "Building");
+        assert_eq!(harness.get(status), "Building");
         for task in tasks.lock().unwrap().drain(..) {
             task();
         }
-        composer.context(|cx| {
+        harness.context(|cx| {
             for update in zintl_ui_backend_core::StoreUpdates::take() {
                 update(cx);
             }
         });
-        assert_eq!(composer.context(|cx| cx.get(status).clone()), "Done");
+        assert_eq!(harness.get(status), "Done");
     }
 
     #[test]
     fn title_bar_interactive_is_opt_in_per_view() {
         // Verifies only views marked with the modifier keep input under the title bar.
-        let plain = composer(Button::new("Plain"));
-        let marked = composer(Button::new("Marked").title_bar_interactive());
-        let plain = plain.backend().value(root_id(&plain)).unwrap();
-        let marked = marked.backend().value(root_id(&marked)).unwrap();
+        let plain = Harness::new(Button::new("Plain")).tree().value;
+        let marked = Harness::new(Button::new("Marked").title_bar_interactive())
+            .tree()
+            .value;
 
         assert!(matches!(
             plain,
@@ -535,46 +504,36 @@ mod tests {
         impl Canvas2DHandler for Empty {
             fn draw(&mut self, _g: &mut graphics::Graphics2D<'_>, _frame: &Frame) {}
         }
-        let bar = composer(Canvas2D::new(Bar {
+        let bar = Harness::new(Canvas2D::new(Bar {
             width: 1.0,
             draws: Rc::default(),
-        }));
-        let empty = composer(Canvas2D::new(Empty));
-        let bar = bar.backend().value(root_id(&bar)).unwrap();
-        let empty = empty.backend().value(root_id(&empty)).unwrap();
-        assert!(!bar.same_kind(empty));
+        }))
+        .tree()
+        .value;
+        let empty = Harness::new(Canvas2D::new(Empty)).tree().value;
+        assert!(!bar.same_kind(&empty));
     }
 
     #[test]
     fn sidebar_binding_filters_unknown_native_ids() {
         // Verifies sidebar selection updates only for declared items.
-        let mut composer = Composer::new(HeadlessBackend::new());
-        let selection = composer.context(|cx: &mut Context<'_>| cx.store(None::<String>));
-        composer.mount(
+        let mut harness = Harness::empty();
+        let selection = harness.store(None::<String>);
+        harness.mount(
             Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Navigation").sidebar(
                 Sidebar::new([SidebarSection::new([SidebarItem::new("home", "Home")])])
                     .bind(selection),
             ),
         );
-        let root = root_id(&composer);
-        let route = composer.backend().event_route(root).unwrap();
 
-        assert!(
-            composer.dispatch_event(route, Event::SidebarSelectionChanged { id: "home".into() },)
-        );
-        assert_eq!(
-            composer.context(|cx| cx.get(selection).clone()),
-            Some("home".into())
-        );
-        assert!(composer.dispatch_event(
-            route,
+        assert!(harness.dispatch(&[0], Event::SidebarSelectionChanged { id: "home".into() },));
+        assert_eq!(harness.get(selection), Some("home".into()));
+        assert!(harness.dispatch(
+            &[0],
             Event::SidebarSelectionChanged {
                 id: "missing".into(),
             },
         ));
-        assert_eq!(
-            composer.context(|cx| cx.get(selection).clone()),
-            Some("home".into())
-        );
+        assert_eq!(harness.get(selection), Some("home".into()));
     }
 }

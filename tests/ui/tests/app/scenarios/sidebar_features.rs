@@ -1,3 +1,4 @@
+use zintl_ui_desktop::menu::*;
 use zintl_ui_desktop::*;
 
 /// A searchable sidebar whose items carry badges and context menus.

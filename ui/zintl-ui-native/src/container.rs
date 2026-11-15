@@ -1,5 +1,4 @@
 use zintl_ui::element::{IntoElement, ListFactory};
-use zintl_ui::view::View;
 use zintl_ui_backend_core::ViewKind;
 use zintl_ui_layout::LayoutStyle;
 
@@ -41,10 +40,4 @@ impl NativeView for Container {
     }
 }
 
-impl View for Container {
-    type Output = RenderNode;
-
-    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
-        self.native_element(cx)
-    }
-}
+native_view!(Container);

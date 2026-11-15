@@ -1,3 +1,5 @@
+use zintl_ui_desktop::graphics::*;
+use zintl_ui_desktop::menu::*;
 use zintl_ui_desktop::*;
 
 /// A bound rich text editor that echoes its text and counts on_change calls.

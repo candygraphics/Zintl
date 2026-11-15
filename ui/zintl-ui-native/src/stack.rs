@@ -141,4 +141,4 @@ impl NativeView for Spacer {
     }
 }
 
-view!(Spacer);
+native_view!(Spacer);

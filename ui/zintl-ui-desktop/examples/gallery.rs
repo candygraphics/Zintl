@@ -4,6 +4,9 @@
 //! without visible text, `accessibility_labeled_by` links fields to the text
 //! beside them, and actions announce their result.
 
+use zintl_ui_desktop::accessibility::*;
+use zintl_ui_desktop::dialog::*;
+use zintl_ui_desktop::menu::*;
 use zintl_ui_desktop::*;
 
 #[derive(Default)]

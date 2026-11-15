@@ -1,3 +1,4 @@
+use zintl_ui_desktop::menu::*;
 use zintl_ui_desktop::*;
 
 /// A text editor under the standard menus, whose Find items open its find bar.

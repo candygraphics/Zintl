@@ -10,7 +10,7 @@ use zintl_ui_layout::{
 };
 
 use crate::graphics::Font;
-use crate::testing::TestApp;
+use crate::testing::Harness;
 use crate::*;
 
 struct StoreTextFieldView {
@@ -76,13 +76,14 @@ fn text_buttons_and_stacks_are_views() {
 #[test]
 fn stack_sizes_and_alignment_reach_the_layout() {
     // Verifies fixed sizes and cross-axis alignment are carried on the stack's layout style.
-    let stack = TestApp::new(
+    let stack = Harness::new(
         VStack::new(list![])
             .width(240.0)
             .height(80.0)
             .alignment(CrossAxisAlignment::Start),
     )
-    .render();
+    .tree()
+    .value;
 
     let RenderNode::View { layout, .. } = stack else {
         panic!("expected a view, got {stack:?}");
@@ -95,7 +96,7 @@ fn stack_sizes_and_alignment_reach_the_layout() {
 #[test]
 fn spacer_is_an_empty_growing_container() {
     // Verifies a spacer takes free main-axis space without a minimum size.
-    let spacer = TestApp::new(Spacer::new()).render();
+    let spacer = Harness::new(Spacer::new()).tree().value;
 
     let RenderNode::View {
         kind: ViewKind::Container,
@@ -112,8 +113,8 @@ fn spacer_is_an_empty_growing_container() {
 #[test]
 fn text_and_text_field_share_the_native_render_kind() {
     // Verifies text and text fields both render through text field configuration.
-    let label = TestApp::new(Text::new("Label")).render();
-    let field = TestApp::new(TextField::new()).render();
+    let label = Harness::new(Text::new("Label")).tree().value;
+    let field = Harness::new(TextField::new()).tree().value;
 
     assert!(matches!(
         label,
@@ -143,14 +144,15 @@ fn text_and_text_field_share_the_native_render_kind() {
 fn text_style_reaches_the_render_node_and_sizes_the_label() {
     // Verifies text style is forwarded, and a line limit lets the label shrink to any width
     // while it still prefers its text's width.
-    let text = TestApp::new(
+    let text = Harness::new(
         Text::new("Groceries")
             .font(Font::system(20.0).bold())
             .color(TextColor::Secondary)
             .alignment(TextAlignment::Center)
             .line_limit(2),
     )
-    .render();
+    .tree()
+    .value;
 
     let RenderNode::View {
         kind: ViewKind::TextField { style, .. },
@@ -178,9 +180,9 @@ fn text_style_reaches_the_render_node_and_sizes_the_label() {
 fn window_element_preserves_bounds_and_title() {
     // Verifies a window preserves its declarative bounds and title.
     let bounds = Rect::new(10.0, 20.0, 640.0, 480.0);
-    let app = TestApp::new(Window::new(bounds, "Zintl"));
+    let app = Harness::new(Window::new(bounds, "Zintl"));
     assert_eq!(
-        app.render(),
+        app.tree().value,
         RenderNode::Window {
             sidebar: None,
             bounds,
@@ -199,10 +201,10 @@ fn window_element_preserves_bounds_and_title() {
 fn window_title_bar_reaches_the_render_node() {
     // Verifies the declared title bar style is carried to the backend.
     let bounds = Rect::new(10.0, 20.0, 640.0, 480.0);
-    let app = TestApp::new(Window::new(bounds, "Zintl").title_bar(TitleBar::Overlay));
+    let app = Harness::new(Window::new(bounds, "Zintl").title_bar(TitleBar::Overlay));
 
     assert!(matches!(
-        app.render(),
+        app.tree().value,
         RenderNode::Window {
             title_bar: TitleBar::Overlay,
             ..
@@ -213,11 +215,11 @@ fn window_title_bar_reaches_the_render_node() {
 #[test]
 fn stack_render_tree_carries_layout_and_control_sizes() {
     // Verifies stacks preserve layout policy while using native render nodes.
-    let app = TestApp::new(
+    let app = Harness::new(
         Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Zintl")
             .content(HStack::new(list![Button::new("Save"), TextField::new()]).spacing(12.0)),
     );
-    let tree = app.render_tree();
+    let tree = app.tree();
     let stack = &tree.children[0];
     // Rows center their children by default.
     let mut row = LayoutStyle::stack(Axis::Horizontal, 12.0);
@@ -268,7 +270,7 @@ fn stack_render_tree_carries_layout_and_control_sizes() {
 #[test]
 fn stack_list_children_have_no_arity_limit() {
     // Verifies stacks render heterogeneous lists longer than six children.
-    let app = TestApp::new(VStack::new(list![
+    let app = Harness::new(VStack::new(list![
         Text::new("One"),
         Button::new("Two"),
         TextField::new(),
@@ -278,7 +280,7 @@ fn stack_list_children_have_no_arity_limit() {
         Text::new("Seven"),
         Button::new("Eight"),
     ]));
-    let tree = app.render_tree();
+    let tree = app.tree();
 
     assert_eq!(tree.children.len(), 8);
     assert!(matches!(
@@ -310,7 +312,7 @@ fn stack_list_children_have_no_arity_limit() {
 #[test]
 fn stack_builders_preserve_width_and_child_distribution() {
     // Verifies stack options reach the container layout.
-    let app = TestApp::new(
+    let app = Harness::new(
         Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Zintl").content(
             VStack::new(list![
                 HStack::new(list![Button::new("Save"), Button::new("Cancel")])
@@ -321,7 +323,7 @@ fn stack_builders_preserve_width_and_child_distribution() {
             .fill_width(),
         ),
     );
-    let tree = app.render_tree();
+    let tree = app.tree();
     let column = &tree.children[0];
     let row = &column.children[0];
 
@@ -355,23 +357,26 @@ fn stack_builders_preserve_width_and_child_distribution() {
 fn text_field_writes_native_input_to_its_store() {
     // Verifies a bound TextField reads native input into its Store and rerenders.
     let captured = Rc::new(Cell::new(None));
-    let mut app = TestApp::new(StoreTextFieldView {
+    let mut app = Harness::new(StoreTextFieldView {
         value: None,
         captured: captured.clone(),
     });
     assert!(
-        matches!(app.render(), RenderNode::View { kind: ViewKind::TextField { value, .. }, .. } if value == "initial")
+        matches!(app.tree().value, RenderNode::View { kind: ViewKind::TextField { value, .. }, .. } if value == "initial")
     );
     let store = captured.get().expect("init must publish the test Store");
 
-    assert!(app.dispatch_root_event(Event::TextChanged {
-        value: "typed value".into(),
-    }));
+    assert!(app.dispatch(
+        &[0],
+        Event::TextChanged {
+            value: "typed value".into(),
+        }
+    ));
 
     let stored = app.get(store);
     assert_eq!(stored, "typed value");
     assert!(matches!(
-        app.render(),
+        app.tree().value,
         RenderNode::View { kind: ViewKind::TextField { value, .. }, .. } if value == "typed value"
     ));
 }
@@ -381,23 +386,23 @@ fn button_dispatches_its_registered_action() {
     // Verifies a button runs its action when activated.
     let activations = Rc::new(Cell::new(0));
     let received = activations.clone();
-    let mut app = TestApp::new(Button::new("Save").on_click(move |_| {
+    let mut app = Harness::new(Button::new("Save").on_click(move |_| {
         received.set(received.get() + 1);
     }));
 
-    assert!(app.dispatch_root_event(Event::Activated));
+    assert!(app.dispatch(&[0], Event::Activated));
     assert_eq!(activations.get(), 1);
 }
 
 #[test]
 fn view_ids_are_preserved_in_the_render_tree() {
     // Verifies IDs reach the render nodes for accessibility.
-    let app = TestApp::new(
+    let app = Harness::new(
         Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Zintl")
             .id("main-window")
             .content(TextField::new().id("name-input")),
     );
-    let tree = app.render_tree();
+    let tree = app.tree();
 
     assert!(matches!(
         &tree.value,
@@ -414,12 +419,12 @@ fn store_watcher_rebuilds_only_its_dependent_element() {
     // Verifies views keep fine-grained Store watcher rebuilding.
     let renders = Rc::new(Cell::new(0));
     let captured = Rc::new(Cell::new(None));
-    let mut app = TestApp::new(BoundTextView {
+    let mut app = Harness::new(BoundTextView {
         value: None,
         renders: renders.clone(),
         captured: captured.clone(),
     });
-    let tree = app.render_tree();
+    let tree = app.tree();
     assert!(matches!(
         &tree.children[0].value,
         RenderNode::View {
@@ -431,7 +436,7 @@ fn store_watcher_rebuilds_only_its_dependent_element() {
 
     app.set(store, "updated".to_owned());
 
-    let tree = app.render_tree();
+    let tree = app.tree();
     let RenderNode::View {
         kind: ViewKind::TextField { value, .. },
         ..

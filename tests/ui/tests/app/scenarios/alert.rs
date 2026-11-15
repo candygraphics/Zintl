@@ -1,6 +1,7 @@
 use std::thread;
 use std::time::Duration;
 
+use zintl_ui_desktop::dialog::*;
 use zintl_ui_desktop::*;
 
 /// A confirmation alert with destructive and cancel buttons, an alert that the app dismisses

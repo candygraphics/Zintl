@@ -1,6 +1,6 @@
 //! The note library, independent of the UI.
 
-use zintl_ui_desktop::{AttributedText, ParagraphStyle};
+use zintl_ui_desktop::graphics::{AttributedText, ParagraphStyle};
 
 use crate::storage::{FolderFile, LibraryFile, NoteFile};
 

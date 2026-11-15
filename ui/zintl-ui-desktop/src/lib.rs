@@ -1,178 +1,113 @@
-//! The desktop app runner and the views it shows.
+//! Desktop apps: the app runner and the views it shows.
+//!
+//! `use zintl_ui_desktop::*;` covers ordinary apps. Menus, canvases, dialogs,
+//! and the other areas below have their own modules.
 
-use zintl_ui::composer::Composer;
-pub use zintl_ui::element::{Element, ElementFactory, IntoElement, KeyedElement};
-use zintl_ui::renderer::RenderBackend;
+mod app;
+
+pub use app::*;
+pub use zintl_ui::element::{ElementFactory, IntoElement};
 pub use zintl_ui::store::Store;
 pub use zintl_ui::view::View;
-pub use zintl_ui_layout::{
-    Axis, ChildSizing, CrossAxisAlignment, LayoutDimension, LayoutStyle, MainAxisDistribution, Size,
-};
-pub use zintl_ui_native::graphics::{
-    AttributedText, FillRule, Font, FontWeight, GradientStop, Graphics2D, HorizontalAlign, Image,
-    LineCap, LineJoin, Paint, ParagraphStyle, Path, Point, SpanStyle, StrokeStyle, TextAlign,
-    TextMetrics, Transform, VerticalAlign,
-};
+pub use zintl_ui_layout::{Axis, CrossAxisAlignment, MainAxisDistribution, Size};
+pub use zintl_ui_native::graphics::{AttributedText, Font, FontWeight};
 pub use zintl_ui_native::{
-    AccessibilityRole, Alert, AlertButton, AlertStyle, AnnouncementPriority, Attach, BarChart,
-    Button, ButtonRole, ButtonStyle, CalendarDate, Canvas2D, Canvas2DHandler, CanvasEvent,
-    CanvasEventContext, CanvasId, CanvasSetup, ChartBar, Color, ColorPanel, ColorWell, ComboBox,
-    Context, Control, Cursor, DatePicker, DatePickerStyle, DisclosureGroup, EnglishMenuLocalizer,
-    Event, EventKind, FileDialog, Frame, GesturePhase, Grid, GridCell, HStack, IntegerField,
-    Invalidator, JapaneseMenuLocalizer, Key, KeyEvent, KeyPhase, Layout, LayoutOverrides, List,
-    ListFactory, ListRow, ListSection, ListStyle, MagnifyEvent, MainMenu, Menu, MenuItem,
-    MenuLocalizer, Modifier, Modifiers, NamedKey, NativeView, NumberField, OptionalDatePicker,
-    Palette, PaletteColor, Picker, PickerStyle, PointerButton, PointerEvent, PointerPhase, Popover,
-    PopoverEdge, ProgressIndicator, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAlignment,
-    ScrollAxes, ScrollEvent, ScrollStatus, ScrollView, SearchField, Separator, Shortcut,
-    ShortcutKey, Sidebar, SidebarItem, SidebarSection, Signal, Slider, SortOrder, Spacer,
-    SplitView, StandardAction, StandardMenu, StandardText, StoreSender, SystemColor, Tab, TabView,
+    Attach, BarChart, Button, ButtonRole, ButtonStyle, CalendarDate, ChartBar, Color, ColorWell,
+    ComboBox, Context, Control, DatePicker, DatePickerStyle, DisclosureGroup, Grid, GridCell,
+    HStack, IntegerField, Layout, List, ListFactory, ListRow, ListSection, ListStyle, NumberField,
+    OptionalDatePicker, PaletteColor, Picker, PickerStyle, ProgressIndicator, Rect, RenderNode,
+    ScrollAlignment, ScrollAxes, ScrollStatus, ScrollView, SearchField, Separator, Sidebar,
+    SidebarItem, SidebarSection, Slider, SortOrder, Spacer, SplitView, SystemColor, Tab, TabView,
     Table, TableColumn, TableRow, Text, TextAlignment, TextColor, TextEditor, TextField, TitleBar,
-    Toggle, ToggleStyle, Toolbar, ToolbarItem, UndoHandler, VStack, ViewKind, ViewModifiers,
-    Window, ZStack, graphics, list,
-};
-#[cfg(feature = "wgpu")]
-pub use zintl_ui_native::{
-    WgpuCanvas, WgpuCanvasHandler, WgpuContext, WgpuError, WgpuSetup, WgpuTarget, wgpu,
+    Toggle, ToggleStyle, Toolbar, ToolbarItem, UndoHandler, VStack, Window, ZStack, graphics, list,
 };
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct RenderedNode {
-    pub value: RenderNode,
-    pub children: Vec<RenderedNode>,
+/// Menus, their items, and keyboard shortcuts.
+pub mod menu {
+    pub use zintl_ui_native::{
+        EnglishMenuLocalizer, JapaneseMenuLocalizer, MainMenu, Menu, MenuItem, MenuLocalizer,
+        Modifier, Shortcut, ShortcutKey, StandardAction, StandardMenu, StandardText,
+    };
 }
 
-// Tests use the headless backend everywhere so they behave alike on every platform.
-#[cfg(all(target_os = "macos", not(test)))]
-type DesktopBackend = zintl_ui_appkit_backend::AppKitBackend;
-
-#[cfg(all(target_os = "windows", not(test)))]
-type DesktopBackend = zintl_ui_winui3_backend::WinUI3Backend;
-
-#[cfg(any(test, not(any(target_os = "macos", target_os = "windows"))))]
-type DesktopBackend = zintl_ui_backend_core::HeadlessBackend;
-
-type DesktopNodeId = <DesktopBackend as RenderBackend<RenderNode>>::NodeId;
-
-pub struct App {
-    composer: Composer<RenderNode, DesktopBackend>,
-    on_exit: Option<Box<dyn FnOnce()>>,
+/// Views drawn by the app, and the input they receive.
+pub mod canvas {
+    pub use zintl_ui_native::{
+        Canvas2D, Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasId, CanvasSetup, Cursor,
+        Frame, GesturePhase, Invalidator, Key, KeyEvent, KeyPhase, MagnifyEvent, Modifiers,
+        NamedKey, Palette, PointerButton, PointerEvent, PointerPhase, Redraw, RedrawPolicy,
+        ScrollEvent,
+    };
+    #[cfg(feature = "wgpu")]
+    pub use zintl_ui_native::{
+        WgpuCanvas, WgpuCanvasHandler, WgpuContext, WgpuError, WgpuSetup, WgpuTarget, wgpu,
+    };
 }
 
-impl App {
-    pub fn new<E>(root: E) -> Self
-    where
-        E: IntoElement<Output = RenderNode>,
-    {
-        #[allow(unused_mut)]
-        let mut backend = DesktopBackend::new();
-        // Native backends install the standard menus until the app declares its own.
-        #[cfg(all(any(target_os = "macos", target_os = "windows"), not(test)))]
-        backend.set_default_main_menu(MainMenu::standard().commands());
-        let mut composer = Composer::new(backend);
-        composer.mount(root);
-        Self {
-            composer,
-            on_exit: None,
-        }
-    }
-
-    pub fn render(&self) -> RenderNode {
-        self.render_tree().value
-    }
-
-    pub fn render_tree(&self) -> RenderedNode {
-        Self::rendered_node(self.composer.backend(), self.root_element())
-    }
-
-    fn root_element(&self) -> DesktopNodeId {
-        let backend = self.composer.backend();
-        *backend
-            .children(backend.root())
-            .first()
-            .expect("the rendered tree must contain a root element")
-    }
-
-    fn rendered_node(backend: &DesktopBackend, id: DesktopNodeId) -> RenderedNode {
-        RenderedNode {
-            value: backend
-                .value(id)
-                .cloned()
-                .expect("render nodes always have values"),
-            children: backend
-                .children(id)
-                .iter()
-                .map(|child| Self::rendered_node(backend, *child))
-                .collect(),
-        }
-    }
-
-    /// Runs once before the process ends, whether the last window closed or
-    /// the user quit, for example to finish saving.
-    ///
-    /// On macOS, ⌘Q exits the process without returning from [`App::run`],
-    /// so work after `run` is not enough.
-    pub fn on_exit(mut self, action: impl FnOnce() + 'static) -> Self {
-        self.on_exit = Some(Box::new(action));
-        self
-    }
-
-    #[cfg(all(target_os = "macos", not(test)))]
-    pub fn run(self) -> Result<(), AppError> {
-        let on_exit = self.on_exit.unwrap_or_else(|| Box::new(|| {}));
-        zintl_ui_appkit_backend::run_composer(self.composer, on_exit)
-    }
-
-    #[cfg(all(target_os = "windows", not(test)))]
-    pub fn run(self) -> Result<(), AppError> {
-        let on_exit = self.on_exit.unwrap_or_else(|| Box::new(|| {}));
-        zintl_ui_winui3_backend::run_composer(self.composer, on_exit)
-    }
+/// What assistive apps are told about a view.
+pub mod accessibility {
+    pub use zintl_ui_native::{AccessibilityRole, AnnouncementPriority};
 }
 
-#[cfg(target_os = "macos")]
-pub use zintl_ui_appkit_backend::AppError;
-#[cfg(target_os = "windows")]
-pub use zintl_ui_winui3_backend::AppError;
+/// Alerts, panels, and popovers presented over a window.
+pub mod dialog {
+    pub use zintl_ui_native::{
+        Alert, AlertButton, AlertStyle, ColorPanel, FileDialog, Popover, PopoverEdge,
+    };
+}
+
+/// The pieces custom views are built from.
+pub mod render {
+    pub use zintl_ui::element::{Element, ElementFactory, IntoElement, KeyedElement};
+    pub use zintl_ui_layout::{ChildSizing, LayoutDimension, LayoutStyle};
+    pub use zintl_ui_native::{
+        Event, EventKind, LayoutOverrides, ListFactory, NativeView, RenderNode, ViewKind,
+        ViewModifiers, modifiers,
+    };
+}
+
+/// Values shared with other threads.
+pub mod thread {
+    pub use zintl_ui_native::{Signal, StoreSender};
+}
+
+/// A headless harness for inspecting views in tests.
+pub mod testing {
+    pub use zintl_ui_native::testing::{Harness, RenderedNode};
+}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::testing::Harness;
+    use crate::*;
 
     #[test]
-    fn app_renders_its_root_and_the_nodes_below_it() {
-        // Verifies an app mounts its root view and reads the tree back as render nodes.
-        let bounds = Rect::new(10.0, 20.0, 640.0, 480.0);
-        let app =
-            App::new(Window::new(bounds, "Zintl").content(VStack::new(list![Text::new("Hello")])));
-        let tree = app.render_tree();
+    fn glob_import_covers_an_ordinary_app() {
+        // Verifies the crate root alone declares a window of text, fields, and buttons.
+        let harness = Harness::new(
+            Window::new(Rect::new(0.0, 0.0, 320.0, 240.0), "Zintl").content(VStack::new(list![
+                Text::new("Name").font(Font::system(13.0)),
+                TextField::new().id("name"),
+                HStack::new(list![Spacer::new(), Button::new("Save").enabled(false)]),
+            ])),
+        );
 
-        assert!(matches!(
-            app.render(),
-            RenderNode::Window { bounds: window, title, .. } if window == bounds && title == "Zintl"
-        ));
-        assert_eq!(tree.value, app.render());
-        assert!(matches!(
-            tree.children[0].value,
-            RenderNode::View {
-                kind: ViewKind::Container,
-                ..
-            }
-        ));
-        assert_eq!(tree.children[0].children.len(), 1);
+        assert!(matches!(harness.tree().value, RenderNode::Window { .. }));
+        assert!(harness.find("name").is_some());
     }
 
     #[test]
-    fn views_are_reachable_from_the_desktop_crate() {
-        // Verifies every view stays public here, so apps depend on this crate alone.
+    fn feature_modules_hold_their_names() {
+        // Verifies each feature module re-exports the names apps and custom views import from it.
         #[allow(unused_imports)]
         use crate::{
-            Alert, BarChart, Button, ButtonStyle, Canvas2D, ChartBar, ColorPanel, ColorWell,
-            ComboBox, DatePicker, DisclosureGroup, FileDialog, Grid, GridCell, HStack,
-            IntegerField, List, MainMenu, NumberField, OptionalDatePicker, Picker, PickerStyle,
-            Popover, ProgressIndicator, ScrollView, SearchField, Separator, Sidebar, Signal,
-            Slider, Spacer, SplitView, Tab, TabView, Table, Text, TextEditor, TextField, Toggle,
-            ToggleStyle, Toolbar, VStack, Window, ZStack,
+            accessibility::{AccessibilityRole, AnnouncementPriority},
+            canvas::{Canvas2D, Canvas2DHandler, CanvasEvent, Frame, PointerEvent},
+            dialog::{Alert, ColorPanel, FileDialog, Popover},
+            menu::{MainMenu, Menu, MenuItem, Shortcut, StandardMenu},
+            render::{Element, Event, NativeView, ViewKind, ViewModifiers, modifiers},
+            testing::RenderedNode,
+            thread::{Signal, StoreSender},
         };
     }
 }

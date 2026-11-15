@@ -7,7 +7,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
 use serde::{Deserialize, Serialize};
-use zintl_ui_desktop::{AttributedText, ParagraphStyle, SpanStyle};
+use zintl_ui_desktop::graphics::{AttributedText, ParagraphStyle, SpanStyle};
 
 use crate::model::Library;
 

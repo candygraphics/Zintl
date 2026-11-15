@@ -1,3 +1,4 @@
+use zintl_ui_desktop::canvas::*;
 use zintl_ui_desktop::*;
 
 /// Clears the canvas to red or blue and consumes clicks and keys.
