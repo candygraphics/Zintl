@@ -6,10 +6,11 @@ use zintl_ui::element::{Element, IntoElement};
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
 use zintl_ui_layout::{Axis, LayoutStyle, Size};
-use zintl_ui_native::NativeView;
+use zintl_ui_native::{Attach, Control, Layout, NativeView};
 
 use crate::{
-    Attachments, Color, Context, ListFactory, RenderNode, ScrollAlignment, ScrollAxes, ScrollStatus,
+    Color, Context, ListFactory, RenderNode, ScrollAlignment, ScrollAxes, ScrollStatus,
+    ViewModifiers,
 };
 
 type Change<T> = dyn for<'a> Fn(&mut Context<'a>, T);
@@ -47,10 +48,8 @@ pub struct Toggle {
     style: ToggleStyle,
     store: Option<Store<bool>>,
     on: bool,
-    enabled: bool,
-    id: Option<String>,
     action: Option<std::rc::Rc<Change<bool>>>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl Toggle {
@@ -60,10 +59,8 @@ impl Toggle {
             style: ToggleStyle::Switch,
             store: None,
             on: false,
-            enabled: true,
-            id: None,
             action: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -86,43 +83,38 @@ impl Toggle {
         self
     }
 
-    pub fn enabled(mut self, enabled: bool) -> Self {
-        self.enabled = enabled;
-        self
-    }
-
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
-        self
-    }
-
     pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, bool) + 'static) -> Self {
         self.action = Some(std::rc::Rc::new(action));
         self
     }
 
     fn button(&self, button: zintl_ui_native::Button) -> zintl_ui_native::Button {
-        let mut button = button.on(self.on).enabled(self.enabled);
+        let mut button = button.on(self.on).enabled(self.modifiers.enabled());
         if let Some(store) = self.store {
             button = button.bind_state(store);
         }
         if let Some(action) = self.action.clone() {
             button = button.on_state_change(move |cx, on| action(cx, on));
         }
-        match &self.id {
-            Some(id) => button.id(id.clone()),
+        match self.modifiers.id() {
+            Some(id) => button.id(id),
             None => button,
         }
     }
 }
 
 impl NativeView for Toggle {
-    fn attachments(&self) -> &Attachments {
-        &self.attachments
+    fn modifiers(&self) -> &ViewModifiers {
+        &self.modifiers
     }
 
-    fn attachments_mut(&mut self) -> &mut Attachments {
-        &mut self.attachments
+    fn modifiers_mut(&mut self) -> &mut ViewModifiers {
+        &mut self.modifiers
+    }
+
+    // The switch or button carries the ID, not the labeled row.
+    fn places_id(&self) -> bool {
+        true
     }
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
@@ -142,15 +134,15 @@ impl NativeView for Toggle {
             ToggleStyle::Switch => {
                 let mut switch = zintl_ui_native::Switch::new()
                     .on(self.on)
-                    .enabled(self.enabled);
+                    .enabled(self.modifiers.enabled());
                 if let Some(store) = self.store {
                     switch = switch.bind(store);
                 }
                 if let Some(action) = self.action.clone() {
                     switch = switch.on_change(move |cx, on| action(cx, on));
                 }
-                if let Some(id) = &self.id {
-                    switch = switch.id(id.clone());
+                if let Some(id) = self.modifiers.id() {
+                    switch = switch.id(id);
                 }
                 if self.label.is_empty() {
                     return switch.native_element(cx);
@@ -190,10 +182,8 @@ pub struct Picker {
     style: PickerStyle,
     store: Option<Store<usize>>,
     selected: usize,
-    enabled: bool,
-    id: Option<String>,
     action: Option<std::rc::Rc<Change<usize>>>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl Picker {
@@ -203,10 +193,8 @@ impl Picker {
             style: PickerStyle::Menu,
             store: None,
             selected: 0,
-            enabled: true,
-            id: None,
             action: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -230,16 +218,6 @@ impl Picker {
         self
     }
 
-    pub fn enabled(mut self, enabled: bool) -> Self {
-        self.enabled = enabled;
-        self
-    }
-
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
-        self
-    }
-
     pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, usize) + 'static) -> Self {
         self.action = Some(std::rc::Rc::new(action));
         self
@@ -247,12 +225,17 @@ impl Picker {
 }
 
 impl NativeView for Picker {
-    fn attachments(&self) -> &Attachments {
-        &self.attachments
+    fn modifiers(&self) -> &ViewModifiers {
+        &self.modifiers
     }
 
-    fn attachments_mut(&mut self) -> &mut Attachments {
-        &mut self.attachments
+    fn modifiers_mut(&mut self) -> &mut ViewModifiers {
+        &mut self.modifiers
+    }
+
+    // The native picker or the radio group carries the ID.
+    fn places_id(&self) -> bool {
+        true
     }
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
@@ -266,32 +249,33 @@ impl NativeView for Picker {
             PickerStyle::Menu => {
                 let mut picker = zintl_ui_native::PopUpButton::new(self.options.clone())
                     .selected(self.selected)
-                    .enabled(self.enabled)
+                    .enabled(self.modifiers.enabled())
                     .on_change(on_change);
                 if let Some(store) = self.store {
                     picker = picker.bind(store);
                 }
-                if let Some(id) = &self.id {
-                    picker = picker.id(id.clone());
+                if let Some(id) = self.modifiers.id() {
+                    picker = picker.id(id);
                 }
                 picker.native_element(cx)
             }
             PickerStyle::Segmented => {
                 let mut picker = zintl_ui_native::SegmentedControl::new(self.options.clone())
                     .selected(self.selected)
-                    .enabled(self.enabled)
+                    .enabled(self.modifiers.enabled())
                     .on_change(on_change);
                 if let Some(store) = self.store {
                     picker = picker.bind(store);
                 }
-                if let Some(id) = &self.id {
-                    picker = picker.id(id.clone());
+                if let Some(id) = self.modifiers.id() {
+                    picker = picker.id(id);
                 }
                 picker.native_element(cx)
             }
             PickerStyle::Radio => {
                 let selected = self.store.map_or(self.selected, |store| *cx.get(store));
                 let store = self.store;
+                let enabled = self.modifiers.enabled();
                 let on_change = std::rc::Rc::new(on_change);
                 let radios = self
                     .options
@@ -302,7 +286,7 @@ impl NativeView for Picker {
                         zintl_ui::element::ElementFactory::new(
                             zintl_ui_native::Button::radio(option.clone())
                                 .on(index == selected)
-                                .enabled(self.enabled)
+                                .enabled(enabled)
                                 .on_state_change(move |cx, on| {
                                     if !on {
                                         return;
@@ -317,8 +301,8 @@ impl NativeView for Picker {
                     .collect::<ListFactory<RenderNode>>();
                 let view =
                     zintl_ui_native::View::new(LayoutStyle::stack(Axis::Vertical, 6.0), radios);
-                match &self.id {
-                    Some(id) => view.id(id.clone()).native_element(cx),
+                match self.modifiers.id() {
+                    Some(id) => view.id(id).native_element(cx),
                     None => view.native_element(cx),
                 }
             }
@@ -326,7 +310,7 @@ impl NativeView for Picker {
     }
 }
 
-/// Wraps a native control and forwards builder methods to it.
+/// Wraps a native control; the shared modifiers reach the native view through it.
 macro_rules! wrapper {
     ($(#[$meta:meta])* $name:ident($inner:ty)) => {
         $(#[$meta])*
@@ -335,29 +319,17 @@ macro_rules! wrapper {
             inner: $inner,
         }
 
-        impl $name {
-            pub fn id(mut self, id: impl Into<String>) -> Self {
-                self.inner = self.inner.id(id);
-                self
-            }
-
-            pub fn minimum_size(mut self, size: Size) -> Self {
-                self.inner = self.inner.minimum_size(size);
-                self
-            }
-        }
-
         impl NativeView for $name {
             fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
                 self.inner.base_element(cx)
             }
 
-            fn attachments(&self) -> &Attachments {
-                self.inner.attachments()
+            fn modifiers(&self) -> &ViewModifiers {
+                self.inner.modifiers()
             }
 
-            fn attachments_mut(&mut self) -> &mut Attachments {
-                self.inner.attachments_mut()
+            fn modifiers_mut(&mut self) -> &mut ViewModifiers {
+                self.inner.modifiers_mut()
             }
         }
     };
@@ -382,11 +354,6 @@ impl ComboBox {
 
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.inner = self.inner.placeholder(placeholder);
-        self
-    }
-
-    pub fn enabled(mut self, enabled: bool) -> Self {
-        self.inner = self.inner.enabled(enabled);
         self
     }
 
@@ -425,16 +392,6 @@ impl Slider {
     /// Shows `count` tick marks and only allows their values.
     pub fn snapping_ticks(mut self, count: usize) -> Self {
         self.inner = self.inner.tick_marks(count, true);
-        self
-    }
-
-    pub fn fill_width(mut self) -> Self {
-        self.inner = self.inner.fill_width();
-        self
-    }
-
-    pub fn enabled(mut self, enabled: bool) -> Self {
-        self.inner = self.inner.enabled(enabled);
         self
     }
 
@@ -500,11 +457,6 @@ impl NumberField {
     /// Appends `suffix`, such as `" m"`, to the shown text; typed text may omit it.
     pub fn suffix(mut self, suffix: impl Into<String>) -> Self {
         self.inner = self.inner.suffix(suffix);
-        self
-    }
-
-    pub fn enabled(mut self, enabled: bool) -> Self {
-        self.inner = self.inner.enabled(enabled);
         self
     }
 
@@ -591,11 +543,6 @@ impl OptionalIntegerField {
         self
     }
 
-    pub fn enabled(mut self, enabled: bool) -> Self {
-        self.inner = self.inner.enabled(enabled);
-        self
-    }
-
     pub fn on_change(
         mut self,
         action: impl for<'a> Fn(&mut Context<'a>, Option<i64>) + 'static,
@@ -639,11 +586,6 @@ impl IntegerField {
         self
     }
 
-    pub fn enabled(mut self, enabled: bool) -> Self {
-        self.inner = self.inner.enabled(enabled);
-        self
-    }
-
     pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, i64) + 'static) -> Self {
         self.inner = self.inner.on_change(action);
         self
@@ -669,11 +611,6 @@ impl SearchField {
 
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.inner = self.inner.placeholder(placeholder);
-        self
-    }
-
-    pub fn fill_width(mut self) -> Self {
-        self.inner = self.inner.fill_width();
         self
     }
 
@@ -715,11 +652,6 @@ impl ColorWell {
         self
     }
 
-    pub fn enabled(mut self, enabled: bool) -> Self {
-        self.inner = self.inner.enabled(enabled);
-        self
-    }
-
     pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, Color) + 'static) -> Self {
         self.inner = self.inner.on_change(action);
         self
@@ -755,12 +687,6 @@ impl ScrollView {
     /// Saves the scroll position and restores it when the view is shown again.
     pub fn bind(mut self, store: Store<ScrollStatus>) -> Self {
         self.inner = self.inner.bind(store);
-        self
-    }
-
-    /// Uses a fixed height instead of filling the remaining space.
-    pub fn height(mut self, height: f32) -> Self {
-        self.inner = self.inner.height(height);
         self
     }
 

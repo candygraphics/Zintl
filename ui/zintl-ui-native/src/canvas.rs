@@ -6,10 +6,10 @@ use std::rc::Rc;
 use zintl_ui::element::IntoElement;
 use zintl_ui::view::View;
 use zintl_ui_backend_core::{Canvas2DHandler, CanvasEvent, CanvasNode, RedrawPolicy, ViewKind};
-use zintl_ui_layout::{LayoutDimension, LayoutStyle, Size};
+use zintl_ui_layout::{LayoutStyle, Size};
 
-use crate::attach::attachments;
-use crate::{Attachments, Context, Element, Event, EventKind, NativeView, RenderNode};
+use crate::modifiers;
+use crate::{Context, Element, Event, EventKind, NativeView, RenderNode, ViewModifiers};
 
 type CanvasAction = dyn for<'a> Fn(&mut Context<'a>, &CanvasEvent);
 /// Receives every emitted action and ignores those of other types.
@@ -30,8 +30,7 @@ macro_rules! canvas_view {
             action: Option<Rc<CanvasAction>>,
             action_handlers: Vec<Rc<ActionHandler>>,
             layout: LayoutStyle,
-            id: Option<String>,
-            attachments: Attachments,
+            modifiers: ViewModifiers,
         }
 
         impl<H: $handler> $name<H> {
@@ -43,8 +42,7 @@ macro_rules! canvas_view {
                     action: None,
                     action_handlers: Vec::new(),
                     layout: LayoutStyle::leaf(Size::new(0.0, 0.0)),
-                    id: None,
-                    attachments: Attachments::default(),
+                    modifiers: ViewModifiers::default(),
                 }
             }
 
@@ -88,33 +86,10 @@ macro_rules! canvas_view {
                 self
             }
 
-            pub fn id(mut self, id: impl Into<String>) -> Self {
-                self.id = Some(id.into());
-                self
-            }
 
-            pub fn size(mut self, size: Size) -> Self {
-                self.layout.width = LayoutDimension::Points(size.width);
-                self.layout.height = LayoutDimension::Points(size.height);
-                self
-            }
 
-            pub fn minimum_size(mut self, size: Size) -> Self {
-                self.layout.minimum_size = Some(size);
-                self
-            }
 
-            /// Stretches the canvas across its parent's width.
-            pub fn fill_width(mut self) -> Self {
-                self.layout.width = LayoutDimension::Percent(1.0);
-                self
-            }
 
-            /// Takes the remaining space along the parent's main axis.
-            pub fn grow(mut self) -> Self {
-                self.layout.grow = 1.0;
-                self
-            }
 
             /// As a window's content, extends under its title bar instead of starting below it.
             ///
@@ -126,7 +101,7 @@ macro_rules! canvas_view {
         }
 
         impl<H: $handler> NativeView for $name<H> {
-            attachments!();
+            modifiers!();
 
             fn base_element(&self, _cx: &mut Context<'_>) -> Element<RenderNode> {
                 let mut element = Element::node(RenderNode::View {
@@ -137,7 +112,7 @@ macro_rules! canvas_view {
                         reports_input: self.action.is_some(),
                     },
                     layout: self.layout,
-                    id: self.id.clone(),
+                    id: None,
                     enabled: true,
                     title_bar_interactive: false,
                     help: None,

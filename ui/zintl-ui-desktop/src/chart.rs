@@ -7,9 +7,9 @@ use zintl_ui::view::View;
 use zintl_ui_layout::{Axis, CrossAxisAlignment, LayoutDimension, LayoutStyle, Size};
 
 use crate::{
-    AccessibilityRole, Attach, Attachments, Canvas2D, Canvas2DHandler, Color, Context, Element,
-    Frame, Graphics2D, ListFactory, NativeView, PaletteColor, RenderNode, Text, TextAlignment,
-    list,
+    AccessibilityRole, Attach, Canvas2D, Canvas2DHandler, Color, Context, Element, Frame,
+    Graphics2D, Layout, ListFactory, NativeView, PaletteColor, RenderNode, Text, TextAlignment,
+    ViewModifiers, list,
 };
 
 type FormatValue = dyn Fn(f64) -> String;
@@ -60,8 +60,7 @@ pub struct BarChart {
     maximum: Option<f64>,
     label_width: Option<f32>,
     value_width: Option<f32>,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl BarChart {
@@ -78,8 +77,7 @@ impl BarChart {
             maximum: None,
             label_width: None,
             value_width: None,
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -116,12 +114,6 @@ impl BarChart {
     /// By default the column fits the chart's longest formatted value.
     pub fn value_width(mut self, width: f32) -> Self {
         self.value_width = Some(width);
-        self
-    }
-
-    /// Identifies the chart's accessibility group.
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
         self
     }
 
@@ -262,21 +254,18 @@ impl NativeView for BarChart {
             .collect::<ListFactory<RenderNode>>();
         let mut layout = LayoutStyle::stack(Axis::Vertical, 6.0);
         layout.width = LayoutDimension::Percent(1.0);
-        // The group exposes the chart's ID and scopes its bars for assistive apps and UI tests.
-        let view =
-            zintl_ui_native::View::new(layout, rows).accessibility_role(AccessibilityRole::Group);
-        match &self.id {
-            Some(id) => view.id(id.clone()).native_element(cx),
-            None => view.native_element(cx),
-        }
+        // The group carries the chart's ID and scopes its bars for assistive apps and UI tests.
+        zintl_ui_native::View::new(layout, rows)
+            .accessibility_role(AccessibilityRole::Group)
+            .native_element(cx)
     }
 
-    fn attachments(&self) -> &Attachments {
-        &self.attachments
+    fn modifiers(&self) -> &ViewModifiers {
+        &self.modifiers
     }
 
-    fn attachments_mut(&mut self) -> &mut Attachments {
-        &mut self.attachments
+    fn modifiers_mut(&mut self) -> &mut ViewModifiers {
+        &mut self.modifiers
     }
 }
 

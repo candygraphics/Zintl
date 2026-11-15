@@ -5,16 +5,15 @@ use zintl_ui::view::View;
 use zintl_ui_backend_core::ViewKind;
 use zintl_ui_layout::{Axis, LayoutDimension, LayoutStyle, Size};
 
-use crate::attach::attachments;
-use crate::{Attachments, Context, Element, NativeView, RenderNode};
+use crate::modifiers;
+use crate::{Context, Element, NativeView, RenderNode, ViewModifiers};
 
 /// Shows that work is in progress, as a spinner or a bar.
 #[derive(Clone)]
 pub struct ProgressIndicator {
     value: Option<f64>,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl ProgressIndicator {
@@ -23,8 +22,7 @@ impl ProgressIndicator {
         Self {
             value: None,
             layout: LayoutStyle::leaf(Size::new(16.0, 16.0)),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -35,30 +33,19 @@ impl ProgressIndicator {
         Self {
             value: Some(value),
             layout,
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
-    }
-
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
-        self
-    }
-
-    pub fn size(mut self, size: Size) -> Self {
-        self.layout.minimum_size = Some(size);
-        self
     }
 }
 
 impl NativeView for ProgressIndicator {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, _cx: &mut Context<'_>) -> Element<RenderNode> {
         Element::node(RenderNode::View {
             kind: ViewKind::ProgressIndicator { value: self.value },
             layout: self.layout,
-            id: self.id.clone(),
+            id: None,
             enabled: true,
             title_bar_interactive: false,
             help: None,
@@ -82,7 +69,7 @@ impl View for ProgressIndicator {
 #[derive(Clone)]
 pub struct Separator {
     layout: LayoutStyle,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl Separator {
@@ -106,13 +93,13 @@ impl Separator {
         }
         Self {
             layout,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 }
 
 impl NativeView for Separator {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, _cx: &mut Context<'_>) -> Element<RenderNode> {
         Element::node(RenderNode::View {

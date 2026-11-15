@@ -2,11 +2,11 @@
 
 use zintl_ui::element::{ElementFactory, IntoElement};
 use zintl_ui::view::View;
-use zintl_ui_layout::{Arrangement, Axis, LayoutDimension, LayoutStyle, Size};
+use zintl_ui_layout::{Arrangement, Axis, LayoutStyle, Size};
 
 use crate::{
-    AccessibilityRole, Attach, Attachments, Canvas2D, Canvas2DHandler, Color, Context, Element,
-    Frame, Graphics2D, ListFactory, NativeView, RenderNode, Store, Text, list,
+    AccessibilityRole, Attach, Canvas2D, Canvas2DHandler, Color, Context, Element, Frame,
+    Graphics2D, Layout, ListFactory, NativeView, RenderNode, Store, Text, ViewModifiers, list,
 };
 
 /// A plain native container for the arrangements below.
@@ -16,15 +16,10 @@ impl Container {
     /// Renders `children` laid out by `layout`.
     fn element(
         layout: LayoutStyle,
-        id: &Option<String>,
         children: ListFactory<RenderNode>,
         cx: &mut Context<'_>,
     ) -> Element<RenderNode> {
-        let view = zintl_ui_native::View::new(layout, children);
-        match id {
-            Some(id) => view.id(id.clone()).native_element(cx),
-            None => view.native_element(cx),
-        }
+        zintl_ui_native::View::new(layout, children).native_element(cx)
     }
 }
 
@@ -36,8 +31,7 @@ impl Container {
 pub struct ZStack {
     children: ListFactory<RenderNode>,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl ZStack {
@@ -47,39 +41,22 @@ impl ZStack {
         Self {
             children,
             layout,
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
-    }
-
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
-        self
-    }
-
-    pub fn fill_width(mut self) -> Self {
-        self.layout.width = LayoutDimension::Percent(1.0);
-        self
-    }
-
-    /// Takes the remaining space along the parent's main axis.
-    pub fn grow(mut self) -> Self {
-        self.layout.grow = 1.0;
-        self
     }
 }
 
 impl NativeView for ZStack {
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        Container::element(self.layout, &self.id, self.children.clone(), cx)
+        Container::element(self.layout, self.children.clone(), cx)
     }
 
-    fn attachments(&self) -> &Attachments {
-        &self.attachments
+    fn modifiers(&self) -> &ViewModifiers {
+        &self.modifiers
     }
 
-    fn attachments_mut(&mut self) -> &mut Attachments {
-        &mut self.attachments
+    fn modifiers_mut(&mut self) -> &mut ViewModifiers {
+        &mut self.modifiers
     }
 }
 
@@ -103,8 +80,7 @@ pub struct Grid {
     children: ListFactory<RenderNode>,
     striped: bool,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl Grid {
@@ -118,8 +94,7 @@ impl Grid {
             children,
             striped: false,
             layout,
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -132,16 +107,6 @@ impl Grid {
     /// Sets the gap between rows and between columns.
     pub fn spacing(mut self, spacing: f32) -> Self {
         self.layout.gap = spacing;
-        self
-    }
-
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
-        self
-    }
-
-    pub fn fill_width(mut self) -> Self {
-        self.layout.width = LayoutDimension::Percent(1.0);
         self
     }
 }
@@ -166,15 +131,15 @@ impl NativeView for Grid {
             }
         }
         children.extend(self.children.iter().cloned());
-        Container::element(self.layout, &self.id, children, cx)
+        Container::element(self.layout, children, cx)
     }
 
-    fn attachments(&self) -> &Attachments {
-        &self.attachments
+    fn modifiers(&self) -> &ViewModifiers {
+        &self.modifiers
     }
 
-    fn attachments_mut(&mut self) -> &mut Attachments {
-        &mut self.attachments
+    fn modifiers_mut(&mut self) -> &mut ViewModifiers {
+        &mut self.modifiers
     }
 }
 
@@ -186,7 +151,7 @@ impl NativeView for Grid {
 pub struct GridCell {
     content: ElementFactory<RenderNode>,
     column_span: u16,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl GridCell {
@@ -197,7 +162,7 @@ impl GridCell {
         Self {
             content: ElementFactory::new(content),
             column_span: 1,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -213,15 +178,15 @@ impl NativeView for GridCell {
         // The content stretches across the columns the cell covers.
         let mut layout = LayoutStyle::stack(Axis::Vertical, 0.0);
         layout.column_span = self.column_span;
-        Container::element(layout, &None, vec![self.content.clone()], cx)
+        Container::element(layout, vec![self.content.clone()], cx)
     }
 
-    fn attachments(&self) -> &Attachments {
-        &self.attachments
+    fn modifiers(&self) -> &ViewModifiers {
+        &self.modifiers
     }
 
-    fn attachments_mut(&mut self) -> &mut Attachments {
-        &mut self.attachments
+    fn modifiers_mut(&mut self) -> &mut ViewModifiers {
+        &mut self.modifiers
     }
 }
 
@@ -232,8 +197,7 @@ pub struct DisclosureGroup {
     content: ElementFactory<RenderNode>,
     binding: Option<Store<bool>>,
     expanded: Store<bool>,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl DisclosureGroup {
@@ -246,20 +210,13 @@ impl DisclosureGroup {
             content: ElementFactory::new(content),
             binding: None,
             expanded: Store::default(),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
     /// Reads and writes whether the group is expanded; it starts collapsed otherwise.
     pub fn bind(mut self, expanded: Store<bool>) -> Self {
         self.binding = Some(expanded);
-        self
-    }
-
-    /// Names the disclosure button, such as for UI tests.
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
         self
     }
 }
@@ -277,6 +234,11 @@ impl View for DisclosureGroup {
 }
 
 impl NativeView for DisclosureGroup {
+    // The ID names the disclosure button, such as for UI tests.
+    fn places_id(&self) -> bool {
+        true
+    }
+
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let expanded = self.expanded;
         let open = *cx.get(expanded);
@@ -287,8 +249,8 @@ impl NativeView for DisclosureGroup {
             .minimum_size(Size::new(13.0, 13.0))
             .bind_state(expanded)
             .accessibility_label(self.title.clone());
-        if let Some(id) = &self.id {
-            toggle = toggle.id(id.clone());
+        if let Some(id) = self.modifiers.id() {
+            toggle = toggle.id(id);
         }
         let title = Text::new(self.title.clone()).accessibility_hidden();
         let header = crate::HStack::new(list![toggle, title]).spacing(4.0);
@@ -303,11 +265,11 @@ impl NativeView for DisclosureGroup {
             .native_element(cx)
     }
 
-    fn attachments(&self) -> &Attachments {
-        &self.attachments
+    fn modifiers(&self) -> &ViewModifiers {
+        &self.modifiers
     }
 
-    fn attachments_mut(&mut self) -> &mut Attachments {
-        &mut self.attachments
+    fn modifiers_mut(&mut self) -> &mut ViewModifiers {
+        &mut self.modifiers
     }
 }

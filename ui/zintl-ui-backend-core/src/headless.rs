@@ -45,6 +45,11 @@ impl HeadlessBackend {
         self.tree.children(id)
     }
 
+    /// Returns whether the view at `id` and every view above it are enabled.
+    pub fn is_enabled(&self, id: NodeId) -> bool {
+        self.tree.is_enabled(id)
+    }
+
     /// Returns the Composer route associated with a rendered node.
     pub fn event_route(&self, id: NodeId) -> Option<EventRouteId> {
         self.tree.node(id).event_route

@@ -11,7 +11,7 @@ use zintl_ui_layout::{Axis, CrossAxisAlignment, Size};
 
 use crate::{
     Canvas2D, Canvas2DHandler, CanvasEvent, CanvasEventContext, Color, Context, Cursor, Frame,
-    Graphics2D, HStack, PointerButton, PointerPhase, RenderNode, VStack, graphics, list,
+    Graphics2D, HStack, Layout, PointerButton, PointerPhase, RenderNode, VStack, graphics, list,
 };
 
 /// Two panes with a divider that the user drags to resize the first one.

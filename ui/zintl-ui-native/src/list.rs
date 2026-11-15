@@ -8,8 +8,8 @@ use zintl_ui::view::View;
 use zintl_ui_backend_core::{ListStyle, ViewKind};
 use zintl_ui_layout::{LayoutStyle, Size};
 
-use crate::attach::attachments;
-use crate::{Attachments, Context, Element, Event, EventKind, NativeView, RenderNode};
+use crate::modifiers;
+use crate::{Context, Element, Event, EventKind, NativeView, RenderNode, ViewModifiers};
 
 type SelectionAction = dyn for<'a> Fn(&mut Context<'a>, Option<&str>);
 
@@ -64,8 +64,7 @@ pub struct List {
     selection: Option<Store<Option<String>>>,
     action: Option<Rc<SelectionAction>>,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl List {
@@ -76,8 +75,7 @@ impl List {
             selection: None,
             action: None,
             layout: LayoutStyle::fill(Size::new(0.0, 0.0)),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -101,16 +99,6 @@ impl List {
         self
     }
 
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
-        self
-    }
-
-    pub fn minimum_size(mut self, size: Size) -> Self {
-        self.layout.minimum_size = Some(size);
-        self
-    }
-
     fn route(&self, element: Element<RenderNode>) -> Element<RenderNode> {
         let store = self.selection;
         let action = self.action.clone();
@@ -131,7 +119,7 @@ impl List {
 }
 
 impl NativeView for List {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let sections = self
@@ -154,7 +142,7 @@ impl NativeView for List {
                 style: self.style,
             },
             layout: self.layout,
-            id: self.id.clone(),
+            id: None,
             enabled: true,
             title_bar_interactive: false,
             help: None,

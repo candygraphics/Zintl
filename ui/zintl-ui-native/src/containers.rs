@@ -4,12 +4,12 @@ use zintl_ui::element::{ElementFactory, IntoElement};
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
 use zintl_ui_backend_core::{ScrollAlignment, ScrollTarget, ViewKind};
-use zintl_ui_layout::{Axis, LayoutDimension, LayoutStyle, Size};
+use zintl_ui_layout::{Axis, LayoutStyle, Size};
 
-use crate::attach::attachments;
+use crate::modifiers;
 use crate::{
-    Attachments, Context, Element, Event, EventKind, NativeView, RenderNode, ScrollAxes,
-    ScrollStatus,
+    Context, Element, Event, EventKind, NativeView, RenderNode, ScrollAxes, ScrollStatus,
+    ViewModifiers,
 };
 
 type SelectionAction = dyn for<'a> Fn(&mut Context<'a>, usize);
@@ -22,8 +22,7 @@ pub struct ScrollView {
     store: Option<Store<ScrollStatus>>,
     target: Option<(Store<Option<String>>, ScrollAlignment)>,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl ScrollView {
@@ -37,8 +36,7 @@ impl ScrollView {
             store: None,
             target: None,
             layout: LayoutStyle::fill(Size::new(80.0, 80.0)),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -61,27 +59,10 @@ impl ScrollView {
         self.target = Some((target, alignment));
         self
     }
-
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
-        self
-    }
-
-    pub fn minimum_size(mut self, size: Size) -> Self {
-        self.layout.minimum_size = Some(size);
-        self
-    }
-
-    /// Uses a fixed height instead of filling the remaining space.
-    pub fn height(mut self, height: f32) -> Self {
-        self.layout.height = LayoutDimension::Points(height);
-        self.layout.grow = 0.0;
-        self
-    }
 }
 
 impl NativeView for ScrollView {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let element = Element::node(RenderNode::View {
@@ -100,7 +81,7 @@ impl NativeView for ScrollView {
                 }),
             },
             layout: self.layout,
-            id: self.id.clone(),
+            id: None,
             enabled: true,
             title_bar_interactive: false,
             help: None,
@@ -153,8 +134,7 @@ pub struct TabView {
     store: Option<Store<usize>>,
     action: Option<Rc<SelectionAction>>,
     layout: LayoutStyle,
-    id: Option<String>,
-    attachments: Attachments,
+    modifiers: ViewModifiers,
 }
 
 impl TabView {
@@ -168,8 +148,7 @@ impl TabView {
             store: None,
             action: None,
             layout: LayoutStyle::fill(Size::new(200.0, 120.0)),
-            id: None,
-            attachments: Attachments::default(),
+            modifiers: ViewModifiers::default(),
         }
     }
 
@@ -188,20 +167,10 @@ impl TabView {
         self.action = Some(Rc::new(action));
         self
     }
-
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
-        self
-    }
-
-    pub fn minimum_size(mut self, size: Size) -> Self {
-        self.layout.minimum_size = Some(size);
-        self
-    }
 }
 
 impl NativeView for TabView {
-    attachments!();
+    modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let mut page_layout = LayoutStyle::stack(Axis::Vertical, 8.0);
@@ -224,7 +193,7 @@ impl NativeView for TabView {
                 selected: self.store.map_or(self.selected, |store| *cx.get(store)),
             },
             layout: self.layout,
-            id: self.id.clone(),
+            id: None,
             enabled: true,
             title_bar_interactive: false,
             help: None,
