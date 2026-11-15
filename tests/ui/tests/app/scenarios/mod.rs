@@ -55,6 +55,7 @@ scenarios! {
         main_menu::MainView::new(options.variable("ZINTL_UI_TEST_MENU_LANGUAGE").as_deref() == Some("ja"))
     },
     overflow => "overflow": |_| overflow::MainView,
+    overflow_fields => "overflow-fields": |_| overflow_fields::MainView::new(),
     perform_main => "perform-main": |_| perform_main::MainView::new(),
     pickers => "pickers": |_| pickers::MainView::new(),
     popover => "popover": |_| popover::MainView::new(),
