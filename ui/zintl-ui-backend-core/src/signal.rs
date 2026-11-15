@@ -169,6 +169,7 @@ mod tests {
             scale: 1.0,
             time: 0.0,
             delta: 0.0,
+            palette: Default::default(),
         });
         (canvas, host)
     }

@@ -37,6 +37,11 @@ path = "tests/title_bar.rs"
 harness = false
 
 [[test]]
+name = "canvas_palette"
+path = "tests/canvas_palette.rs"
+harness = false
+
+[[test]]
 name = "metal_canvas"
 path = "tests/metal_canvas.rs"
 harness = false

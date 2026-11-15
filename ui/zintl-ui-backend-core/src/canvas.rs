@@ -13,9 +13,9 @@ use std::rc::{Rc, Weak};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use zintl_ui_graphics::{DrawCommand, Graphics2D, Point, RecordingBackend, Rect};
+use zintl_ui_graphics::{Color, DrawCommand, Graphics2D, Point, RecordingBackend, Rect};
 
-use crate::MainTaskSender;
+use crate::{MainTaskSender, SystemColor};
 
 /// Whether a handler needs to draw again after [`Canvas2DHandler::reconcile`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,6 +52,87 @@ pub struct Frame {
     pub time: f64,
     /// Seconds since the previous frame, or `0.0` for the first one.
     pub delta: f64,
+    /// Platform colors for the appearance the canvas draws in.
+    pub palette: Palette,
+}
+
+/// Platform colors resolved for the appearance a canvas draws in.
+///
+/// Backends resolve them for every frame, so drawings follow dark mode,
+/// Increase Contrast, and the user's accent color.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Palette {
+    pub accent: Color,
+    pub red: Color,
+    pub orange: Color,
+    pub yellow: Color,
+    pub green: Color,
+    pub blue: Color,
+    pub gray: Color,
+}
+
+impl Palette {
+    /// The light appearance with a blue accent, for backends that cannot resolve colors.
+    pub const LIGHT: Self = Self {
+        accent: Color::rgb(0.0, 0.478, 1.0),
+        red: Color::rgb(1.0, 0.231, 0.188),
+        orange: Color::rgb(1.0, 0.584, 0.0),
+        yellow: Color::rgb(1.0, 0.8, 0.0),
+        green: Color::rgb(0.157, 0.804, 0.255),
+        blue: Color::rgb(0.0, 0.478, 1.0),
+        gray: Color::rgb(0.557, 0.557, 0.576),
+    };
+
+    /// Returns the platform color for `color`.
+    pub fn system(&self, color: SystemColor) -> Color {
+        match color {
+            SystemColor::Red => self.red,
+            SystemColor::Orange => self.orange,
+            SystemColor::Yellow => self.yellow,
+            SystemColor::Green => self.green,
+            SystemColor::Blue => self.blue,
+            SystemColor::Gray => self.gray,
+        }
+    }
+
+    /// Returns the color `color` stands for in this palette.
+    pub fn resolve(&self, color: PaletteColor) -> Color {
+        match color {
+            PaletteColor::Accent => self.accent,
+            PaletteColor::System(color) => self.system(color),
+            PaletteColor::Custom(color) => color,
+        }
+    }
+}
+
+impl Default for Palette {
+    fn default() -> Self {
+        Self::LIGHT
+    }
+}
+
+/// A color that is resolved through the frame's [`Palette`] when a canvas draws.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum PaletteColor {
+    /// The user's accent color.
+    #[default]
+    Accent,
+    /// A platform color that adapts to dark mode and Increase Contrast.
+    System(SystemColor),
+    /// A fixed sRGB color.
+    Custom(Color),
+}
+
+impl From<Color> for PaletteColor {
+    fn from(color: Color) -> Self {
+        Self::Custom(color)
+    }
+}
+
+impl From<SystemColor> for PaletteColor {
+    fn from(color: SystemColor) -> Self {
+        Self::System(color)
+    }
 }
 
 impl Frame {
@@ -787,6 +868,7 @@ mod tests {
             scale: 2.0,
             time: 0.0,
             delta: 0.0,
+            palette: Default::default(),
         }
     }
 

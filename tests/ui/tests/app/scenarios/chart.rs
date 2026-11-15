@@ -51,7 +51,9 @@ impl View for MainView {
         .id("expenses");
         let income = BarChart::new([
             ChartBar::new("Salary", 5000.0).id("income-salary"),
-            ChartBar::new("Refunds", 1200.0).id("income-refunds"),
+            ChartBar::new("Refunds", 1200.0)
+                .color(SystemColor::Green)
+                .id("income-refunds"),
             ChartBar::new("Other", 600.0).id("income-other"),
         ])
         .label_width(160.0)

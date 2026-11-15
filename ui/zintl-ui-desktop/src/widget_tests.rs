@@ -161,6 +161,45 @@ fn bar_chart_exposes_a_group_with_bar_ids_and_fixed_columns() {
 }
 
 #[test]
+fn bar_chart_defaults_to_the_accent_color() {
+    // Verifies bars follow the accent color unless they choose a system or fixed color.
+    let palette = Palette::LIGHT;
+    let frame = Frame {
+        palette: Palette {
+            accent: Color::rgb(1.0, 0.0, 1.0),
+            ..palette
+        },
+        ..canvas_frame()
+    };
+    let (_, bars) = chart_parts(BarChart::new([
+        ChartBar::new("Food", 1.0),
+        ChartBar::new("Refunds", 1.0).color(SystemColor::Green),
+    ]));
+    let fills = bars
+        .iter()
+        .map(|bar| {
+            let RenderNode::View {
+                kind: ViewKind::Canvas2D { canvas, .. },
+                ..
+            } = bar
+            else {
+                panic!("bars are canvases");
+            };
+            let commands = canvas.record(&frame);
+            commands
+                .iter()
+                .find_map(|command| match command {
+                    graphics::DrawCommand::Fill { paint, .. } => Some(paint.clone()),
+                    _ => None,
+                })
+                .expect("the bar fills its frame")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(fills[0], Color::rgb(1.0, 0.0, 1.0).into());
+    assert_eq!(fills[1], palette.green.into());
+}
+
+#[test]
 fn system_text_colors_reach_the_render_node() {
     // Verifies a system color is kept by name, so the backend resolves it for the current appearance.
     let tree =
@@ -1239,6 +1278,7 @@ fn canvas_frame() -> Frame {
         scale: 2.0,
         time: 0.0,
         delta: 0.0,
+        palette: Default::default(),
     }
 }
 

@@ -335,6 +335,23 @@ impl Shared for ui::CanvasFrame {
             scale: self.scale,
             time: self.time,
             delta: self.delta,
+            palette: self.palette.shared(),
+        }
+    }
+}
+
+impl Shared for ui::CanvasPalette {
+    type Output = core::Palette;
+
+    fn shared(self) -> core::Palette {
+        core::Palette {
+            accent: self.accent.shared(),
+            red: self.red.shared(),
+            orange: self.orange.shared(),
+            yellow: self.yellow.shared(),
+            green: self.green.shared(),
+            blue: self.blue.shared(),
+            gray: self.gray.shared(),
         }
     }
 }

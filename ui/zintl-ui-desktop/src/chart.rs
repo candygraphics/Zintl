@@ -8,7 +8,8 @@ use zintl_ui_layout::{Axis, CrossAxisAlignment, LayoutDimension, LayoutStyle, Si
 
 use crate::{
     AccessibilityRole, Attach, Attachments, Canvas2D, Canvas2DHandler, Color, Context, Element,
-    Frame, Graphics2D, ListFactory, NativeView, RenderNode, Text, TextAlignment, list,
+    Frame, Graphics2D, ListFactory, NativeView, PaletteColor, RenderNode, Text, TextAlignment,
+    list,
 };
 
 type FormatValue = dyn Fn(f64) -> String;
@@ -18,7 +19,7 @@ type FormatValue = dyn Fn(f64) -> String;
 pub struct ChartBar {
     label: String,
     value: f64,
-    color: Option<Color>,
+    color: Option<PaletteColor>,
     id: Option<String>,
 }
 
@@ -32,9 +33,9 @@ impl ChartBar {
         }
     }
 
-    /// Fills this bar with `color` instead of the chart's color.
-    pub fn color(mut self, color: Color) -> Self {
-        self.color = Some(color);
+    /// Fills this bar with `color`, such as `SystemColor::Green`, instead of the chart's color.
+    pub fn color(mut self, color: impl Into<PaletteColor>) -> Self {
+        self.color = Some(color.into());
         self
     }
 
@@ -49,14 +50,13 @@ impl ChartBar {
 ///
 /// Each row shows a label, the bar, and the formatted value. The largest
 /// value, or [`BarChart::maximum`], fills the width beside the labels;
-/// negative values show no bar.
-/// Accessibility reports the chart as a group and each bar with its label
-/// and formatted value.
+/// negative values show no bar. Accessibility reports the chart as a group
+/// and each bar with its label and formatted value.
 #[derive(Clone)]
 pub struct BarChart {
     bars: Vec<ChartBar>,
     format: Rc<FormatValue>,
-    color: Color,
+    color: PaletteColor,
     maximum: Option<f64>,
     label_width: Option<f32>,
     value_width: Option<f32>,
@@ -74,7 +74,7 @@ impl BarChart {
         Self {
             bars: bars.into_iter().collect(),
             format: Rc::new(|value| format!("{value}")),
-            color: Color::rgb(0.0, 0.48, 1.0),
+            color: PaletteColor::Accent,
             maximum: None,
             label_width: None,
             value_width: None,
@@ -89,9 +89,9 @@ impl BarChart {
         self
     }
 
-    /// Fills bars without their own color with `color`.
-    pub fn color(mut self, color: Color) -> Self {
-        self.color = color;
+    /// Fills bars without their own color with `color`; the default is the accent color.
+    pub fn color(mut self, color: impl Into<PaletteColor>) -> Self {
+        self.color = color.into();
         self
     }
 
@@ -288,15 +288,15 @@ impl View for BarChart {
     }
 }
 
-/// Fills a bar with one color.
+/// Fills a bar with one color, resolved for the appearance it is drawn in.
 #[derive(Clone)]
 struct BarFill {
-    color: Color,
+    color: PaletteColor,
 }
 
 impl Canvas2DHandler for BarFill {
     fn draw(&mut self, g: &mut Graphics2D<'_>, frame: &Frame) {
         g.clear(Color::TRANSPARENT);
-        g.fill_rect(frame.bounds, self.color);
+        g.fill_rect(frame.bounds, frame.palette.resolve(self.color));
     }
 }
