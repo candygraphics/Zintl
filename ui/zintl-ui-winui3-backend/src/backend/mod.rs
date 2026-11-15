@@ -182,6 +182,8 @@ pub struct WinUI3Backend {
     titles_dirty: bool,
     /// Controls the user changed; their rendered values are shown again on the next synchronization.
     changed_by_user: Vec<NodeId>,
+    /// Views that take keyboard focus once they are shown in their window.
+    pending_focus: Vec<NodeId>,
 }
 
 impl Default for WinUI3Backend {
@@ -206,6 +208,7 @@ impl WinUI3Backend {
             gpu: GpuSlot::default(),
             titles_dirty: false,
             changed_by_user: Vec::new(),
+            pending_focus: Vec::new(),
         }
     }
 
@@ -353,6 +356,14 @@ impl WinUI3Backend {
         self.structure_dirty = false;
         self.layout_dirty = false;
         self.titles_dirty = false;
+        // Views are attached and laid out now, so new views can take focus too.
+        for id in std::mem::take(&mut self.pending_focus) {
+            if self.tree.contains(id)
+                && let Some(native) = &self.state(id).native
+            {
+                native.focus()?;
+            }
+        }
         self.pending_error.take()
     }
 
@@ -1322,13 +1333,25 @@ impl RenderBackend<RenderNode> for WinUI3Backend {
     fn create(&mut self, value: &RenderNode, event_route: Option<EventRouteId>) -> Self::NodeId {
         self.structure_dirty = true;
         self.layout_dirty = true;
-        self.tree.create(value, event_route)
+        let id = self.tree.create(value, event_route);
+        if let RenderNode::View { kind, .. } = value
+            && ViewKind::requests_focus(None, kind)
+        {
+            self.pending_focus.push(id);
+        }
+        id
     }
 
     fn update(&mut self, id: Self::NodeId, value: &RenderNode) {
         let old = self.kind(id);
         let mut new = value.clone();
         new.adopt_canvas(&old);
+        if let (RenderNode::View { kind: old_kind, .. }, RenderNode::View { kind, .. }) =
+            (&old, &new)
+            && ViewKind::requests_focus(Some(old_kind), kind)
+        {
+            self.pending_focus.push(id);
+        }
         if let Err(error) = self.update_native(id, &old, &new) {
             self.pending_error.record(error);
         }

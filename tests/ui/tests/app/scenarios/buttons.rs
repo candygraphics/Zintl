@@ -25,7 +25,7 @@ impl View for MainView {
         let logged = move |name: &'static str| {
             move |cx: &mut Context<'_>| cx.update(log, |log| log.push(name))
         };
-        Window::new(Rect::new(100.0, 100.0, 520.0, 300.0), "Zintl Buttons UI Test")
+        Window::new(Rect::new(100.0, 100.0, 520.0, 340.0), "Zintl Buttons UI Test")
             .id("main-window")
             .content(
                 VStack::new(list![
@@ -64,6 +64,18 @@ impl View for MainView {
                             .enabled(false)
                             .id("disabled")
                             .on_click(logged("disabled")),
+                    ])
+                    .spacing(8.0),
+                    // Icon-only push buttons take their symbol's size.
+                    HStack::new(list![
+                        Button::new("")
+                            .system_image("chevron.left")
+                            .id("previous")
+                            .on_click(logged("previous")),
+                        Button::new("")
+                            .system_image("chevron.right")
+                            .id("next")
+                            .on_click(logged("next")),
                     ])
                     .spacing(8.0),
                     // Typing here checks that Return reaches the default button from a text field.

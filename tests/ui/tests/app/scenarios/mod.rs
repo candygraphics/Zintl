@@ -36,9 +36,11 @@ scenarios! {
     buttons => "buttons": |_| buttons::MainView::new(),
     canvas_action => "canvas-action": |_| canvas_action::MainView::new(),
     canvas_input => "canvas-input": |_| canvas_input::MainView::new(),
+    chart => "chart": |_| chart::MainView::new(),
     color_panel => "color-panel": |_| color_panel::MainView::new(),
     context_menu => "context-menu": |_| context_menu::MainView::new(),
     controls => "controls": |_| controls::MainView::new(),
+    date_picker => "date-picker": |_| date_picker::MainView::new(),
     document => "document": |_| document::MainView::new(),
     file_dialog => "file-dialog": |options| {
         file_dialog::MainView::new(options.variable("ZINTL_UI_TEST_DIRECTORY"))
@@ -50,6 +52,7 @@ scenarios! {
     help => "help": |_| help::MainView,
     hstack => "hstack": |_| hstack::MainView,
     indicators => "indicators": |_| indicators::MainView::new(),
+    integer_field => "integer-field": |_| integer_field::MainView::new(),
     list => "list": |_| list::MainView::new(),
     main_menu => "main-menu": |options| {
         main_menu::MainView::new(options.variable("ZINTL_UI_TEST_MENU_LANGUAGE").as_deref() == Some("ja"))
@@ -69,6 +72,7 @@ scenarios! {
     text_commit => "text-commit": |_| text_commit::MainView::new(),
     text_editor => "text-editor": |_| text_editor::MainView::new(),
     text_field => "text-field": |_| text_field::MainView::new(),
+    text_focus => "text-focus": |_| text_focus::MainView::new(),
     text_inputs => "text-inputs": |_| text_inputs::MainView::new(),
     text_styles => "text-styles": |_| text_styles::MainView,
     toggles => "toggles": |_| toggles::MainView::new(),

@@ -29,11 +29,12 @@ pub use context::{Context, StoreSender, StoreUpdate, StoreUpdates};
 pub use event::{Event, EventKind};
 pub use headless::HeadlessBackend;
 pub use model::{
-    AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, CommandItem,
-    CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig, FileDialogMode,
-    ListSection, ListStyle, MenuRole, NumberFormat, PopoverEdge, ScrollAlignment, ScrollAxes,
-    ScrollTarget, Sidebar, SidebarItem, SidebarSearch, SidebarSection, TableColumn, TextAlignment,
-    TextColor, TextStyle, TitleBar, Toolbar, ToolbarItem, WindowAppMenu, WindowStyle,
+    AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, CalendarDate,
+    CommandItem, CommandMenu, CommandModifier, CommandRole, CommandSet, DatePickerStyle,
+    FileDialogConfig, FileDialogMode, ListSection, ListStyle, MenuRole, NumberFormat, PopoverEdge,
+    ScrollAlignment, ScrollAxes, ScrollTarget, ShortcutKey, Sidebar, SidebarItem, SidebarSearch,
+    SidebarSection, SortOrder, SystemColor, TableColumn, TextAlignment, TextColor, TextStyle,
+    TitleBar, Toolbar, ToolbarItem, WindowAppMenu, WindowStyle,
 };
 pub use signal::Signal;
 #[cfg(feature = "wgpu")]
@@ -80,6 +81,8 @@ pub enum ViewKind {
         draws_background: bool,
         multiline: bool,
         style: TextStyle,
+        /// Each increase makes the field take keyboard focus.
+        focus: u64,
     },
     /// A scrolling rich text editor that fills its parent.
     TextEditor {
@@ -121,6 +124,11 @@ pub enum ViewKind {
         value: String,
         placeholder: Option<String>,
     },
+    /// A calendar date in a text field or a month calendar.
+    DatePicker {
+        date: CalendarDate,
+        style: DatePickerStyle,
+    },
     ColorWell {
         color: Color,
     },
@@ -155,6 +163,12 @@ pub enum ViewKind {
         /// Row IDs; each row has one cell per column.
         rows: Vec<String>,
         selected: Option<String>,
+        /// Whether the table always shows `selected`, so a selection the app rejects is undone.
+        follows_selection: bool,
+        /// The order the header shows; the app sorts `rows` itself.
+        sort: Option<SortOrder>,
+        /// Whether columns wider than the table shrink to fit its width.
+        fit_columns: bool,
         striped: bool,
     },
     /// A view drawn by its canvas handler.
@@ -179,6 +193,17 @@ pub enum ViewKind {
 }
 
 impl ViewKind {
+    /// Returns whether a view that rendered `old`, or is new, should now take keyboard focus.
+    ///
+    /// Text fields and editors take focus each time their focus request count increases.
+    pub fn requests_focus(old: Option<&Self>, new: &Self) -> bool {
+        let focus = |kind: &Self| match kind {
+            Self::TextField { focus, .. } | Self::TextEditor { focus, .. } => *focus,
+            _ => 0,
+        };
+        focus(new) > old.map_or(0, focus)
+    }
+
     /// Returns whether this control shows its rendered value again after the user changes it.
     ///
     /// Discrete controls follow the app's value, so a change the app rejects
@@ -186,7 +211,13 @@ impl ViewKind {
     pub fn reverts_user_changes(&self) -> bool {
         match self {
             Self::Button(button) => button.button_type != ButtonType::MomentaryPushIn,
-            Self::Switch { .. } | Self::PopUpButton { .. } | Self::SegmentedControl { .. } => true,
+            Self::Switch { .. }
+            | Self::PopUpButton { .. }
+            | Self::SegmentedControl { .. }
+            | Self::DatePicker { .. } => true,
+            Self::Table {
+                follows_selection, ..
+            } => *follows_selection,
             _ => false,
         }
     }

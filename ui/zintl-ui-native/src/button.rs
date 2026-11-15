@@ -26,6 +26,8 @@ pub struct Button {
     state: Option<Store<bool>>,
     enabled: bool,
     layout: LayoutStyle,
+    /// Whether the app declared a minimum size, which icon-only buttons then keep.
+    declares_minimum: bool,
     id: Option<String>,
     attachments: Attachments,
     action: Option<Rc<Action>>,
@@ -47,6 +49,7 @@ impl Button {
             state: None,
             enabled: true,
             layout: LayoutStyle::leaf(Size::new(80.0, 32.0)),
+            declares_minimum: false,
             id: None,
             attachments: Attachments::default(),
             action: None,
@@ -82,6 +85,7 @@ impl Button {
 
     pub fn minimum_size(mut self, size: Size) -> Self {
         self.layout.minimum_size = Some(size);
+        self.declares_minimum = true;
         self
     }
 
@@ -101,13 +105,16 @@ impl Button {
         self
     }
 
-    /// Shows an SF Symbol; an empty title shows the symbol alone.
     /// Draws the title in `color` instead of the platform's color.
     pub fn title_color(mut self, color: Color) -> Self {
         self.title_color = Some(color);
         self
     }
 
+    /// Shows an SF Symbol; an empty title shows the symbol alone.
+    ///
+    /// A button with only a symbol takes the symbol's size instead of the
+    /// standard push button size, unless a minimum size is declared.
     pub fn system_image(mut self, name: impl Into<String>) -> Self {
         self.system_image = Some(name.into());
         self
@@ -165,6 +172,17 @@ impl Button {
     }
 }
 
+impl Button {
+    /// Returns the layout; icon-only buttons leave their size to the backend's measuring.
+    fn layout(&self) -> LayoutStyle {
+        let mut layout = self.layout;
+        if self.title.is_empty() && self.system_image.is_some() && !self.declares_minimum {
+            layout.minimum_size = Some(Size::default());
+        }
+        layout
+    }
+}
+
 impl NativeView for Button {
     attachments!();
 
@@ -188,7 +206,7 @@ impl NativeView for Button {
                 keeps_state: self.keeps_state,
                 title_color: self.title_color,
             }),
-            layout: self.layout,
+            layout: self.layout(),
             id: self.id.clone(),
             enabled: self.enabled,
             title_bar_interactive: false,

@@ -8,8 +8,8 @@ use crate::native;
 use crate::runloop::Application;
 use zpd_objc::{Id, RcIvar, Strong};
 
-use super::UiError;
 use super::view::{self, AsView, ViewActor, ViewRef};
+use super::{TextAlignment, UiError};
 
 /// The table style of a [`ListView`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -38,6 +38,10 @@ pub struct TableColumn {
     /// The initial rendered width in points, including the spacing between
     /// columns; `None` lets the table size it.
     pub width: Option<f64>,
+    /// The alignment of the header title.
+    pub alignment: TextAlignment,
+    /// The key reported when the user sorts by this column; `None` makes it unsortable.
+    pub sort_key: Option<String>,
 }
 
 /// A table row: a section header or a selectable row with an ID.
@@ -76,6 +80,17 @@ impl ListState {
             let state = unsafe { LIST_STATE.get(object) };
             state.as_deref().map(operation).unwrap_or_default()
         })
+    }
+
+    /// Reports `kind` for `row` when it is a selectable row; returns whether it was reported.
+    fn emit_row(&self, row: i64, kind: impl FnOnce(String) -> WindowEventKind) -> bool {
+        let Some(id) = self.entry(row, |entry| entry.id.clone()) else {
+            return false;
+        };
+        if let Some(tree) = self.actor.tree_handle() {
+            tree.emit(&self.actor, kind(id));
+        }
+        true
     }
 
     fn entry<R: Default>(&self, row: i64, read: impl FnOnce(&Entry) -> R) -> R {
@@ -155,6 +170,105 @@ unsafe extern "C" fn selection_changed(object: Id, _: zpd_objc::Sel, notificatio
     });
 }
 
+/// Reports the order the user chose by clicking a sortable header.
+unsafe extern "C" fn sort_changed(object: Id, _: zpd_objc::Sel, table: Id, _: Id) {
+    ListState::with(object, |state| {
+        if !state.ready.get() {
+            return;
+        }
+        // SAFETY: AppKit passes the live table, whose first descriptor is the new order.
+        let order = unsafe {
+            let descriptors =
+                zpd_objc::msg_send!(table, zpd_objc::sel!("sortDescriptors"), () => Id);
+            let first = zpd_objc::msg_send!(descriptors, zpd_objc::sel!("firstObject"), () => Id);
+            (!first.is_null()).then(|| {
+                let key = native::rust_string(
+                    zpd_objc::msg_send!(first, zpd_objc::sel!("key"), () => Id),
+                );
+                (
+                    key,
+                    zpd_objc::msg_send!(first, zpd_objc::sel!("ascending"), () => bool),
+                )
+            })
+        };
+        if let (Some((key, ascending)), Some(tree)) = (order, state.actor.tree_handle()) {
+            tree.emit(
+                &state.actor,
+                WindowEventKind::SortChanged { key, ascending },
+            );
+        }
+    });
+}
+
+/// Runs `operation` with the state of the delegate of `table`, if it still has one.
+fn with_table_state<R: Default>(table: Id, operation: impl FnOnce(&ListState) -> R) -> R {
+    // SAFETY: The receiver is a live table whose delegate is ours or nil after teardown.
+    let delegate = unsafe { zpd_objc::msg_send!(table, zpd_objc::sel!("delegate"), () => Id) };
+    if delegate.is_null() {
+        return R::default();
+    }
+    ListState::with(delegate, operation)
+}
+
+/// Reports the double-clicked row as activated; clicks on the header or below the rows have none.
+unsafe extern "C" fn activate_clicked_row(object: Id, _: zpd_objc::Sel, _: Id) {
+    // SAFETY: AppKit sends the double action to the live table.
+    let row = unsafe { zpd_objc::msg_send!(object, zpd_objc::sel!("clickedRow"), () => i64) };
+    with_table_state(object, |state| {
+        state.emit_row(row, |id| WindowEventKind::RowActivated { id })
+    });
+}
+
+/// Activates the selected row on Return, reports Delete for it, and passes other keys on.
+unsafe extern "C" fn table_key_down(object: Id, _: zpd_objc::Sel, event: Id) {
+    const RETURN: u16 = 36;
+    const ENTER: u16 = 76;
+    const DELETE: u16 = 51;
+    const FORWARD_DELETE: u16 = 117;
+    let shortcut_flags = native::NS_EVENT_MODIFIER_FLAG_COMMAND
+        | native::NS_EVENT_MODIFIER_FLAG_CONTROL
+        | native::NS_EVENT_MODIFIER_FLAG_OPTION;
+    // SAFETY: AppKit passes a live key event to the live table.
+    let (key, flags, row) = unsafe {
+        (
+            zpd_objc::msg_send!(event, zpd_objc::sel!("keyCode"), () => u16),
+            zpd_objc::msg_send!(event, zpd_objc::sel!("modifierFlags"), () => u64),
+            zpd_objc::msg_send!(object, zpd_objc::sel!("selectedRow"), () => i64),
+        )
+    };
+    let handled = flags & shortcut_flags == 0
+        && match key {
+            RETURN | ENTER => with_table_state(object, |state| {
+                state.emit_row(row, |id| WindowEventKind::RowActivated { id })
+            }),
+            // Without a selected row, the table handles the key as before.
+            DELETE | FORWARD_DELETE => with_table_state(object, |state| {
+                state.emit_row(row, |id| WindowEventKind::RowDeleteRequested { id })
+            }),
+            _ => false,
+        };
+    if !handled {
+        // SAFETY: The receiver is an NSTableView subclass instance.
+        unsafe {
+            zpd_objc::msg_send_super!(object, zpd_objc::class!("NSTableView"), zpd_objc::sel!("keyDown:"), ((event): Id) => ());
+        }
+    }
+}
+
+/// An `NSTableView` that reports row activation and keys for rows.
+fn table_class() -> zpd_objc::Class {
+    static CLASS: OnceLock<usize> = OnceLock::new();
+    *CLASS.get_or_init(|| {
+        zpd_objc::decl!(ZpdListTableView: [zpd_objc::class!("NSTableView")] {
+            fields {}
+            methods {
+                "keyDown:": "v@:@" => table_key_down,
+                "zpdActivateClickedRow:": "v@:@" => activate_clicked_row,
+            }
+        }) as usize
+    }) as zpd_objc::Class
+}
+
 /// Fills the table's menu with the context menu of the clicked row's view.
 ///
 /// `NSTableView` shows its own menu on right-click and ignores row views'
@@ -227,6 +341,7 @@ fn delegate_class() -> zpd_objc::Class {
                 "tableView:isGroupRow:": "B@:@q" => is_group,
                 "tableView:shouldSelectRow:": "B@:@q" => should_select,
                 "tableViewSelectionDidChange:": "v@:@" => selection_changed,
+                "tableView:sortDescriptorsDidChange:": "v@:@@" => sort_changed,
                 "menuNeedsUpdate:": "v@:@" => menu_needs_update,
                 "dealloc": "v@:" => dealloc,
             }
@@ -245,12 +360,14 @@ pub struct ListView {
     table: ActorRef,
     state: Rc<ListState>,
     columns: Cell<usize>,
+    /// Whether columns shrink to fit the visible width.
+    fits_columns: Cell<bool>,
 }
 
 impl ListView {
     pub fn new(application: &Application) -> Result<Self, UiError> {
         let scroll = native::alloc_init(zpd_objc::class!("NSScrollView"));
-        let table = native::alloc_init(zpd_objc::class!("NSTableView"));
+        let table = native::alloc_init(table_class());
         let view = ViewActor::new(application, scroll.clone());
         let tree = view.actor().tree_handle().ok_or(UiError::Closed)?;
         let table_actor = tree.insert_child(view.actor(), table.clone())?;
@@ -292,6 +409,9 @@ impl ListView {
             zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setAllowsMultipleSelection:"), ((false): bool) => ());
             zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setDataSource:"), ((delegate.as_ptr()): Id) => ());
             zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setDelegate:"), ((delegate.as_ptr()): Id) => ());
+            // The table is its own target, which NSControl does not retain.
+            zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setTarget:"), ((table.as_ptr()): Id) => ());
+            zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setDoubleAction:"), ((zpd_objc::sel!("zpdActivateClickedRow:")): zpd_objc::Sel) => ());
             let menu = native::alloc_init(zpd_objc::class!("NSMenu"));
             zpd_objc::msg_send!(menu.as_ptr(), zpd_objc::sel!("setDelegate:"), ((delegate.as_ptr()): Id) => ());
             zpd_objc::msg_send!(table.as_ptr(), zpd_objc::sel!("setMenu:"), ((menu.as_ptr()): Id) => ());
@@ -302,6 +422,7 @@ impl ListView {
             table: table_actor,
             state,
             columns: Cell::new(1),
+            fits_columns: Cell::new(false),
         })
     }
 
@@ -329,6 +450,8 @@ impl ListView {
                 let list_column = TableColumn {
                     title: String::new(),
                     width: None,
+                    alignment: TextAlignment::Leading,
+                    sort_key: None,
                 };
                 // NSTableColumn widths exclude the intercell spacing drawn beside each column.
                 let spacing = zpd_objc::msg_send!(table, zpd_objc::sel!("intercellSpacing"), () => native::Size).width;
@@ -344,6 +467,13 @@ impl ListView {
                     };
                     let title = native::nsstring(&declared.title);
                     zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("setTitle:"), ((title.as_ptr()): Id) => ());
+                    let header = zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("headerCell"), () => Id);
+                    zpd_objc::msg_send!(header, zpd_objc::sel!("setAlignment:"), ((declared.alignment.native()): isize) => ());
+                    // A prototype makes the header clickable for sorting, starting ascending.
+                    if let Some(key) = &declared.sort_key {
+                        let descriptor = Self::sort_descriptor(key, true);
+                        zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("setSortDescriptorPrototype:"), ((descriptor): Id) => ());
+                    }
                     if let Some(width) = declared.width {
                         let width = (width - spacing).max(0.0);
                         zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("setWidth:"), ((width): f64) => ());
@@ -363,6 +493,107 @@ impl ListView {
     }
 
     const USER_RESIZING_MASK: u64 = 1 << 1;
+
+    /// Returns an autoreleased `NSSortDescriptor`.
+    ///
+    /// # Safety
+    /// Must run on the main thread inside an autorelease scope.
+    unsafe fn sort_descriptor(key: &str, ascending: bool) -> Id {
+        let key = native::nsstring(key);
+        // SAFETY: Guaranteed by the caller; the descriptor copies the key.
+        unsafe {
+            zpd_objc::msg_send!(zpd_objc::class!("NSSortDescriptor"), zpd_objc::sel!("sortDescriptorWithKey:ascending:"), ((key.as_ptr()): Id, (ascending): bool) => Id)
+        }
+    }
+
+    /// Shows `order` as `(key, ascending)` in the header, without reporting it as the user's.
+    ///
+    /// The column whose sort key matches shows the sort indicator.
+    pub fn set_sort(&self, order: Option<(&str, bool)>) -> Result<(), UiError> {
+        self.quietly(|table| {
+            // SAFETY: The live table and its columns accept sort descriptors and indicator images.
+            unsafe {
+                let descriptors = match order {
+                    Some((key, ascending)) => {
+                        let descriptor = Self::sort_descriptor(key, ascending);
+                        zpd_objc::msg_send!(zpd_objc::class!("NSArray"), zpd_objc::sel!("arrayWithObject:"), ((descriptor): Id) => Id)
+                    }
+                    None => zpd_objc::msg_send!(zpd_objc::class!("NSArray"), zpd_objc::sel!("array"), () => Id),
+                };
+                zpd_objc::msg_send!(table, zpd_objc::sel!("setSortDescriptors:"), ((descriptors): Id) => ());
+                let columns = zpd_objc::msg_send!(table, zpd_objc::sel!("tableColumns"), () => Id);
+                let count = zpd_objc::msg_send!(columns, zpd_objc::sel!("count"), () => usize);
+                let mut highlighted = zpd_objc::NIL;
+                for index in 0..count {
+                    let column = zpd_objc::msg_send!(columns, zpd_objc::sel!("objectAtIndex:"), ((index): usize) => Id);
+                    let prototype = zpd_objc::msg_send!(column, zpd_objc::sel!("sortDescriptorPrototype"), () => Id);
+                    let sorted = order.filter(|_| !prototype.is_null()).and_then(|(key, ascending)| {
+                        let column_key = native::rust_string(zpd_objc::msg_send!(prototype, zpd_objc::sel!("key"), () => Id));
+                        (column_key == key).then_some(ascending)
+                    });
+                    let image = match sorted {
+                        Some(true) => native::nsstring("NSAscendingSortIndicator"),
+                        Some(false) => native::nsstring("NSDescendingSortIndicator"),
+                        None => {
+                            zpd_objc::msg_send!(table, zpd_objc::sel!("setIndicatorImage:inTableColumn:"), ((zpd_objc::NIL): Id, (column): Id) => ());
+                            continue;
+                        }
+                    };
+                    let image = zpd_objc::msg_send!(zpd_objc::class!("NSImage"), zpd_objc::sel!("imageNamed:"), ((image.as_ptr()): Id) => Id);
+                    zpd_objc::msg_send!(table, zpd_objc::sel!("setIndicatorImage:inTableColumn:"), ((image): Id, (column): Id) => ());
+                    highlighted = column;
+                }
+                zpd_objc::msg_send!(table, zpd_objc::sel!("setHighlightedTableColumn:"), ((highlighted): Id) => ());
+            }
+        })
+    }
+
+    /// Makes [`ListView::fit_columns`] shrink columns that are wider than the visible width.
+    pub fn set_fits_columns(&self, fits: bool) {
+        self.fits_columns.set(fits);
+    }
+
+    /// Shrinks the columns proportionally when they are wider than the visible width.
+    ///
+    /// No column gets narrower than its header title, so text is truncated
+    /// rather than squeezed away. Does nothing unless fitting is on.
+    pub fn fit_columns(&self) -> Result<(), UiError> {
+        const MINIMUM: f64 = 24.0;
+        if !self.fits_columns.get() {
+            return Ok(());
+        }
+        self.table.with(|table| {
+            // SAFETY: The live table sits in its scroll view and owns its columns.
+            unsafe {
+                let scroll = zpd_objc::msg_send!(table, zpd_objc::sel!("enclosingScrollView"), () => Id);
+                if scroll.is_null() {
+                    return;
+                }
+                let available = zpd_objc::msg_send!(scroll, zpd_objc::sel!("contentSize"), () => native::Size).width;
+                let spacing = zpd_objc::msg_send!(table, zpd_objc::sel!("intercellSpacing"), () => native::Size).width;
+                let columns = zpd_objc::msg_send!(table, zpd_objc::sel!("tableColumns"), () => Id);
+                let count = zpd_objc::msg_send!(columns, zpd_objc::sel!("count"), () => usize);
+                let column = |index: usize| zpd_objc::msg_send!(columns, zpd_objc::sel!("objectAtIndex:"), ((index): usize) => Id);
+                let total: f64 = (0..count)
+                    .map(|index| zpd_objc::msg_send!(column(index), zpd_objc::sel!("width"), () => f64) + spacing)
+                    .sum();
+                if available <= 0.0 || total <= available + 0.5 {
+                    return;
+                }
+                let factor = available / total;
+                for index in 0..count {
+                    let column = column(index);
+                    let header = zpd_objc::msg_send!(column, zpd_objc::sel!("headerCell"), () => Id);
+                    let title = zpd_objc::msg_send!(header, zpd_objc::sel!("cellSize"), () => native::Size).width;
+                    let width = zpd_objc::msg_send!(column, zpd_objc::sel!("width"), () => f64);
+                    // Whole points keep rounding from pushing the last column past the edge.
+                    let fitted = ((width + spacing) * factor - spacing).floor().max(title.max(MINIMUM));
+                    zpd_objc::msg_send!(column, zpd_objc::sel!("setWidth:"), ((fitted): f64) => ());
+                }
+            }
+        })?;
+        Ok(())
+    }
 
     /// Shades every other row.
     pub fn set_striped(&self, striped: bool) -> Result<(), UiError> {

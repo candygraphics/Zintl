@@ -5,9 +5,9 @@ use std::sync::Arc;
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
     AccessibilityAttributes, AccessibilityRole as NativeRole, AsView, Button, CanvasView,
-    ColorWell, ComboBox, ListView, NumberField, PopUpButton, ProgressIndicator, ScrollView,
-    SearchField, SegmentedControl, Separator, Slider, Switch, TabView, TextEditor, TextField,
-    UiError, View, ViewRef,
+    ColorWell, ComboBox, DatePicker, ListView, NumberField, PopUpButton, ProgressIndicator,
+    ScrollView, SearchField, SegmentedControl, Separator, Slider, Switch, TabView, TextEditor,
+    TextField, UiError, View, ViewRef,
 };
 
 use zintl_ui_layout::Size;
@@ -50,6 +50,7 @@ pub(super) enum NativeNode {
     Separator(Separator),
     SearchField(SearchField),
     ColorWell(ColorWell),
+    DatePicker(DatePicker),
     /// The offset waits until layout has sized the document.
     ScrollView(ScrollView, ScrollState),
     TabView(TabView),
@@ -83,6 +84,7 @@ impl NativeNode {
             Self::Separator(view) => view.as_view(),
             Self::SearchField(view) => view.as_view(),
             Self::ColorWell(view) => view.as_view(),
+            Self::DatePicker(view) => view.as_view(),
             Self::ScrollView(view, _) => view.as_view(),
             Self::TabView(view) => view.as_view(),
             Self::Canvas(view) => view.as_view(),
@@ -130,6 +132,7 @@ impl NativeNode {
             ViewKind::Separator => Self::Separator(Separator::new(application)?),
             ViewKind::SearchField { .. } => Self::SearchField(SearchField::new(application)?),
             ViewKind::ColorWell { .. } => Self::ColorWell(ColorWell::new(application)?),
+            ViewKind::DatePicker { .. } => Self::DatePicker(DatePicker::new(application)?),
             ViewKind::ScrollView { .. } => {
                 Self::ScrollView(ScrollView::new(application)?, ScrollState::default())
             }
@@ -183,7 +186,8 @@ impl NativeNode {
             ViewKind::Button(_)
             | ViewKind::Switch { .. }
             | ViewKind::PopUpButton { .. }
-            | ViewKind::SegmentedControl { .. } => (true, true),
+            | ViewKind::SegmentedControl { .. }
+            | ViewKind::DatePicker { .. } => (true, true),
             // Wrapping labels need a width before they have a height.
             ViewKind::TextField {
                 editable: false,
@@ -302,6 +306,15 @@ impl NativeNode {
         }
     }
 
+    /// Moves keyboard focus to a text field or editor that is in a window.
+    pub(super) fn focus(&self) -> Result<(), UiError> {
+        match self {
+            Self::TextField(field) => field.focus(),
+            Self::TextEditor(editor) => editor.focus(),
+            _ => Ok(()),
+        }
+    }
+
     /// Sets the tooltip on the view the pointer rests on.
     pub(super) fn set_tool_tip(&self, text: Option<&str>) -> Result<(), UiError> {
         match self {
@@ -383,6 +396,7 @@ impl NativeNode {
                     draws_background,
                     multiline,
                     style,
+                    ..
                 },
             ) => {
                 // Typed text stays until the value changes, so unbound fields keep edits.
@@ -449,15 +463,12 @@ impl NativeNode {
                     field.set_alignment(style.alignment.native())?;
                 }
             }
-            (Self::TextEditor(editor), ViewKind::TextEditor { text, focus }) => {
-                let (old_text, old_focus) = match old {
-                    Some(ViewKind::TextEditor { text, focus }) => (Some(text), Some(*focus)),
-                    _ => (None, None),
+            (Self::TextEditor(editor), ViewKind::TextEditor { text, .. }) => {
+                // Focus requests are applied by the backend once the editor is in its window.
+                let old_text = match old {
+                    Some(ViewKind::TextEditor { text, .. }) => Some(text),
+                    _ => None,
                 };
-                // Each new focus request moves keyboard focus to the editor.
-                if *focus > 0 && old_focus != Some(*focus) {
-                    editor.focus()?;
-                }
                 // Text the editor already shows is not written back, so typing keeps
                 // the insertion point. Unchanged text is skipped too: AppKit cannot
                 // keep a paragraph style on an empty last line.
@@ -577,6 +588,15 @@ impl NativeNode {
                     field.set_string_value(value)?;
                 }
             }
+            (Self::DatePicker(picker), ViewKind::DatePicker { date, style }) => {
+                if !matches!(old, Some(ViewKind::DatePicker { style: old, .. }) if old == style) {
+                    picker.set_style(style.native())?;
+                }
+                // The shown date is compared, so a date the app rejected is shown again.
+                if picker.date()? != (date.year, date.month, date.day) {
+                    picker.set_date(date.year, date.month, date.day)?;
+                }
+            }
             (Self::ColorWell(well), ViewKind::ColorWell { color }) => {
                 if !matches!(old, Some(ViewKind::ColorWell { color: old }) if old == color) {
                     well.set_color(color.native())?;
@@ -677,15 +697,30 @@ impl NativeNode {
                     columns,
                     selected,
                     striped,
+                    sort,
+                    fit_columns,
                     ..
                 },
             ) => {
                 if old.is_none() {
                     list.set_style(zpd_appkit::ui::ListStyle::Plain)?;
                 }
+                // Columns are fitted whenever the table lays out.
+                list.set_fits_columns(*fit_columns);
                 // New columns take effect when the rows are attached again.
-                if !matches!(old, Some(ViewKind::Table { columns: old, .. }) if old == columns) {
+                let new_columns =
+                    !matches!(old, Some(ViewKind::Table { columns: old, .. }) if old == columns);
+                if new_columns {
                     list.set_columns(&columns.iter().map(Native::native).collect::<Vec<_>>())?;
+                }
+                // New columns lose their indicators, so the order is shown again with them.
+                if new_columns
+                    || !matches!(old, Some(ViewKind::Table { sort: old, .. }) if old == sort)
+                {
+                    list.set_sort(
+                        sort.as_ref()
+                            .map(|order| (order.key.as_str(), order.ascending)),
+                    )?;
                 }
                 if !matches!(old, Some(ViewKind::Table { striped: old, .. }) if old == striped) {
                     list.set_striped(*striped)?;

@@ -44,6 +44,20 @@ final class ButtonsTests: ZintlUITestCase {
     assertLabel("log", "Log: delete,gear,circular,help")
   }
 
+  /// Verifies icon-only buttons take their symbol's size and still run their actions.
+  func testIconOnlyButtonsFitTheirSymbol() throws {
+    try launch(scenario: "buttons")
+
+    for id in ["previous", "next", "gear"] {
+      let button = app.buttons[id]
+      XCTAssertTrue(button.waitToExist(timeout: 2))
+      XCTAssertLessThan(button.frame.width, 40, id)
+    }
+    app.buttons["previous"].click()
+    app.buttons["gear"].click()
+    assertLabel("log", "Log: previous,gear")
+  }
+
   /// Verifies a disabled button reports itself disabled and ignores clicks.
   func testDisabledButtonIgnoresClicks() throws {
     try launch(scenario: "buttons")

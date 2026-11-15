@@ -283,8 +283,23 @@ fn single_line_text_fields_measure_their_height() {
         draws_background: true,
         multiline,
         style: Default::default(),
+        focus: 0,
     };
     assert_eq!(NativeNode::measured_axes(&field(false)), (false, true));
     // Multiline fields keep their declared size.
     assert_eq!(NativeNode::measured_axes(&field(true)), (false, false));
+}
+
+#[test]
+fn focus_requests_follow_increases_only() {
+    // Verifies a field takes focus when created with a request or when the count rises, not otherwise.
+    let editor = |focus| ViewKind::TextEditor {
+        text: Default::default(),
+        focus,
+    };
+    assert!(ViewKind::requests_focus(None, &editor(1)));
+    assert!(!ViewKind::requests_focus(None, &editor(0)));
+    assert!(ViewKind::requests_focus(Some(&editor(1)), &editor(2)));
+    // Re-rendering with the same count keeps focus where the user moved it.
+    assert!(!ViewKind::requests_focus(Some(&editor(2)), &editor(2)));
 }

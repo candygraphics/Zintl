@@ -40,6 +40,14 @@ final class MainMenuTests: ZintlUITestCase {
     assertLabel("log", "Log: Duplicate,Hello,Settings")
   }
 
+  /// Verifies a named-key shortcut such as ⌘⌫ runs its item.
+  func testNamedKeyShortcutRunsItsItem() throws {
+    try launch(scenario: "main-menu")
+
+    app.typeKey(.delete, modifierFlags: .command)
+    assertLabel("log", "Log: Delete")
+  }
+
   /// Verifies items without actions stay disabled and enabled(...) follows its Store.
   func testDisabledItemsFollowTheirState() throws {
     try launch(scenario: "main-menu")

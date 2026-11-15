@@ -25,6 +25,7 @@ pub struct TextField {
     draws_background: bool,
     multiline: bool,
     style: TextStyle,
+    focus: Option<Store<u64>>,
     layout: LayoutStyle,
     id: Option<String>,
     attachments: Attachments,
@@ -48,6 +49,7 @@ impl TextField {
             draws_background: true,
             multiline: false,
             style: TextStyle::default(),
+            focus: None,
             layout: LayoutStyle::leaf(Size::new(160.0, 28.0)),
             id: None,
             attachments: Attachments::default(),
@@ -159,6 +161,14 @@ impl TextField {
         self
     }
 
+    /// Takes keyboard focus whenever `requests` increases, for example after "New Item".
+    ///
+    /// A field created in the same update as the request takes focus once it is shown.
+    pub fn focus_on(mut self, requests: Store<u64>) -> Self {
+        self.focus = Some(requests);
+        self
+    }
+
     /// Takes the parent's full width.
     ///
     /// A label without a line limit then wraps to that width and grows in height.
@@ -208,6 +218,7 @@ impl NativeView for TextField {
                 draws_background: self.draws_background,
                 multiline: self.multiline,
                 style: self.style.clone(),
+                focus: self.focus.map_or(0, |store| *cx.get(store)),
             },
             layout: self.layout,
             id: self.id.clone(),

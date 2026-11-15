@@ -7,7 +7,7 @@ use std::rc::Rc;
 use zintl_ui::element::{ElementFactory, IntoElement};
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
-use zintl_ui_layout::{Axis, Size};
+use zintl_ui_layout::{Axis, CrossAxisAlignment, Size};
 
 use crate::{
     Canvas2D, Canvas2DHandler, CanvasEvent, CanvasEventContext, Color, Context, Cursor, Frame,
@@ -144,6 +144,8 @@ impl View for SplitView {
                 Self::pane(&self.second).grow(),
             ])
             .spacing(0.0)
+            // Panes and the divider take the split view's full height.
+            .alignment(CrossAxisAlignment::Stretch)
             .fill_width()
             .grow()
             .into_element(),

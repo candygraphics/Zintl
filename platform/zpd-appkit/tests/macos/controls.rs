@@ -8,9 +8,10 @@ use zpd_appkit::graphics::Font;
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
     AlertButton, AlertButtonRole, AlertConfig, AlertSheet, AsView, Button, ButtonType, Color,
+    DatePicker, DatePickerStyle,
     ColorWell, ListEntry, ListStyle, ListView, CommandItem, CommandMenu, CommandRole, CommandSet, ContextMenu, MenuRole,
     NumberField, NumberFormat, PopUpButton, Popover, ScrollView, SegmentedControl, Sidebar,
-    SidebarItem, SidebarSearch, SidebarSection, Slider, Switch, TabView, TextAlignment, TextColor,
+    SidebarItem, SidebarSearch, SidebarSection, Slider, Switch, SystemColor, TabView, TextAlignment, TextColor,
     RichParagraph, RichRun, RichStyle, TableColumn, TextEditor, TextField, Toolbar, ToolbarItem, View,
     WindowStyle,
 };
@@ -259,6 +260,18 @@ fn main() {
         unsafe { rust_string(zpd_objc::msg_send!(field, zpd_objc::sel!("stringValue"), () => Id)) };
     assert_eq!(shown, "6");
 
+    // Verifies dates round-trip through a date picker around month ends, leap days, and year boundaries.
+    let picker = DatePicker::new(&application).unwrap();
+    content.add_subview(&picker).unwrap();
+    for date in [(2024, 2, 29), (2026, 1, 31), (2026, 12, 31), (2027, 1, 1), (1999, 3, 1)] {
+        picker.set_date(date.0, date.1, date.2).unwrap();
+        assert_eq!(picker.date().unwrap(), date);
+    }
+    // Programmatic dates are not reported as user changes.
+    assert!(take().is_empty());
+    picker.set_style(DatePickerStyle::Graphical).unwrap();
+    assert_eq!(picker.date().unwrap(), (1999, 3, 1));
+
     // Verifies colors round-trip through a color well in sRGB.
     let well = ColorWell::new(&application).unwrap();
     content.add_subview(&well).unwrap();
@@ -309,6 +322,16 @@ fn main() {
             zpd_objc::msg_send!(label_native, zpd_objc::sel!("maximumNumberOfLines"), () => isize),
             2
         );
+    }
+    // Verifies system colors stay dynamic NSColors instead of fixed RGB values.
+    label
+        .set_text_color(TextColor::System(SystemColor::Red))
+        .unwrap();
+    // SAFETY: The label is a live NSTextField; the color getters return live objects.
+    unsafe {
+        let color = zpd_objc::msg_send!(label_native, zpd_objc::sel!("textColor"), () => Id);
+        let red = zpd_objc::msg_send!(zpd_objc::class!("NSColor"), zpd_objc::sel!("systemRedColor"), () => Id);
+        assert!(zpd_objc::msg_send!(color, zpd_objc::sel!("isEqual:"), ((red): Id) => bool));
     }
     label.set_font(None).unwrap();
     // SAFETY: The label is a live NSTextField with a font.
@@ -375,10 +398,14 @@ fn main() {
             TableColumn {
                 title: "Name".into(),
                 width: Some(200.0),
+                alignment: TextAlignment::Leading,
+                sort_key: Some("name".into()),
             },
             TableColumn {
                 title: "Length".into(),
                 width: Some(120.0),
+                alignment: TextAlignment::Trailing,
+                sort_key: None,
             },
         ])
         .unwrap();
@@ -391,6 +418,27 @@ fn main() {
             zpd_objc::msg_send!(native, zpd_objc::sel!("rectOfColumn:"), ((column): i64) => zpd_appkit::geometry::Rect).width
         });
         assert_eq!(widths, [200.0, 120.0]);
+        // Verifies a column's alignment reaches its header title.
+        let columns = zpd_objc::msg_send!(native, zpd_objc::sel!("tableColumns"), () => Id);
+        let length = zpd_objc::msg_send!(columns, zpd_objc::sel!("objectAtIndex:"), ((1): usize) => Id);
+        let header = zpd_objc::msg_send!(length, zpd_objc::sel!("headerCell"), () => Id);
+        let alignment = zpd_objc::msg_send!(header, zpd_objc::sel!("alignment"), () => isize);
+        // NSTextAlignmentRight is 2 on Apple silicon and 1 on Intel Macs.
+        assert!(alignment == 1 || alignment == 2, "{alignment}");
+    }
+    // Verifies a programmatic order shows the indicator on its column and reports nothing.
+    table.set_sort(Some(("name", false))).unwrap();
+    assert!(take().is_empty());
+    // SAFETY: The list's document view is its live NSTableView with two columns.
+    unsafe {
+        let native = zpd_objc::msg_send!(Checks::native(&table), zpd_objc::sel!("documentView"), () => Id);
+        let columns = zpd_objc::msg_send!(native, zpd_objc::sel!("tableColumns"), () => Id);
+        let indicator = |index: usize| {
+            let column = zpd_objc::msg_send!(columns, zpd_objc::sel!("objectAtIndex:"), ((index): usize) => Id);
+            zpd_objc::msg_send!(native, zpd_objc::sel!("indicatorImageInTableColumn:"), ((column): Id) => Id)
+        };
+        assert!(!indicator(0).is_null());
+        assert!(indicator(1).is_null());
     }
 
     // Verifies rich runs round-trip, and the paragraph action restyles undoably and validates its items.
@@ -553,6 +601,13 @@ fn main() {
         zpd_objc::msg_send!(Checks::native(&row_button), zpd_objc::sel!("performClick:"), ((zpd_objc::NIL): Id) => ())
     };
     assert_eq!(take(), vec![WindowEventKind::ButtonClicked]);
+    // Verifies a double action without a clicked row, as below the last row, activates nothing.
+    // SAFETY: The list's document view is its live table, which handles its double action.
+    unsafe {
+        let table = zpd_objc::msg_send!(Checks::native(&rows), zpd_objc::sel!("documentView"), () => Id);
+        zpd_objc::msg_send!(table, zpd_objc::sel!("zpdActivateClickedRow:"), ((zpd_objc::NIL): Id) => ());
+    }
+    assert!(take().is_empty());
 
     // Verifies the editor reports typing as rich runs, replaces text silently, and drops stale undo history.
     let editor = TextEditor::new(&application).unwrap();

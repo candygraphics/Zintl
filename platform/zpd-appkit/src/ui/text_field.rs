@@ -16,7 +16,20 @@ pub enum TextColor {
     SecondaryLabel,
     TertiaryLabel,
     Accent,
+    /// A dynamic system color, resolved when the text is drawn.
+    System(SystemColor),
     Custom(Color),
+}
+
+/// A dynamic `NSColor.system…` color.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SystemColor {
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Blue,
+    Gray,
 }
 
 impl TextColor {
@@ -27,6 +40,12 @@ impl TextColor {
             Self::SecondaryLabel => zpd_objc::sel!("secondaryLabelColor"),
             Self::TertiaryLabel => zpd_objc::sel!("tertiaryLabelColor"),
             Self::Accent => zpd_objc::sel!("controlAccentColor"),
+            Self::System(SystemColor::Red) => zpd_objc::sel!("systemRedColor"),
+            Self::System(SystemColor::Orange) => zpd_objc::sel!("systemOrangeColor"),
+            Self::System(SystemColor::Yellow) => zpd_objc::sel!("systemYellowColor"),
+            Self::System(SystemColor::Green) => zpd_objc::sel!("systemGreenColor"),
+            Self::System(SystemColor::Blue) => zpd_objc::sel!("systemBlueColor"),
+            Self::System(SystemColor::Gray) => zpd_objc::sel!("systemGrayColor"),
             Self::Custom(color) => return color.native(),
         };
         // SAFETY: The NSColor class methods take no arguments and return autoreleased colors.
@@ -45,7 +64,7 @@ pub enum TextAlignment {
 
 impl TextAlignment {
     /// Returns the `NSTextAlignment` value, whose numbering differs on Intel Macs.
-    fn native(self) -> isize {
+    pub(crate) fn native(self) -> isize {
         const NATURAL: isize = 4;
         #[cfg(target_arch = "x86_64")]
         const CENTER_RIGHT: (isize, isize) = (2, 1);
@@ -208,6 +227,18 @@ impl TextField {
             // SAFETY: The live view is an NSTextField and the value is a valid NSTextAlignment.
             unsafe {
                 zpd_objc::msg_send!(field, zpd_objc::sel!("setAlignment:"), ((alignment.native()): isize) => ());
+            }
+        })
+    }
+    /// Makes the field the first responder of its window; does nothing outside a window.
+    pub fn focus(&self) -> Result<(), UiError> {
+        self.view.as_view().with(|field| {
+            // SAFETY: The live field and its window, which may be nil, accept the message.
+            unsafe {
+                let window = zpd_objc::msg_send!(field, zpd_objc::sel!("window"), () => zpd_objc::Id);
+                if !window.is_null() {
+                    zpd_objc::msg_send!(window, zpd_objc::sel!("makeFirstResponder:"), ((field): zpd_objc::Id) => bool);
+                }
             }
         })
     }

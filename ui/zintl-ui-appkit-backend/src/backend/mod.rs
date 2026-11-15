@@ -33,7 +33,7 @@ use crate::convert::{Native, Shared};
 
 use super::{
     Accessibility, Color, CommandSet, Context, MainTask, NodeId, Rect, RenderNode, Sidebar,
-    TitleBar, Toolbar, ViewKind, WindowStyle,
+    TextAlignment, TitleBar, Toolbar, ViewKind, WindowStyle,
 };
 use zintl_ui_backend_core::layout::{HostLayout, LayoutSnapshot};
 use zintl_ui_backend_core::tree::{ErrorSlot, MainTasks, NodeTree};
@@ -162,6 +162,8 @@ pub struct AppKitBackend {
     titles_dirty: bool,
     /// Controls the user changed; their rendered values are shown again on the next synchronization.
     changed_by_user: Vec<NodeId>,
+    /// Views that take keyboard focus once they are shown in their window.
+    pending_focus: Vec<NodeId>,
 }
 
 impl Default for AppKitBackend {
@@ -185,6 +187,7 @@ impl AppKitBackend {
             gpu: GpuSlot::default(),
             titles_dirty: false,
             changed_by_user: Vec::new(),
+            pending_focus: Vec::new(),
         }
     }
 
@@ -318,6 +321,14 @@ impl AppKitBackend {
         self.structure_dirty = false;
         self.layout_dirty = false;
         self.titles_dirty = false;
+        // Views are attached and laid out now, so new views can take focus too.
+        for id in std::mem::take(&mut self.pending_focus) {
+            if self.tree.contains(id)
+                && let Some(native) = &self.state(id).native
+            {
+                native.focus()?;
+            }
+        }
         self.pending_error.take()
     }
 
@@ -609,7 +620,7 @@ impl AppKitBackend {
                 Ok(())
             }
             NativeNode::List(list, rows) => {
-                let (entries, selected) = match self.kind(id) {
+                let (entries, selected, columns) = match self.kind(id) {
                     RenderNode::View {
                         kind:
                             ViewKind::List {
@@ -627,11 +638,22 @@ impl AppKitBackend {
                             })
                             .collect::<Vec<_>>(),
                         selected,
+                        Vec::new(),
                     ),
                     RenderNode::View {
-                        kind: ViewKind::Table { rows, selected, .. },
+                        kind:
+                            ViewKind::Table {
+                                rows,
+                                selected,
+                                columns,
+                                ..
+                            },
                         ..
-                    } => (rows.into_iter().map(ListEntry::Row).collect(), selected),
+                    } => (
+                        rows.into_iter().map(ListEntry::Row).collect(),
+                        selected,
+                        columns,
+                    ),
                     _ => return Err(AppError::InvalidTree),
                 };
                 let natives = self
@@ -645,6 +667,23 @@ impl AppKitBackend {
                     .collect::<Vec<_>>();
                 list.set_entries(&entries, &views)?;
                 list.select(selected.as_deref())?;
+                // Text cells that keep the leading alignment follow their column's alignment.
+                if !columns.is_empty() {
+                    for (index, (row_id, native)) in natives.iter().enumerate() {
+                        let alignment = columns[index % columns.len()].alignment;
+                        if let (
+                            NativeNode::TextField(field),
+                            RenderNode::View {
+                                kind: ViewKind::TextField { style, .. },
+                                ..
+                            },
+                        ) = (native.as_ref(), self.kind(*row_id))
+                            && style.alignment == TextAlignment::Leading
+                        {
+                            field.set_alignment(alignment.native())?;
+                        }
+                    }
+                }
                 // Each cell lays out at its bounds; `layout_hosted` fills in its snapshot.
                 let mut layouts = Vec::with_capacity(natives.len());
                 for (index, (row_id, native)) in natives.iter().enumerate() {
@@ -996,13 +1035,25 @@ impl RenderBackend<RenderNode> for AppKitBackend {
     fn create(&mut self, value: &RenderNode, event_route: Option<EventRouteId>) -> Self::NodeId {
         self.structure_dirty = true;
         self.layout_dirty = true;
-        self.tree.create(value, event_route)
+        let id = self.tree.create(value, event_route);
+        if let RenderNode::View { kind, .. } = value
+            && ViewKind::requests_focus(None, kind)
+        {
+            self.pending_focus.push(id);
+        }
+        id
     }
 
     fn update(&mut self, id: Self::NodeId, value: &RenderNode) {
         let old = self.kind(id);
         let mut new = value.clone();
         new.adopt_canvas(&old);
+        if let (RenderNode::View { kind: old_kind, .. }, RenderNode::View { kind, .. }) =
+            (&old, &new)
+            && ViewKind::requests_focus(Some(old_kind), kind)
+        {
+            self.pending_focus.push(id);
+        }
         if let Err(error) = self.update_native(id, &old, &new) {
             self.record_error(error);
         }

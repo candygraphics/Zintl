@@ -216,6 +216,8 @@ impl Native for core::TableColumn {
         ui::TableColumn {
             title: self.title.clone(),
             width: self.width,
+            alignment: self.alignment.native(),
+            sort_key: self.sort_key.clone(),
         }
     }
 }
@@ -376,6 +378,7 @@ impl Native for shared::Font {
 
 same_variants!(core::ListStyle => ui::ListStyle { Inset, Plain });
 same_variants!(core::TextAlignment => ui::TextAlignment { Leading, Center, Trailing });
+same_variants!(core::DatePickerStyle => ui::DatePickerStyle { TextField, Graphical });
 
 impl Native for core::TextColor {
     type Output = ui::TextColor;
@@ -386,6 +389,14 @@ impl Native for core::TextColor {
             Self::Secondary => ui::TextColor::SecondaryLabel,
             Self::Tertiary => ui::TextColor::TertiaryLabel,
             Self::Accent => ui::TextColor::Accent,
+            Self::System(color) => ui::TextColor::System(match color {
+                core::SystemColor::Red => ui::SystemColor::Red,
+                core::SystemColor::Orange => ui::SystemColor::Orange,
+                core::SystemColor::Yellow => ui::SystemColor::Yellow,
+                core::SystemColor::Green => ui::SystemColor::Green,
+                core::SystemColor::Blue => ui::SystemColor::Blue,
+                core::SystemColor::Gray => ui::SystemColor::Gray,
+            }),
             Self::Custom(color) => ui::TextColor::Custom(color.native()),
         }
     }
@@ -558,6 +569,38 @@ impl Native for core::Sidebar {
     }
 }
 
+impl Native for core::ShortcutKey {
+    type Output = String;
+
+    /// Returns the key equivalent: the character, or AppKit's character for a named key.
+    fn native(&self) -> String {
+        use core::NamedKey;
+        let character = match self {
+            Self::Character(character) => return character.clone(),
+            Self::Named(NamedKey::Enter) => '\r',
+            Self::Named(NamedKey::Tab) => '\t',
+            Self::Named(NamedKey::Space) => ' ',
+            // NSBackspaceCharacter
+            Self::Named(NamedKey::Backspace) => '\u{8}',
+            Self::Named(NamedKey::Escape) => '\u{1b}',
+            // NSDeleteFunctionKey and the other NS…FunctionKey values.
+            Self::Named(NamedKey::Delete) => '\u{F728}',
+            Self::Named(NamedKey::ArrowUp) => '\u{F700}',
+            Self::Named(NamedKey::ArrowDown) => '\u{F701}',
+            Self::Named(NamedKey::ArrowLeft) => '\u{F702}',
+            Self::Named(NamedKey::ArrowRight) => '\u{F703}',
+            Self::Named(NamedKey::Home) => '\u{F729}',
+            Self::Named(NamedKey::End) => '\u{F72B}',
+            Self::Named(NamedKey::PageUp) => '\u{F72C}',
+            Self::Named(NamedKey::PageDown) => '\u{F72D}',
+            Self::Named(NamedKey::F(number)) => {
+                char::from_u32(0xF704 + u32::from((*number).clamp(1, 35)) - 1).unwrap_or('\u{F704}')
+            }
+        };
+        character.to_string()
+    }
+}
+
 impl Native for core::CommandItem {
     type Output = ui::CommandItem;
 
@@ -566,7 +609,7 @@ impl Native for core::CommandItem {
             id: self.id.clone(),
             title: self.title.clone(),
             role: self.role.as_ref().map(Native::native),
-            key: self.key.clone(),
+            key: self.key.as_ref().map(Native::native),
             modifiers: self.modifiers.iter().map(Native::native).collect(),
             enabled: self.enabled,
             checked: self.checked,
@@ -666,6 +709,14 @@ impl Shared for zpd_appkit::actor::WindowEventKind {
             Native::ToolbarItemClicked { id } => Shared::ToolbarItemClicked { id },
             Native::ToolbarSearchChanged { value } => Shared::ToolbarSearchChanged { value },
             Native::ListSelectionChanged { id } => Shared::ListSelectionChanged { id },
+            Native::RowActivated { id } => Shared::RowActivated { id },
+            Native::RowDeleteRequested { id } => Shared::RowDeleteRequested { id },
+            Native::SortChanged { key, ascending } => Shared::SortChanged {
+                order: core::SortOrder { key, ascending },
+            },
+            Native::DateChanged { year, month, day } => Shared::DateChanged {
+                date: core::CalendarDate { year, month, day },
+            },
             Native::StateChanged { on } => Shared::StateChanged { on },
             Native::ValueChanged { value } => Shared::ValueChanged { value },
             Native::SelectionChanged { index } => Shared::SelectionChanged { index },
@@ -691,6 +742,20 @@ impl Shared for zpd_appkit::actor::WindowEventKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn named_shortcut_keys_map_to_appkit_key_equivalents() {
+        // Verifies named keys become AppKit's backspace and function-key characters.
+        let key = |key: core::NamedKey| core::ShortcutKey::Named(key).native();
+        assert_eq!(key(core::NamedKey::Backspace), "\u{8}");
+        assert_eq!(key(core::NamedKey::Delete), "\u{F728}");
+        assert_eq!(key(core::NamedKey::ArrowLeft), "\u{F702}");
+        assert_eq!(key(core::NamedKey::ArrowDown), "\u{F701}");
+        assert_eq!(key(core::NamedKey::F(1)), "\u{F704}");
+        assert_eq!(key(core::NamedKey::F(12)), "\u{F70F}");
+        // Characters pass through unchanged.
+        assert_eq!(core::ShortcutKey::from("n").native(), "n");
+    }
 
     #[test]
     fn magnify_input_keeps_location_scale_and_phase() {

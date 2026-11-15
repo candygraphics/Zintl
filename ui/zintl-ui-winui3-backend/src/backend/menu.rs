@@ -1,4 +1,6 @@
-use zintl_ui_backend_core::{CommandItem, CommandModifier, CommandRole, CommandSet, MenuRole};
+use zintl_ui_backend_core::{
+    CommandItem, CommandModifier, CommandRole, CommandSet, MenuRole, NamedKey, ShortcutKey,
+};
 use zpd_winui3::{
     KeyboardAccelerator, MenuBar, MenuBarItem, MenuFlyoutItem, MenuFlyoutItemBase,
     MenuFlyoutSubItem, MenuItemRole, VirtualKeyModifiers,
@@ -125,16 +127,20 @@ impl Menus {
 
     /// Maps a shortcut; Command becomes Control.
     ///
-    /// Only letters and digits are kept: WinUI fails while opening a menu
-    /// whose accelerator uses an OEM key such as the comma.
+    /// Only letters, digits, and named keys are kept: WinUI fails while
+    /// opening a menu whose accelerator uses an OEM key such as the comma.
     fn accelerator(item: &CommandItem) -> Option<KeyboardAccelerator> {
-        let key = item.key.as_deref()?;
-        let mut characters = key.chars();
-        let character = characters.next()?;
-        let supported = characters.next().is_none() && character.is_ascii_alphanumeric();
-        if !supported {
-            return None;
-        }
+        let key = match item.key.as_ref()? {
+            ShortcutKey::Character(key) => {
+                let mut characters = key.chars();
+                let character = characters.next()?;
+                if characters.next().is_some() || !character.is_ascii_alphanumeric() {
+                    return None;
+                }
+                key.to_ascii_uppercase()
+            }
+            ShortcutKey::Named(key) => Self::virtual_key(*key)?.to_owned(),
+        };
         let mut modifiers = VirtualKeyModifiers::NONE;
         for modifier in &item.modifiers {
             modifiers = modifiers
@@ -144,9 +150,35 @@ impl Menus {
                     CommandModifier::Shift => VirtualKeyModifiers::SHIFT,
                 };
         }
-        Some(KeyboardAccelerator {
-            key: key.to_ascii_uppercase(),
-            modifiers,
+        Some(KeyboardAccelerator { key, modifiers })
+    }
+
+    /// Returns the name the support library maps to a `VirtualKey`.
+    fn virtual_key(key: NamedKey) -> Option<&'static str> {
+        Some(match key {
+            NamedKey::Enter => "enter",
+            NamedKey::Tab => "tab",
+            NamedKey::Space => "space",
+            NamedKey::Backspace => "backspace",
+            NamedKey::Delete => "delete",
+            NamedKey::Escape => "escape",
+            NamedKey::ArrowLeft => "left",
+            NamedKey::ArrowRight => "right",
+            NamedKey::ArrowUp => "up",
+            NamedKey::ArrowDown => "down",
+            NamedKey::Home => "home",
+            NamedKey::End => "end",
+            NamedKey::PageUp => "pageup",
+            NamedKey::PageDown => "pagedown",
+            NamedKey::F(number @ 1..=24) => {
+                const NAMES: [&str; 24] = [
+                    "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
+                    "f13", "f14", "f15", "f16", "f17", "f18", "f19", "f20", "f21", "f22", "f23",
+                    "f24",
+                ];
+                NAMES[usize::from(number) - 1]
+            }
+            NamedKey::F(_) => return None,
         })
     }
 

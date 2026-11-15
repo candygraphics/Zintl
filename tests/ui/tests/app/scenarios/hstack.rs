@@ -12,14 +12,25 @@ impl View for MainView {
         )
         .id("main-window")
         .content(
-            HStack::new(list![
-                TextField::new().id("leading-field").placeholder("Leading"),
-                TextField::new()
-                    .id("trailing-field")
-                    .placeholder("Trailing"),
+            VStack::new(list![
+                HStack::new(list![
+                    TextField::new().id("leading-field").placeholder("Leading"),
+                    TextField::new()
+                        .id("trailing-field")
+                        .placeholder("Trailing"),
+                ])
+                .id("field-row")
+                .spacing(24.0),
+                // No alignment is declared, so the row centers the field beside the taller button.
+                HStack::new(list![
+                    TextField::new()
+                        .id("centered-field")
+                        .minimum_size(Size::new(160.0, 0.0)),
+                    Button::new("Go").id("centered-button"),
+                ])
+                .spacing(8.0),
             ])
-            .id("field-row")
-            .spacing(24.0),
+            .spacing(12.0),
         )
     }
 }

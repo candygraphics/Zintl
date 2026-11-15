@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use zintl_ui::event::Event as EventTrait;
 
 use crate::graphics::AttributedText;
-use crate::{CanvasEvent, CanvasId, Color};
+use crate::{CalendarDate, CanvasEvent, CanvasId, Color, SortOrder};
 
 /// Selects the event an element route handles.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -21,6 +21,10 @@ pub enum EventKind {
     CanvasActions,
     SidebarSelectionChanged,
     ListSelectionChanged,
+    RowActivated,
+    RowDeleteRequested,
+    SortChanged,
+    DateChanged,
     ToolbarItemClicked,
     ToolbarSearchChanged,
     SidebarSearchChanged,
@@ -94,6 +98,22 @@ pub enum Event {
     ListSelectionChanged {
         id: Option<String>,
     },
+    /// The user double-clicked a table row or pressed Return on the selected one.
+    RowActivated {
+        id: String,
+    },
+    /// The user pressed Delete or Forward Delete while a table row was selected.
+    RowDeleteRequested {
+        id: String,
+    },
+    /// The user clicked a sortable column header.
+    SortChanged {
+        order: SortOrder,
+    },
+    /// The user changed a date picker's date.
+    DateChanged {
+        date: CalendarDate,
+    },
     SidebarSearchChanged {
         value: String,
     },
@@ -140,6 +160,10 @@ impl EventTrait for Event {
             Self::CanvasActions { .. } => EventKind::CanvasActions,
             Self::SidebarSelectionChanged { .. } => EventKind::SidebarSelectionChanged,
             Self::ListSelectionChanged { .. } => EventKind::ListSelectionChanged,
+            Self::RowActivated { .. } => EventKind::RowActivated,
+            Self::RowDeleteRequested { .. } => EventKind::RowDeleteRequested,
+            Self::SortChanged { .. } => EventKind::SortChanged,
+            Self::DateChanged { .. } => EventKind::DateChanged,
             Self::ToolbarItemClicked { .. } => EventKind::ToolbarItemClicked,
             Self::ToolbarSearchChanged { .. } => EventKind::ToolbarSearchChanged,
             Self::SidebarSearchChanged { .. } => EventKind::SidebarSearchChanged,

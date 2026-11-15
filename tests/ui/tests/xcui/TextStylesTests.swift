@@ -41,6 +41,18 @@ final class TextStylesTests: ZintlUITestCase {
     XCTAssertEqual(pixelCount(in: app.staticTexts["large-bold"], where: isRed), 0)
   }
 
+  /// Verifies a system color draws the platform's red, which differs from pure red.
+  func testSystemColorIsDrawn() throws {
+    try launch(scenario: "text-styles")
+
+    let label = app.staticTexts["system-red"]
+    XCTAssertTrue(label.waitToExist(timeout: 2))
+    let isReddish = { (color: NSColor) in
+      color.redComponent > 0.8 && color.greenComponent < 0.45 && color.blueComponent < 0.45
+    }
+    XCTAssertGreaterThan(pixelCount(in: label, where: isReddish), 20)
+  }
+
   /// Verifies line_limit(2) wraps onto two lines while line_limit(1) keeps one.
   func testLineLimitWrapsUpToTheLimit() throws {
     try launch(scenario: "text-styles")

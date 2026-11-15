@@ -99,6 +99,25 @@ pub enum WindowEventKind {
     ListSelectionChanged {
         id: Option<String>,
     },
+    /// The user double-clicked a list row or pressed Return on the selected one.
+    RowActivated {
+        id: String,
+    },
+    /// The user pressed Delete or Forward Delete while a list row was selected.
+    RowDeleteRequested {
+        id: String,
+    },
+    /// The user clicked a sortable column header.
+    SortChanged {
+        key: String,
+        ascending: bool,
+    },
+    /// The user changed a date picker's date.
+    DateChanged {
+        year: i32,
+        month: u8,
+        day: u8,
+    },
     /// A continuous control such as a slider or stepper changed.
     ValueChanged {
         value: f64,

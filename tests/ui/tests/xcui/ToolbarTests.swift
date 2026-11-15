@@ -2,6 +2,16 @@ import XCTest
 
 @MainActor
 final class ToolbarTests: ZintlUITestCase {
+  /// Verifies a toolbar button is found by its item ID, independent of its label.
+  func testButtonIsFoundByItemID() throws {
+    try launch(scenario: "toolbar")
+
+    let add = app.toolbars.buttons["add"]
+    XCTAssertTrue(add.waitToExist(timeout: 2))
+    add.click()
+    assertLabel("count", "Count: 1")
+  }
+
   /// Verifies a toolbar button click runs its action.
   func testButtonClickRunsItsAction() throws {
     try launch(scenario: "toolbar")

@@ -37,8 +37,85 @@ pub struct ListSection {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TableColumn {
     pub title: String,
-    /// The initial width in points; `None` lets the table size it.
+    /// The initial rendered width in points; `None` lets the table size it.
     pub width: Option<f64>,
+    /// The header's alignment, and the default for text cells that keep the leading alignment.
+    pub alignment: TextAlignment,
+    /// The key reported when the user sorts by this column; `None` makes it unsortable.
+    pub sort_key: Option<String>,
+}
+
+/// A calendar date without time or time zone, such as a due date.
+///
+/// It is not an instant, so it stays the same day in every time zone.
+/// Convert it to the date library the app uses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CalendarDate {
+    pub year: i32,
+    /// From 1 for January.
+    pub month: u8,
+    /// From 1.
+    pub day: u8,
+}
+
+impl CalendarDate {
+    /// Returns the date, or `None` when the month or day does not exist, such as February 30.
+    pub fn new(year: i32, month: u8, day: u8) -> Option<Self> {
+        (1..=12)
+            .contains(&month)
+            .then(|| Self::days_in_month(year, month))
+            .filter(|days| (1..=*days).contains(&day))
+            .map(|_| Self { year, month, day })
+    }
+
+    /// Returns the number of days in `month` of `year` in the Gregorian calendar.
+    pub fn days_in_month(year: i32, month: u8) -> u8 {
+        let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+        match month {
+            2 if leap => 29,
+            2 => 28,
+            4 | 6 | 9 | 11 => 30,
+            _ => 31,
+        }
+    }
+
+    /// Parses an ISO 8601 date such as `2026-11-15`.
+    pub fn parse_iso(text: &str) -> Option<Self> {
+        let mut parts = text.trim().splitn(3, '-');
+        let year = parts.next()?.parse().ok()?;
+        let month = parts.next()?.parse().ok()?;
+        let day = parts.next()?.parse().ok()?;
+        Self::new(year, month, day)
+    }
+}
+
+impl std::fmt::Display for CalendarDate {
+    /// Writes the ISO 8601 form, such as `2026-11-15`.
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{:04}-{:02}-{:02}",
+            self.year, self.month, self.day
+        )
+    }
+}
+
+/// How a date picker shows its date.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DatePickerStyle {
+    /// A text field with a stepper.
+    #[default]
+    TextField,
+    /// A month calendar.
+    Graphical,
+}
+
+/// The order a table's rows should be sorted in; the app sorts them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SortOrder {
+    /// The sort key of the column the user chose.
+    pub key: String,
+    pub ascending: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -71,7 +148,22 @@ pub enum TextColor {
     Secondary,
     Tertiary,
     Accent,
+    /// A platform color that adapts to dark mode and Increase Contrast.
+    System(SystemColor),
     Custom(Color),
+}
+
+/// A platform color for meaning such as errors or positive amounts.
+///
+/// It is resolved when the text is drawn, so it follows the appearance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SystemColor {
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Blue,
+    Gray,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -128,12 +220,38 @@ pub struct CommandMenu {
     pub role: Option<MenuRole>,
 }
 
+/// The key of a menu shortcut: a character, or a key that types none, such as ⌫.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ShortcutKey {
+    /// The character the key produces without modifiers, such as `"n"`.
+    Character(String),
+    Named(crate::NamedKey),
+}
+
+impl From<&str> for ShortcutKey {
+    fn from(character: &str) -> Self {
+        Self::Character(character.to_owned())
+    }
+}
+
+impl From<String> for ShortcutKey {
+    fn from(character: String) -> Self {
+        Self::Character(character)
+    }
+}
+
+impl From<crate::NamedKey> for ShortcutKey {
+    fn from(key: crate::NamedKey) -> Self {
+        Self::Named(key)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CommandItem {
     pub id: Option<String>,
     pub title: String,
     pub role: Option<CommandRole>,
-    pub key: Option<String>,
+    pub key: Option<ShortcutKey>,
     pub modifiers: Vec<CommandModifier>,
     pub enabled: bool,
     pub checked: bool,
@@ -400,4 +518,27 @@ pub enum WindowStyle {
     Normal,
     /// A floating utility panel that hides while the app is inactive.
     Panel,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn calendar_dates_validate_month_lengths_and_leap_years() {
+        // Verifies month ends, February 29 in leap years only, and ISO round trips.
+        assert!(CalendarDate::new(2024, 2, 29).is_some());
+        assert!(CalendarDate::new(2026, 2, 29).is_none());
+        assert!(CalendarDate::new(1900, 2, 29).is_none());
+        assert!(CalendarDate::new(2000, 2, 29).is_some());
+        assert!(CalendarDate::new(2026, 4, 31).is_none());
+        assert!(CalendarDate::new(2026, 13, 1).is_none());
+        let end = CalendarDate::new(2026, 12, 31).unwrap();
+        assert_eq!(end.to_string(), "2026-12-31");
+        assert_eq!(
+            CalendarDate::parse_iso("2027-01-01"),
+            CalendarDate::new(2027, 1, 1)
+        );
+        assert_eq!(CalendarDate::parse_iso("2026-02-30"), None);
+    }
 }

@@ -9,7 +9,8 @@ use zintl_ui_backend_core::layout::{HostLayout, LayoutNative, LayoutSnapshot};
 use zintl_ui_backend_core::tree::ErrorSlot;
 use zintl_ui_backend_core::{
     Accessibility, BezelStyle, ButtonType, Color, Event, MainTaskSender, RedrawPolicy,
-    ScrollAlignment, ScrollTarget, TableColumn, TextAlignment, TextColor, TextStyle, ViewKind,
+    ScrollAlignment, ScrollTarget, SystemColor, TableColumn, TextAlignment, TextColor, TextStyle,
+    ViewKind,
 };
 use zintl_ui_layout::{LayoutDimension, LayoutStyle, Rect as LayoutRect, Size};
 use zpd_winui3::{
@@ -157,6 +158,8 @@ impl NativeNode {
                 ButtonType::Radio => ControlKind::RadioButton,
             },
             ViewKind::TextField { editable: true, .. } => ControlKind::TextBox,
+            // No native date picker yet: the view parses the ISO date typed into a text box.
+            ViewKind::DatePicker { .. } => ControlKind::TextBox,
             ViewKind::TextField { .. } => ControlKind::TextBlock,
             ViewKind::TextEditor { .. } => ControlKind::RichEditBox,
             ViewKind::Switch { .. } => ControlKind::ToggleSwitch,
@@ -185,6 +188,14 @@ impl NativeNode {
             #[cfg(feature = "wgpu")]
             ViewKind::WgpuCanvas { .. } => Some(CanvasMode::External),
             _ => None,
+        }
+    }
+
+    /// Moves keyboard focus to the control, such as a text field or editor.
+    pub(super) fn focus(&self) -> Result<(), AppError> {
+        match self.control() {
+            Some(control) => Ok(control.focus()?),
+            None => Ok(()),
         }
     }
 
@@ -247,7 +258,7 @@ impl NativeNode {
             | ViewKind::ComboBox { .. }
             | ViewKind::SearchField { .. } => (0.0, 28.0),
             ViewKind::PopUpButton { items, .. } => (longest(items) + 64.0, 28.0),
-            ViewKind::NumberField { .. } => (100.0, 28.0),
+            ViewKind::NumberField { .. } | ViewKind::DatePicker { .. } => (100.0, 28.0),
             ViewKind::Switch { .. } | ViewKind::ColorWell { .. } => (44.0, 28.0),
             ViewKind::SegmentedControl { segments, .. } => (
                 segments.iter().map(|segment| text(segment) + 28.0).sum(),
@@ -566,6 +577,14 @@ impl NativeNode {
                 TextColor::Secondary => zpd_winui3::TextColor::Secondary,
                 TextColor::Tertiary => zpd_winui3::TextColor::Tertiary,
                 TextColor::Accent => zpd_winui3::TextColor::Accent,
+                TextColor::System(color) => zpd_winui3::TextColor::System(match color {
+                    SystemColor::Red => zpd_winui3::SystemColor::Red,
+                    SystemColor::Orange => zpd_winui3::SystemColor::Orange,
+                    SystemColor::Yellow => zpd_winui3::SystemColor::Yellow,
+                    SystemColor::Green => zpd_winui3::SystemColor::Green,
+                    SystemColor::Blue => zpd_winui3::SystemColor::Blue,
+                    SystemColor::Gray => zpd_winui3::SystemColor::Gray,
+                }),
                 TextColor::Custom(color) => zpd_winui3::TextColor::Custom(Self::color(color)),
             },
             alignment: match style.alignment {
@@ -706,6 +725,7 @@ impl NativeNode {
                 draws_background,
                 multiline,
                 style,
+                ..
             } => {
                 let old = match old {
                     Some(ViewKind::TextField {
@@ -755,18 +775,15 @@ impl NativeNode {
                     control.set_bool(BoolProperty::Selectable, *selectable)?;
                 }
             }
-            ViewKind::TextEditor { text, focus } => {
-                let (old_text, old_focus) = match old {
-                    Some(ViewKind::TextEditor { text, focus }) => (Some(text), Some(*focus)),
-                    _ => (None, None),
+            ViewKind::TextEditor { text, .. } => {
+                // Focus requests are applied by the backend once the editor is shown.
+                let old_text = match old {
+                    Some(ViewKind::TextEditor { text, .. }) => Some(text),
+                    _ => None,
                 };
                 // Text the editor already shows is not written back, so typing keeps the caret.
                 if old_text != Some(text) && Self::attributed(&control.rich_text()?) != *text {
                     control.set_rich_text(&Self::rich_text(text))?;
-                }
-                // Each new focus request moves keyboard focus to the editor.
-                if *focus > 0 && old_focus != Some(*focus) {
-                    control.focus()?;
                 }
             }
             ViewKind::Switch { on } => {
@@ -869,6 +886,10 @@ impl NativeNode {
                 if !matches!(old, Some(ViewKind::ColorWell { color: old }) if old == color) {
                     control.set_color(Self::color(*color))?;
                 }
+            }
+            ViewKind::DatePicker { date, .. } => {
+                // A rejected or unchanged date shows the declared date again.
+                control.set_text(TextProperty::Text, &date.to_string())?;
             }
             ViewKind::ProgressIndicator { value } => {
                 if let Some(value) = value

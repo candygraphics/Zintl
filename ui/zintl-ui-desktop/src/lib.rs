@@ -12,13 +12,15 @@ macro_rules! native_view {
 }
 
 mod arrangements;
+mod chart;
 mod controls;
 mod split_view;
 
-pub use arrangements::{DisclosureGroup, Grid, ZStack};
+pub use arrangements::{DisclosureGroup, Grid, GridCell, ZStack};
+pub use chart::{BarChart, ChartBar};
 pub use controls::{
-    ColorWell, ComboBox, NumberField, Picker, PickerStyle, ScrollView, SearchField, Slider, Tab,
-    TabView, Toggle, ToggleStyle,
+    ColorWell, ComboBox, IntegerField, NumberField, Picker, PickerStyle, ScrollView, SearchField,
+    Slider, Tab, TabView, Toggle, ToggleStyle,
 };
 pub use split_view::SplitView;
 use zintl_ui::composer::Composer;
@@ -38,16 +40,17 @@ pub use zintl_ui_native::graphics::{
 };
 pub use zintl_ui_native::{
     AccessibilityRole, Alert, AlertButton, AlertStyle, AnnouncementPriority, Attach, Attachments,
-    ButtonRole, Canvas2D, Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasId, CanvasSetup,
-    Color, ColorPanel, Context, Cursor, EnglishMenuLocalizer, Event, EventKind, FileDialog, Frame,
-    GesturePhase, Invalidator, JapaneseMenuLocalizer, Key, KeyEvent, KeyPhase, List, ListFactory,
-    ListRow, ListSection, ListStyle, MagnifyEvent, MainMenu, Menu, MenuItem, MenuLocalizer,
-    Modifier, Modifiers, NamedKey, NativeView, PointerButton, PointerEvent, PointerPhase, Popover,
-    PopoverEdge, ProgressIndicator, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAlignment,
-    ScrollAxes, ScrollEvent, ScrollStatus, Separator, Shortcut, Sidebar, SidebarItem,
-    SidebarSection, Signal, StandardAction, StandardMenu, StandardText, StoreSender, Table,
-    TableColumn, TableRow, TextAlignment, TextColor, TextEditor, TitleBar, Toolbar, ToolbarItem,
-    UndoHandler, ViewKind, graphics, list,
+    ButtonRole, CalendarDate, Canvas2D, Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasId,
+    CanvasSetup, Color, ColorPanel, Context, Cursor, DatePicker, DatePickerStyle,
+    EnglishMenuLocalizer, Event, EventKind, FileDialog, Frame, GesturePhase, Invalidator,
+    JapaneseMenuLocalizer, Key, KeyEvent, KeyPhase, List, ListFactory, ListRow, ListSection,
+    ListStyle, MagnifyEvent, MainMenu, Menu, MenuItem, MenuLocalizer, Modifier, Modifiers,
+    NamedKey, NativeView, PointerButton, PointerEvent, PointerPhase, Popover, PopoverEdge,
+    ProgressIndicator, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAlignment, ScrollAxes,
+    ScrollEvent, ScrollStatus, Separator, Shortcut, ShortcutKey, Sidebar, SidebarItem,
+    SidebarSection, Signal, SortOrder, StandardAction, StandardMenu, StandardText, StoreSender,
+    SystemColor, Table, TableColumn, TableRow, TextAlignment, TextColor, TextEditor, TitleBar,
+    Toolbar, ToolbarItem, UndoHandler, ViewKind, graphics, list,
 };
 #[cfg(feature = "wgpu")]
 pub use zintl_ui_native::{
@@ -55,7 +58,7 @@ pub use zintl_ui_native::{
 };
 
 native_view!(
-    Text, Button, TextField, HStack, VStack, Spacer, ZStack, Grid
+    Text, Button, TextField, HStack, VStack, Spacer, ZStack, Grid, GridCell
 );
 
 #[derive(Clone)]
@@ -412,6 +415,14 @@ impl TextField {
         self
     }
 
+    /// Takes keyboard focus whenever `requests` increases, for example after "New Item".
+    ///
+    /// A field created in the same update as the request takes focus once it is shown.
+    pub fn focus_on(mut self, requests: Store<u64>) -> Self {
+        self.inner = self.inner.focus_on(requests);
+        self
+    }
+
     pub fn minimum_size(mut self, size: Size) -> Self {
         self.inner = self.inner.minimum_size(size);
         self
@@ -449,9 +460,14 @@ struct Stack {
 
 impl Stack {
     fn new(axis: Axis, children: ListFactory<RenderNode>) -> Self {
+        let mut layout = LayoutStyle::stack(axis, 8.0);
+        // Rows center their children, so a field beside a taller button keeps its own height.
+        if axis == Axis::Horizontal {
+            layout.cross_axis_alignment = CrossAxisAlignment::Center;
+        }
         Self {
             children,
-            layout: LayoutStyle::stack(axis, 8.0),
+            layout,
             id: None,
             attachments: Attachments::default(),
         }
@@ -520,7 +536,10 @@ macro_rules! stack {
                 self
             }
 
-            /// Positions children across the main axis; they stretch by default.
+            /// Positions children across the main axis.
+            ///
+            /// `HStack` centers its children by default and `VStack` stretches
+            /// them. Filling views such as tables stretch in either case.
             pub fn alignment(mut self, alignment: CrossAxisAlignment) -> Self {
                 self.stack.layout.cross_axis_alignment = alignment;
                 self
@@ -984,12 +1003,15 @@ mod tests {
         );
         let tree = app.render_tree();
         let stack = &tree.children[0];
+        // Rows center their children by default.
+        let mut row = LayoutStyle::stack(Axis::Horizontal, 12.0);
+        row.cross_axis_alignment = CrossAxisAlignment::Center;
 
         assert_eq!(
             stack.value,
             RenderNode::View {
                 kind: ViewKind::Container,
-                layout: LayoutStyle::stack(Axis::Horizontal, 12.0),
+                layout: row,
                 id: None,
                 enabled: true,
                 title_bar_interactive: false,

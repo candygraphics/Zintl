@@ -71,6 +71,54 @@ impl Calls {
 }
 
 #[test]
+fn bar_lengths_follow_their_values() {
+    // Verifies bars are proportional to their values, the largest fills the track, and negatives show none.
+    let bars = [
+        ChartBar::new("Food", 3480.0),
+        ChartBar::new("Transport", 1740.0),
+        ChartBar::new("Refund", -20.0),
+    ];
+    assert_eq!(BarChart::fractions(&bars), [1.0, 0.5, 0.0]);
+    assert_eq!(BarChart::fractions(&[ChartBar::new("Empty", 0.0)]), [0.0]);
+}
+
+#[test]
+fn system_text_colors_reach_the_render_node() {
+    // Verifies a system color is kept by name, so the backend resolves it for the current appearance.
+    let tree =
+        App::new(Text::new("Error").color(TextColor::System(SystemColor::Red))).render_tree();
+    assert!(matches!(
+        tree.value,
+        RenderNode::View {
+            kind: ViewKind::TextField { style, .. },
+            ..
+        } if style.color == TextColor::System(SystemColor::Red)
+    ));
+}
+
+#[test]
+fn icon_only_buttons_leave_their_size_to_the_backend() {
+    // Verifies a symbol-only button drops the 80 x 32 push button minimum, unless one is declared.
+    let minimum = |button: Button| match App::new(button).render_tree().value {
+        RenderNode::View { layout, .. } => layout.minimum_size,
+        _ => None,
+    };
+    assert_eq!(
+        minimum(Button::new("").system_image("chevron.left")),
+        Some(Size::default())
+    );
+    assert_eq!(
+        minimum(
+            Button::new("")
+                .system_image("chevron.left")
+                .minimum_size(Size::new(44.0, 30.0))
+        ),
+        Some(Size::new(44.0, 30.0))
+    );
+    assert_eq!(minimum(Button::new("Save")), Some(Size::new(80.0, 32.0)));
+}
+
+#[test]
 fn switch_toggle_round_trips_through_its_store() {
     // Verifies an unlabeled Toggle renders a switch that writes user changes to its Store.
     let (mut app, on) = Harness::mount(|cx| cx.store(true), |on| Toggle::new("").bind(on));
@@ -293,6 +341,41 @@ fn text_field_commit_runs_only_when_editing_ends() {
         },
     );
     assert_eq!(app.get(committed), ["Section A"]);
+}
+
+#[test]
+fn integer_field_parses_and_formats_exact_integers() {
+    // Verifies grouping, signs, full-width digits, and range limits, and that decimals are rejected.
+    let field = zintl_ui_native::IntegerField::new().grouping(true);
+    assert_eq!(field.format(1234567), "1,234,567");
+    assert_eq!(field.format(-1234), "-1,234");
+    assert_eq!(field.format(999), "999");
+    assert_eq!(field.parse("1,234"), Some(1234));
+    assert_eq!(field.parse("１２３４"), Some(1234));
+    assert_eq!(field.parse("－５"), Some(-5));
+    assert_eq!(field.parse("12.5"), None);
+    assert_eq!(field.parse("abc"), None);
+    // 2^53 + 1 stays exact because it never becomes an f64.
+    assert_eq!(field.parse("9007199254740993"), Some(9_007_199_254_740_993));
+    let limited = zintl_ui_native::IntegerField::new()
+        .range(0, 100)
+        .suffix(" pcs");
+    assert_eq!(limited.parse("250 pcs"), Some(100));
+    assert_eq!(limited.parse("-3"), Some(0));
+    assert_eq!(limited.format(7), "7 pcs");
+}
+
+#[test]
+fn integer_field_steps_by_its_increment() {
+    // Verifies a stepper click moves the bound value by the step, whatever value the stepper reports.
+    let (mut app, value) = Harness::mount(
+        |cx| cx.store(9_007_199_254_740_993_i64),
+        |value| NumberField::integer().step(2).bind(value),
+    );
+    assert!(app.dispatch_at(&[0], Event::ValueChanged { value: 9.1e15 }));
+    assert_eq!(app.get(value), 9_007_199_254_740_995);
+    assert!(app.dispatch_at(&[0], Event::ValueChanged { value: 0.0 }));
+    assert_eq!(app.get(value), 9_007_199_254_740_993);
 }
 
 #[test]
@@ -779,7 +862,13 @@ fn standard_edit_menu_ends_with_a_find_submenu() {
     let items = find
         .items
         .iter()
-        .map(|item| (item.title.as_str(), item.role, item.key.as_deref()))
+        .map(|item| {
+            let key = match &item.key {
+                Some(ShortcutKey::Character(key)) => Some(key.as_str()),
+                _ => None,
+            };
+            (item.title.as_str(), item.role, key)
+        })
         .collect::<Vec<_>>();
     assert_eq!(
         items,
@@ -1815,7 +1904,7 @@ fn table_lays_out_cells_by_row_and_writes_the_selection() {
     assert!(matches!(
         &tree.value,
         RenderNode::View {
-            kind: ViewKind::Table { columns, rows, striped: true, selected: None },
+            kind: ViewKind::Table { columns, rows, striped: true, selected: None, .. },
             ..
         } if columns.len() == 2 && columns[0].width == Some(120.0) && rows == &["a", "b"]
     ));
