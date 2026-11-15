@@ -270,3 +270,21 @@ fn controls_keep_their_value_and_hide_on_request() {
     };
     assert!(!NativeNode::accessibility_attributes(&slider, &hidden).element);
 }
+
+#[test]
+fn single_line_text_fields_measure_their_height() {
+    // Verifies single-line fields take their native height but keep a flexible width.
+    let field = |multiline| ViewKind::TextField {
+        value: String::new(),
+        placeholder: None,
+        editable: true,
+        selectable: true,
+        bordered: true,
+        draws_background: true,
+        multiline,
+        style: Default::default(),
+    };
+    assert_eq!(NativeNode::measured_axes(&field(false)), (false, true));
+    // Multiline fields keep their declared size.
+    assert_eq!(NativeNode::measured_axes(&field(true)), (false, false));
+}

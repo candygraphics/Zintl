@@ -266,6 +266,12 @@ fn main() {
     let color = well.color().unwrap();
     assert!((color.red - 1.0).abs() < 0.01 && (color.green - 0.5).abs() < 0.01);
 
+    // Verifies a single-line field reports a line's height for layout, but no fixed width.
+    let field = TextField::with_string(&application, "").unwrap();
+    let (width, height) = field.as_view().intrinsic_content_size().unwrap();
+    assert!(height.is_some_and(|height| height >= 20.0), "{height:?}");
+    assert_eq!(width, None);
+
     // Verifies label styling sets the font, semantic color, alignment, and tail truncation.
     let label = TextField::label_with_string(&application, "A long title").unwrap();
     content.add_subview(&label).unwrap();

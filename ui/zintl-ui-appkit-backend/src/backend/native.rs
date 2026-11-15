@@ -162,20 +162,7 @@ impl NativeNode {
     /// Views declare estimates; AppKit measures the actual title and font.
     /// Line-limited labels keep their declared width so they can truncate.
     pub(super) fn minimum_size(&self, kind: &ViewKind, declared: Size) -> Result<Size, UiError> {
-        let (measure_width, measure_height) = match kind {
-            ViewKind::Button(_)
-            | ViewKind::Switch { .. }
-            | ViewKind::PopUpButton { .. }
-            | ViewKind::SegmentedControl { .. } => (true, true),
-            // Wrapping labels need a width before they have a height.
-            ViewKind::TextField {
-                editable: false,
-                multiline: false,
-                style,
-                ..
-            } => (style.line_limit.is_none(), true),
-            _ => (false, false),
-        };
+        let (measure_width, measure_height) = Self::measured_axes(kind);
         if !measure_width && !measure_height {
             return Ok(declared);
         }
@@ -188,6 +175,30 @@ impl NativeNode {
             raise(declared.width, measure_width, width),
             raise(declared.height, measure_height, height),
         ))
+    }
+
+    /// Returns whether the width and height of a `kind` view are raised to its intrinsic size.
+    pub(super) fn measured_axes(kind: &ViewKind) -> (bool, bool) {
+        match kind {
+            ViewKind::Button(_)
+            | ViewKind::Switch { .. }
+            | ViewKind::PopUpButton { .. }
+            | ViewKind::SegmentedControl { .. } => (true, true),
+            // Wrapping labels need a width before they have a height.
+            ViewKind::TextField {
+                editable: false,
+                multiline: false,
+                style,
+                ..
+            } => (style.line_limit.is_none(), true),
+            // Single-line inputs keep a flexible width but need a line's height.
+            ViewKind::TextField {
+                multiline: false, ..
+            }
+            | ViewKind::SearchField { .. }
+            | ViewKind::ComboBox { .. } => (false, true),
+            _ => (false, false),
+        }
     }
 
     /// Replaces a line-limited label's estimated content size with its text's measured size.

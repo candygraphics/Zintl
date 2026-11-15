@@ -35,4 +35,17 @@ final class TextFieldTests: ZintlUITestCase {
       #"Stored multiline value: "first line\nsecond line""#
     )
   }
+
+  /// Verifies a single-line field in a centered row gets a line's height and accepts typing.
+  func testFieldInCenteredRowIsTallEnoughToType() throws {
+    try launch(scenario: "text-field")
+
+    let input = app.textFields["row-input"]
+    XCTAssertTrue(input.waitToExist(timeout: 2))
+    XCTAssertGreaterThanOrEqual(input.frame.height, 20)
+    XCTAssertTrue(input.isHittable)
+    input.click()
+    input.typeText("row")
+    assertLabel("row-value", #"Row value: "row""#)
+  }
 }

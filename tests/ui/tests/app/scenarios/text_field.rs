@@ -3,6 +3,7 @@ use zintl_ui_desktop::*;
 pub struct MainView {
     single_line_value: Option<Store<String>>,
     multiline_value: Option<Store<String>>,
+    row_value: Option<Store<String>>,
 }
 
 impl MainView {
@@ -10,6 +11,7 @@ impl MainView {
         Self {
             single_line_value: None,
             multiline_value: None,
+            row_value: None,
         }
     }
 }
@@ -20,6 +22,7 @@ impl View for MainView {
     fn init(&mut self, cx: &mut Context<'_>) {
         self.single_line_value = Some(cx.store(String::new()));
         self.multiline_value = Some(cx.store(String::new()));
+        self.row_value = Some(cx.store(String::new()));
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
@@ -28,6 +31,9 @@ impl View for MainView {
             .expect("MainView must be initialized before rendering");
         let multiline_value = self
             .multiline_value
+            .expect("MainView must be initialized before rendering");
+        let row_value = self
+            .row_value
             .expect("MainView must be initialized before rendering");
 
         Window::new(
@@ -54,6 +60,19 @@ impl View for MainView {
                 cx.watch(multiline_value, |value| {
                     Text::new(format!("Stored multiline value: {value:?}"))
                         .id("stored-multiline-value")
+                }),
+                // The field declares only a width, so its height comes from AppKit.
+                HStack::new(list![
+                    TextField::new()
+                        .id("row-input")
+                        .minimum_size(Size::new(200.0, 0.0))
+                        .bind(row_value),
+                    Button::new("Clear").on_click(move |cx| cx.update(row_value, String::clear)),
+                ])
+                .alignment(CrossAxisAlignment::Center)
+                .spacing(8.0),
+                cx.watch(row_value, |value| {
+                    Text::new(format!("Row value: {value:?}")).id("row-value")
                 }),
             ])
             .spacing(18.0),
