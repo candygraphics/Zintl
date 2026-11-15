@@ -44,7 +44,7 @@ pub use zintl_ui_native::{
     ListRow, ListSection, ListStyle, MagnifyEvent, MainMenu, Menu, MenuItem, MenuLocalizer,
     Modifier, Modifiers, NamedKey, NativeView, PointerButton, PointerEvent, PointerPhase, Popover,
     PopoverEdge, ProgressIndicator, Rect, Redraw, RedrawPolicy, RenderNode, ScrollAlignment,
-    ScrollAxes, ScrollEvent, ScrollStatus, Separator, Shortcut, Sidebar, SidebarItem,
+    ScrollAxes, ScrollEvent, ScrollStatus, Separator, Shortcut, ShortcutKey, Sidebar, SidebarItem,
     SidebarSection, Signal, StandardAction, StandardMenu, StandardText, StoreSender, SystemColor,
     Table, TableColumn, TableRow, TextAlignment, TextColor, TextEditor, TitleBar, Toolbar,
     ToolbarItem, UndoHandler, ViewKind, graphics, list,

@@ -49,6 +49,9 @@ impl View for MainView {
                         .enabled(*cx.get(route_enabled))
                         .on_select(report("Reverse")),
                     MenuItem::new("No Action"),
+                    MenuItem::new("Delete Stop")
+                        .shortcut(Shortcut::command(NamedKey::Backspace))
+                        .on_select(report("Delete")),
                 ],
             ));
         let menu = if self.japanese {

@@ -32,7 +32,7 @@ pub use model::{
     AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, CommandItem,
     CommandMenu, CommandModifier, CommandRole, CommandSet, FileDialogConfig, FileDialogMode,
     ListSection, ListStyle, MenuRole, NumberFormat, PopoverEdge, ScrollAlignment, ScrollAxes,
-    ScrollTarget, Sidebar, SidebarItem, SidebarSearch, SidebarSection, SystemColor,
+    ScrollTarget, ShortcutKey, Sidebar, SidebarItem, SidebarSearch, SidebarSection, SystemColor,
     TableColumn, TextAlignment, TextColor, TextStyle, TitleBar, Toolbar, ToolbarItem,
     WindowAppMenu, WindowStyle,
 };

@@ -157,6 +157,27 @@ fn app_menu_items_join_the_file_menu() {
 }
 
 #[test]
+fn named_shortcut_keys_become_virtual_key_accelerators() {
+    // Verifies named keys such as Backspace and the arrows keep their accelerators.
+    let mut delete = command("Delete", "delete");
+    delete.key = Some(zintl_ui_backend_core::NamedKey::Backspace.into());
+    let mut next = command("Next", "next");
+    next.key = Some(zintl_ui_backend_core::NamedKey::ArrowRight.into());
+    let items = Menus::items(&[delete, next]);
+    let keys = items
+        .iter()
+        .map(|item| match item {
+            MenuFlyoutItemBase::Item(item) => item
+                .keyboard_accelerator
+                .as_ref()
+                .map(|accelerator| accelerator.key.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(keys, [Some("backspace".into()), Some("right".into())]);
+}
+
+#[test]
 fn editing_roles_and_shortcuts_map_to_native_values() {
     // Verifies Copy uses the native role and Command shortcuts become Control.
     let mut copy = role("Copy", CommandRole::Copy);

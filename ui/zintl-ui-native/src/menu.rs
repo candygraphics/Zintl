@@ -9,7 +9,7 @@ use std::rc::Rc;
 use zintl_ui::element::IntoElement;
 use zintl_ui::view::View;
 
-use crate::{Context, Element, Event, EventKind, RenderNode};
+use crate::{Context, Element, Event, EventKind, RenderNode, ShortcutKey};
 
 pub(crate) type MenuAction = dyn for<'a> Fn(&mut Context<'a>);
 
@@ -371,12 +371,14 @@ pub enum Modifier {
 /// A key equivalent such as ⌘N.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Shortcut {
-    pub key: String,
+    pub key: ShortcutKey,
     pub modifiers: Vec<Modifier>,
 }
 
 impl Shortcut {
-    pub fn new(key: impl Into<String>, modifiers: impl IntoIterator<Item = Modifier>) -> Self {
+    /// Creates a shortcut for a character such as `"n"` or a named key such as
+    /// [`NamedKey::Backspace`].
+    pub fn new(key: impl Into<ShortcutKey>, modifiers: impl IntoIterator<Item = Modifier>) -> Self {
         Self {
             key: key.into(),
             modifiers: modifiers.into_iter().collect(),
@@ -384,7 +386,7 @@ impl Shortcut {
     }
 
     /// Creates a ⌘-key shortcut.
-    pub fn command(key: impl Into<String>) -> Self {
+    pub fn command(key: impl Into<ShortcutKey>) -> Self {
         Self::new(key, [Modifier::Command])
     }
 

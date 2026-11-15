@@ -143,12 +143,38 @@ pub struct CommandMenu {
     pub role: Option<MenuRole>,
 }
 
+/// The key of a menu shortcut: a character, or a key that types none, such as ⌫.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ShortcutKey {
+    /// The character the key produces without modifiers, such as `"n"`.
+    Character(String),
+    Named(crate::NamedKey),
+}
+
+impl From<&str> for ShortcutKey {
+    fn from(character: &str) -> Self {
+        Self::Character(character.to_owned())
+    }
+}
+
+impl From<String> for ShortcutKey {
+    fn from(character: String) -> Self {
+        Self::Character(character)
+    }
+}
+
+impl From<crate::NamedKey> for ShortcutKey {
+    fn from(key: crate::NamedKey) -> Self {
+        Self::Named(key)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CommandItem {
     pub id: Option<String>,
     pub title: String,
     pub role: Option<CommandRole>,
-    pub key: Option<String>,
+    pub key: Option<ShortcutKey>,
     pub modifiers: Vec<CommandModifier>,
     pub enabled: bool,
     pub checked: bool,

@@ -79,6 +79,26 @@ Windows::System::VirtualKey key_from(zpd_winui3_string key) {
   if (value == "escape") return Windows::System::VirtualKey::Escape;
   if (value == "delete") return Windows::System::VirtualKey::Delete;
   if (value == "space") return Windows::System::VirtualKey::Space;
+  if (value == "tab") return Windows::System::VirtualKey::Tab;
+  if (value == "backspace") return Windows::System::VirtualKey::Back;
+  if (value == "left") return Windows::System::VirtualKey::Left;
+  if (value == "right") return Windows::System::VirtualKey::Right;
+  if (value == "up") return Windows::System::VirtualKey::Up;
+  if (value == "down") return Windows::System::VirtualKey::Down;
+  if (value == "home") return Windows::System::VirtualKey::Home;
+  if (value == "end") return Windows::System::VirtualKey::End;
+  if (value == "pageup") return Windows::System::VirtualKey::PageUp;
+  if (value == "pagedown") return Windows::System::VirtualKey::PageDown;
+  if (value.size() >= 2 && value.size() <= 3 && value[0] == 'f') {
+    int number = 0;
+    for (char digit : value.substr(1)) {
+      if (digit < '0' || digit > '9') throw hresult_invalid_argument(L"unsupported keyboard accelerator key");
+      number = number * 10 + (digit - '0');
+    }
+    if (number >= 1 && number <= 24) {
+      return static_cast<Windows::System::VirtualKey>(static_cast<int>(Windows::System::VirtualKey::F1) + number - 1);
+    }
+  }
   throw hresult_invalid_argument(L"unsupported keyboard accelerator key");
 }
 

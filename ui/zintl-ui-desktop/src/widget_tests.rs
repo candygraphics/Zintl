@@ -815,7 +815,13 @@ fn standard_edit_menu_ends_with_a_find_submenu() {
     let items = find
         .items
         .iter()
-        .map(|item| (item.title.as_str(), item.role, item.key.as_deref()))
+        .map(|item| {
+            let key = match &item.key {
+                Some(ShortcutKey::Character(key)) => Some(key.as_str()),
+                _ => None,
+            };
+            (item.title.as_str(), item.role, key)
+        })
         .collect::<Vec<_>>();
     assert_eq!(
         items,
