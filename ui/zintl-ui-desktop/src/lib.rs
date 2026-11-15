@@ -12,10 +12,12 @@ macro_rules! native_view {
 }
 
 mod arrangements;
+mod chart;
 mod controls;
 mod split_view;
 
 pub use arrangements::{DisclosureGroup, Grid, GridCell, ZStack};
+pub use chart::{BarChart, ChartBar};
 pub use controls::{
     ColorWell, ComboBox, IntegerField, NumberField, Picker, PickerStyle, ScrollView, SearchField,
     Slider, Tab, TabView, Toggle, ToggleStyle,

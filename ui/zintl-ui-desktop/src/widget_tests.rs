@@ -71,6 +71,18 @@ impl Calls {
 }
 
 #[test]
+fn bar_lengths_follow_their_values() {
+    // Verifies bars are proportional to their values, the largest fills the track, and negatives show none.
+    let bars = [
+        ChartBar::new("Food", 3480.0),
+        ChartBar::new("Transport", 1740.0),
+        ChartBar::new("Refund", -20.0),
+    ];
+    assert_eq!(BarChart::fractions(&bars), [1.0, 0.5, 0.0]);
+    assert_eq!(BarChart::fractions(&[ChartBar::new("Empty", 0.0)]), [0.0]);
+}
+
+#[test]
 fn system_text_colors_reach_the_render_node() {
     // Verifies a system color is kept by name, so the backend resolves it for the current appearance.
     let tree =
