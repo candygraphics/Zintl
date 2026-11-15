@@ -71,6 +71,28 @@ impl Calls {
 }
 
 #[test]
+fn icon_only_buttons_leave_their_size_to_the_backend() {
+    // Verifies a symbol-only button drops the 80 x 32 push button minimum, unless one is declared.
+    let minimum = |button: Button| match App::new(button).render_tree().value {
+        RenderNode::View { layout, .. } => layout.minimum_size,
+        _ => None,
+    };
+    assert_eq!(
+        minimum(Button::new("").system_image("chevron.left")),
+        Some(Size::default())
+    );
+    assert_eq!(
+        minimum(
+            Button::new("")
+                .system_image("chevron.left")
+                .minimum_size(Size::new(44.0, 30.0))
+        ),
+        Some(Size::new(44.0, 30.0))
+    );
+    assert_eq!(minimum(Button::new("Save")), Some(Size::new(80.0, 32.0)));
+}
+
+#[test]
 fn switch_toggle_round_trips_through_its_store() {
     // Verifies an unlabeled Toggle renders a switch that writes user changes to its Store.
     let (mut app, on) = Harness::mount(|cx| cx.store(true), |on| Toggle::new("").bind(on));
