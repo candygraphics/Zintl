@@ -9,6 +9,18 @@ use zpd_appkit::geometry::Rect;
 impl LayoutNative for NativeNode {
     type Error = AppError;
 
+    fn measure_wrapping(&self, width: Option<f32>) -> Size {
+        let Self::TextField(field) = self else {
+            return Size::default();
+        };
+        // Layout cannot fail here; a field that cannot measure keeps its minimum size.
+        field
+            .fitting_size(width.map(f64::from))
+            .map_or(Size::default(), |(width, height)| {
+                Size::new(width as f32, height as f32)
+            })
+    }
+
     fn apply_frame(&self, frame: LayoutRect, parent_height: Option<f32>) -> Result<(), AppError> {
         self.as_view()
             .set_frame(native_frame(frame, parent_height))

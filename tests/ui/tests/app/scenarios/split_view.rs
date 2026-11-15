@@ -1,6 +1,7 @@
 use zintl_ui_desktop::*;
 
-/// A bound horizontal split limited to 120...300 points, and a vertical split that starts clamped.
+/// A bound horizontal split limited to 120...300 points whose first pane holds wrapping text,
+/// and a vertical split that starts clamped.
 pub struct MainView {
     width: Store<f32>,
 }
@@ -29,6 +30,17 @@ impl View for MainView {
         )
         .position(20.0)
         .range(60.0..=200.0);
+        // The long text wraps to the pane's width instead of running under the divider.
+        let sidebar = VStack::new(list![
+            Text::new("Sidebar").id("first-pane"),
+            Text::new(
+                "This sentence is much longer than the sidebar is wide, so it has to wrap onto several lines.",
+            )
+            .id("long-text")
+            .fill_width(),
+        ])
+        .spacing(4.0)
+        .fill_width();
         Window::new(Rect::new(100.0, 100.0, 640.0, 420.0), "Zintl Split View UI Test")
             .id("main-window")
             .content(
@@ -40,7 +52,7 @@ impl View for MainView {
                         cx.watch(width, |width| Text::new(format!("Width: {width:.0}")).id("width-value")),
                     ])
                     .spacing(8.0),
-                    SplitView::horizontal(Text::new("Sidebar").id("first-pane"), detail)
+                    SplitView::horizontal(sidebar, detail)
                         .range(120.0..=300.0)
                         .bind(width),
                 ])

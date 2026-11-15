@@ -4,6 +4,7 @@ use std::error::Error;
 use std::fmt;
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use taffy::geometry::{Line, Size as TaffySize};
 use taffy::style::{
@@ -124,6 +125,10 @@ pub struct LayoutStyle {
     pub arrangement: Arrangement,
     /// This node's cell when its parent is a grid.
     pub grid_cell: Option<GridCell>,
+    /// A leaf whose height depends on the width it gets, such as wrapping text.
+    ///
+    /// Create it with [`LayoutTree::create_wrapping_leaf`], which measures it.
+    pub wraps: bool,
 }
 
 impl LayoutStyle {
@@ -143,6 +148,7 @@ impl LayoutStyle {
             ignores_safe_area: false,
             arrangement: Arrangement::Flex,
             grid_cell: None,
+            wraps: false,
         }
     }
 
@@ -170,6 +176,7 @@ impl LayoutStyle {
             ignores_safe_area: false,
             arrangement: Arrangement::Flex,
             grid_cell: None,
+            wraps: false,
         }
     }
 }
@@ -198,9 +205,20 @@ impl From<taffy::TaffyError> for LayoutError {
     }
 }
 
+/// Measures a wrapping leaf at a width, or at its natural width for `None`.
+pub type WrappingMeasure = Rc<dyn Fn(Option<f32>) -> Size>;
+
+/// What a measured leaf carries for [`LayoutTree::measure`].
+enum Content {
+    /// A preferred size, independent of the width.
+    Sized(Size),
+    /// A size that depends on the width, such as wrapping text.
+    Wrapping(WrappingMeasure),
+}
+
 pub struct LayoutTree {
-    /// Leaves with a content size carry it as their context for measuring.
-    tree: TaffyTree<Size>,
+    /// Leaves with a content size or a measure carry it as their context.
+    tree: TaffyTree<Content>,
     /// The axes along which each container has a child that takes free space.
     expansions: HashMap<TaffyNodeId, Expansion>,
 }
@@ -302,12 +320,25 @@ impl LayoutTree {
         let node = match style.content_size {
             Some(content) if children.is_empty() => self
                 .tree
-                .new_leaf_with_context(to_taffy_style(style), content)?,
+                .new_leaf_with_context(to_taffy_style(style), Content::Sized(content))?,
             _ => self
                 .tree
                 .new_with_children(to_taffy_style(style), &children)?,
         };
         self.expansions.insert(node, expansion);
+        Ok(NodeId(node))
+    }
+
+    /// Creates a leaf whose size `measure` computes from the width layout gives it.
+    pub fn create_wrapping_leaf(
+        &mut self,
+        style: LayoutStyle,
+        measure: WrappingMeasure,
+    ) -> Result<NodeId, LayoutError> {
+        let node = self
+            .tree
+            .new_leaf_with_context(to_taffy_style(style), Content::Wrapping(measure))?;
+        self.expansions.insert(node, Expansion::default());
         Ok(NodeId(node))
     }
 
@@ -369,15 +400,37 @@ impl LayoutTree {
         Ok(())
     }
 
-    /// Sizes a leaf to its content size, keeping any size layout already fixed.
+    /// Sizes a leaf to its content, keeping any size layout already fixed.
+    ///
+    /// A wrapping leaf takes its natural width up to the available width and
+    /// is as tall as its content at that width.
     fn measure(
         known: TaffySize<Option<f32>>,
-        _available: TaffySize<AvailableSpace>,
+        available: TaffySize<AvailableSpace>,
         _node: TaffyNodeId,
-        content: Option<&mut Size>,
+        content: Option<&mut Content>,
         _style: &TaffyStyle,
     ) -> TaffySize<f32> {
-        let content = content.map_or(Size::default(), |content| *content);
+        let content = match content {
+            None => Size::default(),
+            Some(Content::Sized(size)) => *size,
+            Some(Content::Wrapping(measure)) => {
+                let width = match (known.width, available.width) {
+                    (Some(width), _) => width,
+                    // The narrowest a wrapping leaf gets is set by its minimum size.
+                    (None, AvailableSpace::MinContent) => 0.0,
+                    (None, AvailableSpace::MaxContent) => measure(None).width,
+                    (None, AvailableSpace::Definite(space)) => measure(None).width.min(space),
+                };
+                let height = match known.height {
+                    Some(height) => height,
+                    // A zero width would put every character on its own line.
+                    None if width <= 0.0 => measure(None).height,
+                    None => measure(Some(width)).height,
+                };
+                Size::new(width, height)
+            }
+        };
         TaffySize {
             width: known.width.unwrap_or(content.width),
             height: known.height.unwrap_or(content.height),
@@ -884,5 +937,58 @@ mod tests {
             );
             assert_eq!(tree.layout(button).unwrap().width, 80.0, "row {row_width}");
         }
+    }
+
+    /// A text-like measure: 20 points per line, wrapping 600 points of text at the given width.
+    fn wrapping_text() -> WrappingMeasure {
+        Rc::new(|width: Option<f32>| {
+            let width = width.unwrap_or(600.0).min(600.0);
+            Size::new(width, (600.0 / width).ceil() * 20.0)
+        })
+    }
+
+    #[test]
+    fn wrapping_leaf_takes_more_lines_when_narrow() {
+        // Verifies a full-width wrapping leaf grows taller as its parent gets narrower.
+        let height_at = |pane_width: f32| {
+            let mut tree = LayoutTree::new();
+            let mut text_style = LayoutStyle::leaf(Size::new(0.0, 20.0));
+            text_style.width = LayoutDimension::Percent(1.0);
+            text_style.wraps = true;
+            let text = tree
+                .create_wrapping_leaf(text_style, wrapping_text())
+                .unwrap();
+            let mut pane_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+            pane_style.width = LayoutDimension::Points(pane_width);
+            let pane = tree.create_node(pane_style, &[text]).unwrap();
+            tree.compute(pane, Size::new(pane_width, 400.0)).unwrap();
+            tree.layout(text).unwrap()
+        };
+        let narrow = height_at(200.0);
+        assert_eq!((narrow.width, narrow.height), (200.0, 60.0));
+        let wide = height_at(300.0);
+        assert_eq!((wide.width, wide.height), (300.0, 40.0));
+    }
+
+    #[test]
+    fn wrapping_leaf_without_a_width_takes_its_natural_width() {
+        // Verifies an unconstrained wrapping leaf stays on one line, but wraps when space is short.
+        let mut tree = LayoutTree::new();
+        let mut text_style = LayoutStyle::leaf(Size::new(0.0, 20.0));
+        text_style.wraps = true;
+        let text = tree
+            .create_wrapping_leaf(text_style, wrapping_text())
+            .unwrap();
+        let mut root_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        root_style.cross_axis_alignment = CrossAxisAlignment::Start;
+        let root = tree.create_node(root_style, &[text]).unwrap();
+
+        tree.compute_fitting(root, None, None).unwrap();
+        let natural = tree.layout(text).unwrap();
+        assert_eq!((natural.width, natural.height), (600.0, 20.0));
+
+        tree.compute_fitting(root, Some(150.0), None).unwrap();
+        let wrapped = tree.layout(text).unwrap();
+        assert_eq!((wrapped.width, wrapped.height), (150.0, 80.0));
     }
 }

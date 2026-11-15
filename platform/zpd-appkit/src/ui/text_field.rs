@@ -211,6 +211,27 @@ impl TextField {
             }
         })
     }
+    /// Returns the size the text needs at `width`, or its natural size for `None`.
+    ///
+    /// Wrapping fields grow in height as `width` shrinks.
+    pub fn fitting_size(&self, width: Option<f64>) -> Result<(f64, f64), UiError> {
+        const UNBOUNDED: f64 = 1.0e7;
+        let bounds = native::Rect {
+            origin: native::Point::default(),
+            size: native::Size {
+                width: width.unwrap_or(UNBOUNDED),
+                height: UNBOUNDED,
+            },
+        };
+        self.view.as_view().with(|field| {
+            // SAFETY: The live view is an NSTextField; its cell measures text within plain bounds.
+            unsafe {
+                let cell = zpd_objc::msg_send!(field, zpd_objc::sel!("cell"), () => zpd_objc::Id);
+                let size = zpd_objc::msg_send!(cell, zpd_objc::sel!("cellSizeForBounds:"), ((bounds): native::Rect) => native::Size);
+                (size.width.ceil(), size.height.ceil())
+            }
+        })
+    }
     /// Wraps up to `lines` lines and truncates the last one with an ellipsis.
     ///
     /// Call after [`TextField::set_multiline`], which this overrides.

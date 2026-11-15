@@ -8,8 +8,16 @@ use zintl_ui_layout::{
 };
 
 /// A native view that receives frames computed by [`HostLayout`].
-pub trait LayoutNative: Sized {
+pub trait LayoutNative: Sized + 'static {
     type Error: From<LayoutError>;
+
+    /// Measures a view whose style wraps, at `width` or at its natural width for `None`.
+    ///
+    /// Views that cannot measure themselves report no size, so they keep their minimum.
+    fn measure_wrapping(&self, width: Option<f32>) -> Size {
+        let _ = width;
+        Size::default()
+    }
 
     /// Applies a top-left `frame`; `parent_height` is `None` inside flipped parents.
     fn apply_frame(&self, frame: LayoutRect, parent_height: Option<f32>)
@@ -47,7 +55,15 @@ impl<N: LayoutNative> LayoutSnapshot<N> {
             .iter()
             .map(|child| child.layout)
             .collect::<Vec<_>>();
-        let layout_id = layout.create_node(self.style, &child_nodes)?;
+        let layout_id = if self.style.wraps && child_nodes.is_empty() {
+            let native = self.native.clone();
+            layout.create_wrapping_leaf(
+                self.style,
+                Rc::new(move |width| native.measure_wrapping(width)),
+            )?
+        } else {
+            layout.create_node(self.style, &child_nodes)?
+        };
         Ok(BuiltLayout {
             snapshot: self,
             layout: layout_id,

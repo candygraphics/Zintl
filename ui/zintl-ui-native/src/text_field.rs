@@ -70,17 +70,22 @@ impl TextField {
     /// Estimates a label's size from its text and style.
     ///
     /// Labels with a line limit prefer this size but can shrink to any width
-    /// and truncate; other labels need it.
+    /// and truncate. Labels with a declared width and no limit wrap to it, and
+    /// the backend measures their height. Other labels need their text's width.
     fn resize_label(&mut self) {
         const STANDARD_SIZE: f64 = 13.0;
         let font_size = self.style.font.as_ref().map_or(STANDARD_SIZE, Font::size) as f32;
         let lines = self.style.line_limit.unwrap_or(1).max(1) as f32;
         let height = (font_size * 1.25 * lines + 4.0).ceil().max(20.0);
         let width = self.value.chars().count() as f32 * font_size * 0.54;
+        let wraps = self.style.line_limit.is_none() && self.layout.width != LayoutDimension::Auto;
         let (minimum, content) = match self.style.line_limit {
             Some(_) => (Size::new(0.0, height), Some(Size::new(width, height))),
+            None if wraps => (Size::new(0.0, height), None),
             None => (Size::new(width, height), None),
         };
+        self.multiline = wraps;
+        self.layout.wraps = wraps;
         self.layout.minimum_size = Some(minimum);
         self.layout.content_size = content;
     }
@@ -155,8 +160,13 @@ impl TextField {
     }
 
     /// Takes the parent's full width.
+    ///
+    /// A label without a line limit then wraps to that width and grows in height.
     pub fn fill_width(mut self) -> Self {
         self.layout.width = LayoutDimension::Percent(1.0);
+        if !self.editable {
+            self.resize_label();
+        }
         self
     }
 

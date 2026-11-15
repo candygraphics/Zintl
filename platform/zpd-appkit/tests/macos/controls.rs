@@ -272,6 +272,16 @@ fn main() {
     assert!(height.is_some_and(|height| height >= 20.0), "{height:?}");
     assert_eq!(width, None);
 
+    // Verifies a wrapping label needs more lines at a narrower width.
+    let long = "A long sentence that cannot fit on one line of a narrow pane and has to wrap.";
+    let wrapping = TextField::label_with_string(&application, long).unwrap();
+    wrapping.set_multiline(true).unwrap();
+    let (natural_width, line) = wrapping.fitting_size(None).unwrap();
+    let (_, narrow) = wrapping.fitting_size(Some(120.0)).unwrap();
+    let (_, wider) = wrapping.fitting_size(Some(240.0)).unwrap();
+    assert!(natural_width > 240.0, "{natural_width}");
+    assert!(narrow > wider && wider > line, "{line} {wider} {narrow}");
+
     // Verifies label styling sets the font, semantic color, alignment, and tail truncation.
     let label = TextField::label_with_string(&application, "A long title").unwrap();
     content.add_subview(&label).unwrap();
