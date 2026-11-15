@@ -1,12 +1,13 @@
 use zintl_ui_desktop::*;
 
-/// One toggle per style, a disabled toggle, and buttons that set them all from the app.
+/// One toggle per style, a disabled toggle, a toggle that rejects changes, and buttons that set them all from the app.
 pub struct MainView {
     switch: Store<bool>,
     checkbox: Store<bool>,
     button: Store<bool>,
     disabled: Store<bool>,
     changes: Store<Vec<bool>>,
+    rejected: Store<usize>,
 }
 
 impl MainView {
@@ -17,6 +18,7 @@ impl MainView {
             button: Store::default(),
             disabled: Store::default(),
             changes: Store::default(),
+            rejected: Store::default(),
         }
     }
 }
@@ -30,11 +32,17 @@ impl View for MainView {
         self.button = cx.store(false);
         self.disabled = cx.store(true);
         self.changes = cx.store(Vec::new());
+        self.rejected = cx.store(0);
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
-        let (switch, checkbox, button, changes) =
-            (self.switch, self.checkbox, self.button, self.changes);
+        let (switch, checkbox, button, changes, rejected) = (
+            self.switch,
+            self.checkbox,
+            self.button,
+            self.changes,
+            self.rejected,
+        );
         let set_all = move |on: bool| {
             move |cx: &mut Context<'_>| {
                 for store in [switch, checkbox, button] {
@@ -47,7 +55,7 @@ impl View for MainView {
                 Text::new(if *on { "On" } else { "Off" }).id(id)
             })
         };
-        Window::new(Rect::new(100.0, 100.0, 420.0, 360.0), "Zintl Toggles UI Test")
+        Window::new(Rect::new(100.0, 100.0, 420.0, 440.0), "Zintl Toggles UI Test")
             .id("main-window")
             .content(
                 VStack::new(list![
@@ -68,6 +76,15 @@ impl View for MainView {
                         .bind(self.disabled)
                         .enabled(false)
                         .id("disabled-checkbox"),
+                    // The app keeps this toggle on and only counts the attempts.
+                    Toggle::new("Always on")
+                        .style(ToggleStyle::Checkbox)
+                        .on(true)
+                        .id("always-on")
+                        .on_change(move |cx, _| cx.update(rejected, |count| *count += 1)),
+                    cx.watch(rejected, |count| {
+                        Text::new(format!("Rejected: {count}")).id("rejected")
+                    }),
                     HStack::new(list![
                         Button::new("All on").id("all-on").on_click(set_all(true)),
                         Button::new("All off").id("all-off").on_click(set_all(false)),

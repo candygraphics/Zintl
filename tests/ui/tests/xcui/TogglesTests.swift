@@ -65,4 +65,23 @@ final class TogglesTests: ZintlUITestCase {
     assertLabel("disabled-value", "On")
     XCTAssertTrue(isOn("disabled-checkbox"))
   }
+
+  /// Verifies a toggle returns to the app's value when on_change does not accept the click.
+  func testRejectedClickRevertsTheToggle() throws {
+    try launch(scenario: "toggles")
+
+    let toggle = element("always-on")
+    XCTAssertTrue(toggle.waitToExist(timeout: 2))
+    XCTAssertTrue(isOn("always-on"))
+    // The stack stretches the checkbox, but AppKit only toggles it on its box and title.
+    let box = toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5))
+    box.click()
+    assertLabel("rejected", "Rejected: 1")
+    XCTAssertTrue(waitUntil { self.isOn("always-on") }, "the toggle stayed off")
+
+    // A second attempt is reported and reverted too.
+    box.click()
+    assertLabel("rejected", "Rejected: 2")
+    XCTAssertTrue(waitUntil { self.isOn("always-on") }, "the toggle stayed off")
+  }
 }

@@ -35,7 +35,8 @@ impl ListStyle {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TableColumn {
     pub title: String,
-    /// The initial width in points; `None` lets the table size it.
+    /// The initial rendered width in points, including the spacing between
+    /// columns; `None` lets the table size it.
     pub width: Option<f64>,
 }
 
@@ -329,6 +330,8 @@ impl ListView {
                     title: String::new(),
                     width: None,
                 };
+                // NSTableColumn widths exclude the intercell spacing drawn beside each column.
+                let spacing = zpd_objc::msg_send!(table, zpd_objc::sel!("intercellSpacing"), () => native::Size).width;
                 let shown = if columns.is_empty() {
                     std::slice::from_ref(&list_column)
                 } else {
@@ -342,6 +345,7 @@ impl ListView {
                     let title = native::nsstring(&declared.title);
                     zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("setTitle:"), ((title.as_ptr()): Id) => ());
                     if let Some(width) = declared.width {
+                        let width = (width - spacing).max(0.0);
                         zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("setWidth:"), ((width): f64) => ());
                     }
                     zpd_objc::msg_send!(column.as_ptr(), zpd_objc::sel!("setResizingMask:"), ((native::NS_TABLE_COLUMN_AUTORESIZING_MASK | Self::USER_RESIZING_MASK): u64) => ());
@@ -488,10 +492,12 @@ impl ListView {
     /// Returns the width available to the content of column `index`.
     pub fn column_width(&self, index: usize) -> Result<f64, UiError> {
         let width = self.table.with(|table| {
-            // SAFETY: The live table returns the rectangle of one of its columns.
+            // SAFETY: The live table returns the rectangle of one of its columns and its spacing.
             unsafe {
                 let rect = zpd_objc::msg_send!(table, zpd_objc::sel!("rectOfColumn:"), ((index as i64): i64) => native::Rect);
-                rect.size.width
+                let spacing = zpd_objc::msg_send!(table, zpd_objc::sel!("intercellSpacing"), () => native::Size);
+                // The column rectangle includes the spacing beside the cells.
+                (rect.size.width - spacing.width).max(0.0)
             }
         })?;
         Ok(width)

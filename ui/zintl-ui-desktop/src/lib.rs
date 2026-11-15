@@ -225,6 +225,8 @@ impl Text {
     }
 
     /// Takes the parent's full width.
+    ///
+    /// Without a line limit, the text wraps to that width and grows in height.
     pub fn fill_width(mut self) -> Self {
         self.inner = self.inner.fill_width();
         self

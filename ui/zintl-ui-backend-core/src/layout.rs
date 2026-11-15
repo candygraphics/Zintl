@@ -8,8 +8,16 @@ use zintl_ui_layout::{
 };
 
 /// A native view that receives frames computed by [`HostLayout`].
-pub trait LayoutNative: Sized {
+pub trait LayoutNative: Sized + 'static {
     type Error: From<LayoutError>;
+
+    /// Measures a view whose style wraps, at `width` or at its natural width for `None`.
+    ///
+    /// Views that cannot measure themselves report no size, so they keep their minimum.
+    fn measure_wrapping(&self, width: Option<f32>) -> Size {
+        let _ = width;
+        Size::default()
+    }
 
     /// Applies a top-left `frame`; `parent_height` is `None` inside flipped parents.
     fn apply_frame(&self, frame: LayoutRect, parent_height: Option<f32>)
@@ -47,7 +55,15 @@ impl<N: LayoutNative> LayoutSnapshot<N> {
             .iter()
             .map(|child| child.layout)
             .collect::<Vec<_>>();
-        let layout_id = layout.create_node(self.style, &child_nodes)?;
+        let layout_id = if self.style.wraps && child_nodes.is_empty() {
+            let native = self.native.clone();
+            layout.create_wrapping_leaf(
+                self.style,
+                Rc::new(move |width| native.measure_wrapping(width)),
+            )?
+        } else {
+            layout.create_node(self.style, &child_nodes)?
+        };
         Ok(BuiltLayout {
             snapshot: self,
             layout: layout_id,
@@ -78,7 +94,7 @@ impl<N: LayoutNative> LayoutSnapshot<N> {
         let root = layout.create_node(style, &child_nodes)?;
         layout.compute(root, size)?;
         for child in &built {
-            child.apply(&layout, Some(size.height), 0.0)?;
+            child.apply(&layout, size, Some(size.height), 0.0)?;
         }
         Ok(())
     }
@@ -103,20 +119,38 @@ struct BuiltLayout<'snapshot, N> {
 
 impl<N: LayoutNative> BuiltLayout<'_, N> {
     /// Applies frames to this subtree, moving this view down by `offset_y`.
+    ///
+    /// Frames are cut to the parent's `bounds`, so content that does not fit
+    /// is cut off instead of covering the views next to its parent.
     fn apply(
         &self,
         layout: &LayoutTree,
+        bounds: Size,
         parent_height: Option<f32>,
         offset_y: f32,
     ) -> Result<(), N::Error> {
         let mut frame = layout.layout(self.layout)?;
         frame.y += offset_y;
+        let frame = Self::clamp(frame, bounds);
         let native = &self.snapshot.native;
         native.apply_frame(frame, parent_height)?;
+        let size = Size::new(frame.width, frame.height);
         for child in &self.children {
-            child.apply(layout, Some(frame.height), 0.0)?;
+            child.apply(layout, size, Some(frame.height), 0.0)?;
         }
         native.layout_hosted(frame, &self.snapshot.hosted)
+    }
+
+    /// Returns the part of `frame` inside a parent of size `bounds`.
+    fn clamp(frame: LayoutRect, bounds: Size) -> LayoutRect {
+        let x = frame.x.clamp(0.0, bounds.width);
+        let y = frame.y.clamp(0.0, bounds.height);
+        LayoutRect {
+            x,
+            y,
+            width: (frame.x + frame.width).min(bounds.width).max(x) - x,
+            height: (frame.y + frame.height).min(bounds.height).max(y) - y,
+        }
     }
 }
 
@@ -161,7 +195,7 @@ impl<N: LayoutNative> HostLayout<N> {
         )?;
         layout.compute_fitting(root, Some(safe.width), Some(safe.height))?;
         for child in &built {
-            child.apply(&layout, Some(size.height), inset)?;
+            child.apply(&layout, size, Some(size.height), inset)?;
         }
         Ok(())
     }
@@ -217,11 +251,12 @@ impl<N: LayoutNative> HostLayout<N> {
         let mut layout = LayoutTree::new();
         let (root, built) = Self::build(children, padding, &mut layout, width, height, minimum)?;
         layout.compute_fitting(root, width, height)?;
-        for child in &built {
-            child.apply(&layout, parent_height, 0.0)?;
-        }
         let frame = layout.layout(root)?;
-        Ok(Size::new(frame.width, frame.height))
+        let size = Size::new(frame.width, frame.height);
+        for child in &built {
+            child.apply(&layout, size, parent_height, 0.0)?;
+        }
+        Ok(size)
     }
 }
 
@@ -281,5 +316,58 @@ mod tests {
         host.layout(Size::new(400.0, 300.0), 28.0).unwrap();
         let frame = probe.frame.get().unwrap();
         assert_eq!((frame.y, frame.height), (0.0, 300.0));
+    }
+
+    #[test]
+    fn content_that_does_not_fit_is_cut_to_its_parent() {
+        // Verifies a child wider and taller than its parent gets only the parent's area.
+        let probe = Rc::new(Probe::default());
+        let mut style = LayoutStyle::leaf(Size::new(300.0, 80.0));
+        style.width = LayoutDimension::Points(300.0);
+        let field = LayoutSnapshot {
+            style,
+            native: probe.clone(),
+            children: Vec::new(),
+            hosted: Vec::new(),
+        };
+        let mut pane_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        pane_style.width = LayoutDimension::Points(200.0);
+        pane_style.height = LayoutDimension::Points(50.0);
+        let pane = LayoutSnapshot {
+            style: pane_style,
+            native: Rc::new(Probe::default()),
+            children: vec![field],
+            hosted: Vec::new(),
+        };
+        let host = HostLayout {
+            children: vec![pane],
+            padding: 0.0,
+        };
+        host.layout(Size::new(400.0, 300.0), 0.0).unwrap();
+        let frame = probe.frame.get().unwrap();
+        assert_eq!((frame.width, frame.height), (200.0, 50.0));
+    }
+
+    #[test]
+    fn views_below_the_bottom_edge_get_no_height() {
+        // Verifies a view entirely outside its parent is collapsed at the parent's edge.
+        let frame = BuiltLayout::<Probe>::clamp(
+            LayoutRect {
+                x: 10.0,
+                y: 120.0,
+                width: 50.0,
+                height: 20.0,
+            },
+            Size::new(100.0, 100.0),
+        );
+        assert_eq!(
+            frame,
+            LayoutRect {
+                x: 10.0,
+                y: 100.0,
+                width: 50.0,
+                height: 0.0,
+            }
+        );
     }
 }

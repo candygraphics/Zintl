@@ -1038,6 +1038,15 @@ impl NativeNode {
 impl LayoutNative for NativeNode {
     type Error = AppError;
 
+    fn measure_wrapping(&self, width: Option<f32>) -> Size {
+        // Layout cannot fail here; a view that cannot measure keeps its minimum size.
+        self.view
+            .measure(width.map_or(f64::INFINITY, f64::from), f64::INFINITY)
+            .map_or(Size::default(), |(width, height)| {
+                Size::new(width.ceil() as f32, height.ceil() as f32)
+            })
+    }
+
     fn apply_frame(&self, frame: LayoutRect, _parent_height: Option<f32>) -> Result<(), AppError> {
         Ok(self.view.set_frame(
             f64::from(frame.x),

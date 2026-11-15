@@ -8,10 +8,11 @@ use zpd_appkit::graphics::Font;
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
     AlertButton, AlertButtonRole, AlertConfig, AlertSheet, AsView, Button, ButtonType, Color,
-    ColorWell, ListEntry, ListView, CommandItem, CommandMenu, CommandRole, CommandSet, ContextMenu, MenuRole,
+    ColorWell, ListEntry, ListStyle, ListView, CommandItem, CommandMenu, CommandRole, CommandSet, ContextMenu, MenuRole,
     NumberField, NumberFormat, PopUpButton, Popover, ScrollView, SegmentedControl, Sidebar,
     SidebarItem, SidebarSearch, SidebarSection, Slider, Switch, TabView, TextAlignment, TextColor,
-    RichParagraph, RichRun, RichStyle, TextEditor, TextField, Toolbar, ToolbarItem, View, WindowStyle,
+    RichParagraph, RichRun, RichStyle, TableColumn, TextEditor, TextField, Toolbar, ToolbarItem, View,
+    WindowStyle,
 };
 use zpd_objc::Id;
 
@@ -265,6 +266,22 @@ fn main() {
     let color = well.color().unwrap();
     assert!((color.red - 1.0).abs() < 0.01 && (color.green - 0.5).abs() < 0.01);
 
+    // Verifies a single-line field reports a line's height for layout, but no fixed width.
+    let field = TextField::with_string(&application, "").unwrap();
+    let (width, height) = field.as_view().intrinsic_content_size().unwrap();
+    assert!(height.is_some_and(|height| height >= 20.0), "{height:?}");
+    assert_eq!(width, None);
+
+    // Verifies a wrapping label needs more lines at a narrower width.
+    let long = "A long sentence that cannot fit on one line of a narrow pane and has to wrap.";
+    let wrapping = TextField::label_with_string(&application, long).unwrap();
+    wrapping.set_multiline(true).unwrap();
+    let (natural_width, line) = wrapping.fitting_size(None).unwrap();
+    let (_, narrow) = wrapping.fitting_size(Some(120.0)).unwrap();
+    let (_, wider) = wrapping.fitting_size(Some(240.0)).unwrap();
+    assert!(natural_width > 240.0, "{natural_width}");
+    assert!(narrow > wider && wider > line, "{line} {wider} {narrow}");
+
     // Verifies label styling sets the font, semantic color, alignment, and tail truncation.
     let label = TextField::label_with_string(&application, "A long title").unwrap();
     content.add_subview(&label).unwrap();
@@ -343,6 +360,38 @@ fn main() {
             id: Some("a".into())
         }]
     );
+
+    // Verifies declared column widths are the rendered widths, so they add up to the table width.
+    let table = ListView::new(&application).unwrap();
+    content.add_subview(&table).unwrap();
+    table
+        .as_view()
+        .set_frame(Rect::new(0.0, 0.0, 320.0, 200.0))
+        .unwrap();
+    // Tables use the plain style, which has no insets beside the columns.
+    table.set_style(ListStyle::Plain).unwrap();
+    table
+        .set_columns(&[
+            TableColumn {
+                title: "Name".into(),
+                width: Some(200.0),
+            },
+            TableColumn {
+                title: "Length".into(),
+                width: Some(120.0),
+            },
+        ])
+        .unwrap();
+    table.as_view().layout_subtree_if_needed().unwrap();
+    // SAFETY: The list's document view is its live NSTableView with two columns.
+    unsafe {
+        let scroll = Checks::native(&table);
+        let native = zpd_objc::msg_send!(scroll, zpd_objc::sel!("documentView"), () => Id);
+        let widths = [0_i64, 1].map(|column| {
+            zpd_objc::msg_send!(native, zpd_objc::sel!("rectOfColumn:"), ((column): i64) => zpd_appkit::geometry::Rect).width
+        });
+        assert_eq!(widths, [200.0, 120.0]);
+    }
 
     // Verifies rich runs round-trip, and the paragraph action restyles undoably and validates its items.
     let rich = TextEditor::new(&application).unwrap();

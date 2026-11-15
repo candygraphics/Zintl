@@ -99,6 +99,12 @@ impl MessageLoopHandler<Message> for AppHandler {
                 }
             }
             Message::Event { route, event } => {
+                if matches!(
+                    event,
+                    Event::StateChanged { .. } | Event::SelectionChanged { .. }
+                ) {
+                    self.composer.backend_mut().note_user_change(route);
+                }
                 self.dispatch(route, event);
                 self.synchronize(cx);
             }

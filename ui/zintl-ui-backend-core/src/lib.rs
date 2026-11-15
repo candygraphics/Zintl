@@ -179,6 +179,18 @@ pub enum ViewKind {
 }
 
 impl ViewKind {
+    /// Returns whether this control shows its rendered value again after the user changes it.
+    ///
+    /// Discrete controls follow the app's value, so a change the app rejects
+    /// is undone. Text and continuous controls keep what the user is entering.
+    pub fn reverts_user_changes(&self) -> bool {
+        match self {
+            Self::Button(button) => button.button_type != ButtonType::MomentaryPushIn,
+            Self::Switch { .. } | Self::PopUpButton { .. } | Self::SegmentedControl { .. } => true,
+            _ => false,
+        }
+    }
+
     /// Returns the handler of a canvas view of any kind.
     pub fn canvas(&self) -> Option<&CanvasNode> {
         match self {

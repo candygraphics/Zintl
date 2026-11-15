@@ -65,4 +65,23 @@ final class SplitViewTests: ZintlUITestCase {
     // The split asks for 20 points, but its range starts at 60.
     XCTAssertEqual(bottom.frame.minY - top.frame.minY, 60 + divider, accuracy: 1)
   }
+
+  /// Verifies long full-width text wraps inside the first pane and needs fewer lines when it widens.
+  func testLongTextWrapsToThePaneWidth() throws {
+    try launch(scenario: "split-view")
+
+    let window = app.windows["main-window"]
+    let text = app.staticTexts["long-text"]
+    XCTAssertTrue(text.waitToExist(timeout: 2))
+    // The first pane is 200 points wide.
+    XCTAssertLessThanOrEqual(text.frame.maxX, window.frame.minX + 200 + 1)
+    let narrowHeight = text.frame.height
+    XCTAssertGreaterThan(narrowHeight, 2 * app.staticTexts["first-pane"].frame.height)
+
+    dragDivider(at: 200, by: 100)
+    assertLabel("width-value", "Width: 300")
+    XCTAssertTrue(
+      waitUntil { text.frame.height < narrowHeight }, "the text kept \(narrowHeight) points")
+    XCTAssertLessThanOrEqual(text.frame.maxX, window.frame.minX + 300 + 1)
+  }
 }

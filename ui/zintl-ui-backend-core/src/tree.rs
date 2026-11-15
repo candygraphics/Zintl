@@ -90,6 +90,45 @@ impl<S: Default> NodeTree<S> {
         self.value(id).expect("render nodes have values").clone()
     }
 
+    /// Returns the rendered node that `route` is attached to.
+    pub fn find_route(&self, route: EventRouteId) -> Option<NodeId> {
+        self.nodes.iter().enumerate().find_map(|(index, node)| {
+            node.as_ref()
+                .is_some_and(|node| node.event_route == Some(route))
+                .then_some(NodeId(index))
+        })
+    }
+
+    /// Returns the controls whose rendered value is shown again after the user changed `changed`.
+    ///
+    /// The composer skips updates whose value did not change, so a change the
+    /// app rejected would otherwise stay on screen. Siblings are included,
+    /// because choosing a radio button turns off the others in its group.
+    pub fn user_change_targets(&self, changed: &[NodeId]) -> Vec<NodeId> {
+        let reverts = |id: NodeId| {
+            matches!(
+                self.value(id),
+                Some(RenderNode::View { kind, .. }) if kind.reverts_user_changes()
+            )
+        };
+        let mut targets = Vec::new();
+        for id in changed
+            .iter()
+            .filter(|id| self.contains(**id) && reverts(**id))
+        {
+            let siblings = self
+                .node(*id)
+                .parent
+                .map_or(std::slice::from_ref(id), |parent| self.children(parent));
+            for sibling in siblings {
+                if reverts(*sibling) && !targets.contains(sibling) {
+                    targets.push(*sibling);
+                }
+            }
+        }
+        targets
+    }
+
     pub fn states_mut(&mut self) -> impl Iterator<Item = &mut S> {
         self.nodes.iter_mut().flatten().map(|node| &mut node.state)
     }
@@ -337,5 +376,69 @@ mod tests {
         slot.clone().record(2);
         assert_eq!(slot.take(), Err(1));
         assert_eq!(slot.take(), Ok(()));
+    }
+
+    #[test]
+    fn find_route_returns_the_node_with_that_route() {
+        // Verifies events can be traced back to the node their route was attached to.
+        let mut tree = NodeTree::<()>::new();
+        let menu = RenderNode::ContextMenu { items: Vec::new() };
+        let route = EventRouteId::from_raw(7);
+        tree.create(&menu, None);
+        let routed = tree.create(&menu, Some(route));
+        assert_eq!(tree.find_route(route), Some(routed));
+        assert_eq!(tree.find_route(EventRouteId::from_raw(8)), None);
+    }
+
+    /// Returns a view node of `kind` for tree tests.
+    fn view(kind: crate::ViewKind) -> RenderNode {
+        RenderNode::View {
+            kind,
+            layout: zintl_ui_layout::LayoutStyle::leaf(zintl_ui_layout::Size::default()),
+            id: None,
+            enabled: true,
+            title_bar_interactive: false,
+            help: None,
+            accessibility: Default::default(),
+        }
+    }
+
+    /// Returns a button node of `button_type` for tree tests.
+    fn button(button_type: crate::ButtonType) -> RenderNode {
+        view(crate::ViewKind::Button(crate::Button {
+            title: String::new(),
+            button_type,
+            bezel: None,
+            on: false,
+            system_image: None,
+            key_equivalent: None,
+            destructive: false,
+            shows_menu: false,
+            keeps_state: false,
+            title_color: None,
+        }))
+    }
+
+    #[test]
+    fn user_changes_revert_discrete_siblings_only() {
+        // Verifies a changed radio button reverts its group, but not text fields or push buttons.
+        let mut tree = NodeTree::<()>::new();
+        let group = tree.create(&view(crate::ViewKind::Container), None);
+        let first = tree.create(&button(crate::ButtonType::Radio), None);
+        let second = tree.create(&button(crate::ButtonType::Radio), None);
+        let push = tree.create(&button(crate::ButtonType::MomentaryPushIn), None);
+        let search = tree.create(
+            &view(crate::ViewKind::SearchField {
+                value: String::new(),
+                placeholder: None,
+            }),
+            None,
+        );
+        for (index, child) in [first, second, push, search].into_iter().enumerate() {
+            tree.insert_child(group, index, child);
+        }
+        assert_eq!(tree.user_change_targets(&[second]), [first, second]);
+        // A text field the user typed into keeps its text.
+        assert!(tree.user_change_targets(&[search]).is_empty());
     }
 }

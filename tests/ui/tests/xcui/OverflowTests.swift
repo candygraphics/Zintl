@@ -41,4 +41,36 @@ final class OverflowTests: ZintlUITestCase {
     scrollView.scroll(byDeltaX: -1000, deltaY: 0)
     XCTAssertLessThanOrEqual(after.frame.maxX, scrollView.frame.maxX)
   }
+
+  /// Verifies fields that do not fit their pane are cut to it instead of covering the next pane.
+  func testOverflowingFieldsDoNotOverlap() throws {
+    try launch(scenario: "overflow-fields")
+
+    let fields = (1...4).map { app.textFields["field-\($0)"] }
+    XCTAssertTrue(fields[3].waitToExist(timeout: 2))
+    for (index, field) in fields.enumerated() {
+      for other in fields[(index + 1)...] {
+        XCTAssertFalse(
+          field.frame.intersects(other.frame),
+          "\(field.identifier) \(field.frame) covers \(other.identifier) \(other.frame)"
+        )
+      }
+    }
+    // The first pane is 200 points wide.
+    let window = app.windows["main-window"]
+    XCTAssertLessThanOrEqual(fields[0].frame.maxX, window.frame.minX + 200 + 1)
+  }
+
+  /// Verifies typing into each visible field reaches that field's own Store.
+  func testTypingReachesTheClickedField() throws {
+    try launch(scenario: "overflow-fields")
+
+    for number in [1, 2, 4] {
+      let field = app.textFields["field-\(number)"]
+      XCTAssertTrue(field.waitToExist(timeout: 2))
+      field.click()
+      field.typeText("t\(number)")
+      assertLabel("value-\(number)", "\(number):t\(number)")
+    }
+  }
 }

@@ -115,7 +115,15 @@ impl MessageLoopHandler<Message> for AppHandler<'_> {
                     self.composer.backend_mut().mark_window_closed(event.window);
                 }
                 if let Some(route) = event.route {
-                    self.dispatch(EventRouteId::from_raw(route.get()), event.kind.shared());
+                    let route = EventRouteId::from_raw(route.get());
+                    if matches!(
+                        event.kind,
+                        WindowEventKind::StateChanged { .. }
+                            | WindowEventKind::SelectionChanged { .. }
+                    ) {
+                        self.composer.backend_mut().note_user_change(route);
+                    }
+                    self.dispatch(route, event.kind.shared());
                 }
                 if action != WindowEventAction::WaitForClose {
                     self.synchronize(cx);
