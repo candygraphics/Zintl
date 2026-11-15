@@ -162,6 +162,8 @@ pub struct AppKitBackend {
     titles_dirty: bool,
     /// Controls the user changed; their rendered values are shown again on the next synchronization.
     changed_by_user: Vec<NodeId>,
+    /// Controls the user is typing in; number fields keep typed text until the next synchronization.
+    typing: Vec<NodeId>,
     /// Views that take keyboard focus once they are shown in their window.
     pending_focus: Vec<NodeId>,
 }
@@ -187,6 +189,7 @@ impl AppKitBackend {
             gpu: GpuSlot::default(),
             titles_dirty: false,
             changed_by_user: Vec::new(),
+            typing: Vec::new(),
             pending_focus: Vec::new(),
         }
     }
@@ -285,6 +288,18 @@ impl AppKitBackend {
         }
     }
 
+    /// Records that the user is typing in the control `route` belongs to, before its handlers run.
+    ///
+    /// The value the view parses from that text then does not replace it.
+    fn note_typing(&mut self, route: EventRouteId) {
+        if let Some(id) = self.tree.find_route(route)
+            && let Some(native) = &self.state(id).native
+        {
+            native.hold_text(true);
+            self.typing.push(id);
+        }
+    }
+
     /// Shows the rendered value again in controls the user changed.
     fn revert_user_changes(&self) -> Result<(), AppError> {
         for id in self.tree.user_change_targets(&self.changed_by_user) {
@@ -305,6 +320,13 @@ impl AppKitBackend {
         self.pending_error.take()?;
         let reverted = self.revert_user_changes();
         self.changed_by_user.clear();
+        for id in std::mem::take(&mut self.typing) {
+            if self.tree.contains(id)
+                && let Some(native) = &self.state(id).native
+            {
+                native.hold_text(false);
+            }
+        }
         reverted?;
         for window in self.retired_windows.drain(..) {
             cx.remove_window(window);

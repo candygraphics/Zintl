@@ -304,6 +304,13 @@ impl NativeNode {
         }
     }
 
+    /// Keeps typed text in a number field while the view renders the value parsed from it.
+    pub(super) fn hold_text(&self, hold: bool) {
+        if let Self::NumberField(field) = self {
+            field.hold_text(hold);
+        }
+    }
+
     /// Moves keyboard focus to a text field or editor that is in a window.
     pub(super) fn focus(&self) -> Result<(), UiError> {
         match self {

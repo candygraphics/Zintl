@@ -379,6 +379,43 @@ fn integer_field_steps_by_its_increment() {
 }
 
 #[test]
+fn integer_field_reports_typed_integers_before_editing_ends() {
+    // Verifies typed text that is an integer reaches the Store at once, and partial text does not.
+    let (mut app, value) = Harness::mount(
+        |cx| cx.store(3_i64),
+        |value| NumberField::integer().grouping(true).bind(value),
+    );
+    app.dispatch_at(&[0], Event::TextChanged { value: "42".into() });
+    assert_eq!(app.get(value), 42);
+    for partial in ["-", "", "4x"] {
+        app.dispatch_at(
+            &[0],
+            Event::TextChanged {
+                value: partial.into(),
+            },
+        );
+        assert_eq!(app.get(value), 42, "{partial:?}");
+    }
+    app.dispatch_at(&[0], Event::TextChanged { value: "1,".into() });
+    assert_eq!(app.get(value), 1);
+    app.dispatch_at(
+        &[0],
+        Event::TextChanged {
+            value: "1,234".into(),
+        },
+    );
+    assert_eq!(app.get(value), 1234);
+    // The rendered text is formatted; the backend keeps typed text until editing ends.
+    assert!(matches!(
+        app.render(),
+        RenderNode::View {
+            kind: ViewKind::NumberField { text: Some(text), .. },
+            ..
+        } if text == "1,234"
+    ));
+}
+
+#[test]
 fn number_field_clamps_entered_values() {
     // Verifies values outside the declared range are clamped before reaching the Store.
     let (mut app, value) = Harness::mount(

@@ -125,6 +125,9 @@ impl MessageLoopHandler<Message> for AppHandler<'_> {
                     ) {
                         self.composer.backend_mut().note_user_change(route);
                     }
+                    if matches!(event.kind, WindowEventKind::TextChanged { .. }) {
+                        self.composer.backend_mut().note_typing(route);
+                    }
                     self.dispatch(route, event.kind.shared());
                 }
                 if action != WindowEventAction::WaitForClose {

@@ -518,8 +518,8 @@ type ParseValue = dyn Fn(&str) -> Option<f64>;
 ///
 /// By default the platform formats and parses the number. With
 /// [`NumberField::formatter`] or [`NumberField::parser`] the field shows the
-/// formatted text and parses it once editing ends; text that does not parse
-/// restores the current value.
+/// formatted text and parses it while the user types and once editing ends;
+/// text that does not parse restores the current value when editing ends.
 #[derive(Clone)]
 pub struct NumberField {
     value: f64,
@@ -680,6 +680,14 @@ impl NativeView for NumberField {
         if !self.formats_text() {
             return element;
         }
+        // Typing reports each number, so actions see the value before editing ends.
+        let field = self.clone();
+        let element = binding().route(element, EventKind::TextChanged, move |event| match event {
+            Event::TextChanged { value: text } => {
+                field.parse(&text).filter(|parsed| *parsed != value)
+            }
+            _ => None,
+        });
         let field = self.clone();
         binding().route(
             element,
@@ -698,8 +706,10 @@ impl NativeView for NumberField {
 /// An integer field with a stepper whose values never pass through `f64`.
 ///
 /// The field formats and parses `i64` itself, so values above 2^53 stay
-/// exact. Text that is not an integer, such as `12.5`, restores the current
-/// value; full-width digits from input methods are accepted.
+/// exact. Values are reported while the user types, whenever the text is an
+/// integer; once editing ends the text is formatted again, and text that is
+/// not an integer restores the last value, so `12.5` ends as `12`. Full-width
+/// digits from input methods are accepted.
 #[derive(Clone)]
 pub struct IntegerField {
     value: i64,
@@ -854,6 +864,14 @@ impl NativeView for IntegerField {
                     value.saturating_sub(step)
                 };
                 Some(next.clamp(minimum, maximum)).filter(|next| *next != value)
+            }
+            _ => None,
+        });
+        // Typing reports each integer, so actions see the value before editing ends.
+        let field = self.clone();
+        let element = binding().route(element, EventKind::TextChanged, move |event| match event {
+            Event::TextChanged { value: text } => {
+                field.parse(&text).filter(|parsed| *parsed != value)
             }
             _ => None,
         });

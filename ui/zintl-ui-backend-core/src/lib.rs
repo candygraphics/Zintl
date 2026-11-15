@@ -117,7 +117,8 @@ pub enum ViewKind {
         value: f64,
         format: NumberFormat,
         /// Text shown instead of the formatted value; edits then arrive as
-        /// [`Event::TextCommitted`] for the view to parse.
+        /// [`Event::TextChanged`] while the user types and
+        /// [`Event::TextCommitted`] when editing ends, for the view to parse.
         text: Option<String>,
     },
     SearchField {

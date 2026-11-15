@@ -426,7 +426,8 @@ pub struct NumberFormat {
 /// A number-only `NSTextField` paired with an `NSStepper`.
 ///
 /// With [`NumberField::set_text`] the field shows caller-formatted text and
-/// reports edits as [`WindowEventKind::TextCommitted`] instead of parsing them.
+/// reports edits as [`WindowEventKind::TextChanged`] while the user types and
+/// [`WindowEventKind::TextCommitted`] when editing ends, instead of parsing them.
 pub struct NumberField {
     view: ViewActor,
     field: crate::actor::ActorRef,
@@ -434,6 +435,8 @@ pub struct NumberField {
     formatter: crate::actor::ActorRef,
     /// The caller-formatted text, or `None` while the number formatter parses input.
     text: std::rc::Rc<std::cell::RefCell<Option<String>>>,
+    /// Whether new text waits for editing to end instead of replacing typed text.
+    holds_text: std::cell::Cell<bool>,
 }
 impl NumberField {
     const STEPPER_WIDTH: f64 = 19.0;
@@ -513,6 +516,19 @@ impl NumberField {
             });
             field_emit(WindowEventKind::ValueChanged { value });
         })?;
+        // Caller-formatted fields report typing, so the caller sees values before editing ends.
+        let typing_emit = emit.clone();
+        let typing_text = text.clone();
+        callback::install_delegate(&field_actor, move |notification| {
+            if typing_text.borrow().is_none() {
+                return;
+            }
+            // SAFETY: Text notifications carry the live field as their object.
+            let value = unsafe {
+                string_value(zpd_objc::msg_send!(notification, zpd_objc::sel!("object"), () => Id))
+            };
+            typing_emit(WindowEventKind::TextChanged { value });
+        })?;
         let field_for_stepper = field_actor.clone();
         let stepper_text = text.clone();
         callback::install_action(&stepper_actor, move |stepper| {
@@ -533,7 +549,17 @@ impl NumberField {
             stepper: stepper_actor,
             formatter: formatter_actor,
             text,
+            holds_text: std::cell::Cell::new(false),
         })
+    }
+
+    /// While `hold` is set, [`NumberField::set_text`] keeps what the user is
+    /// typing and shows the new text once editing ends.
+    ///
+    /// Set it while the caller renders the value parsed from typed text, so
+    /// the field is not reformatted under the caret.
+    pub fn hold_text(&self, hold: bool) {
+        self.holds_text.set(hold);
     }
 
     /// Shows `text` instead of the formatted value, or `None` to format it again.
@@ -544,13 +570,17 @@ impl NumberField {
         } else {
             self.formatter.with(|formatter| formatter)?
         };
+        let holds = self.holds_text.get();
         self.field.with(|field| {
             // SAFETY: The field is a live NSTextField; the formatter is its live child or nil.
             unsafe {
                 if text.is_some() != was_custom {
                     zpd_objc::msg_send!(field, zpd_objc::sel!("setFormatter:"), ((formatter): Id) => ());
                 }
-                if let Some(text) = text {
+                // A field being edited shows held text when editing ends, from `text`.
+                let editing = !zpd_objc::msg_send!(field, zpd_objc::sel!("currentEditor"), () => Id)
+                    .is_null();
+                if let Some(text) = text.filter(|_| !(holds && editing)) {
                     let text = native::nsstring(text);
                     zpd_objc::msg_send!(field, zpd_objc::sel!("setStringValue:"), ((text.as_ptr()): Id) => ());
                 }

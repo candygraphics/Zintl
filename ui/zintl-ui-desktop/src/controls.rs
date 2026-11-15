@@ -531,7 +531,8 @@ impl NumberField {
 wrapper!(
     /// A field for whole numbers with a stepper, whose values never pass through `f64`.
     ///
-    /// Text that is not an integer, such as `12.5`, restores the current value.
+    /// Values are reported while the user types. When editing ends, text that
+    /// is not an integer restores the last value, so `12.5` ends as `12`.
     IntegerField(zintl_ui_native::IntegerField)
 );
 
