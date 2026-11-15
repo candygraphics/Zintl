@@ -1,20 +1,21 @@
 use zintl_ui::element::{IntoElement, ListFactory};
-use zintl_ui::view::View as ViewTrait;
+use zintl_ui::view::View;
 use zintl_ui_backend_core::ViewKind;
 use zintl_ui_layout::LayoutStyle;
 
 use crate::modifiers;
 use crate::{Context, Element, NativeView, RenderNode, ViewModifiers};
 
+/// A plain container that lays out its children.
 #[derive(Clone)]
-pub struct View {
+pub(crate) struct Container {
     children: ListFactory<RenderNode>,
     layout: LayoutStyle,
     modifiers: ViewModifiers,
 }
 
-impl View {
-    pub fn new(layout: LayoutStyle, children: ListFactory<RenderNode>) -> Self {
+impl Container {
+    pub(crate) fn new(layout: LayoutStyle, children: ListFactory<RenderNode>) -> Self {
         Self {
             children,
             layout,
@@ -23,7 +24,7 @@ impl View {
     }
 }
 
-impl NativeView for View {
+impl NativeView for Container {
     modifiers!();
 
     fn base_element(&self, _cx: &mut Context<'_>) -> Element<RenderNode> {
@@ -40,7 +41,7 @@ impl NativeView for View {
     }
 }
 
-impl ViewTrait for View {
+impl View for Container {
     type Output = RenderNode;
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {

@@ -1,5 +1,6 @@
 //! Value controls bound to Stores.
 
+use std::ops::RangeInclusive;
 use std::rc::Rc;
 
 use zintl_ui::element::IntoElement;
@@ -16,20 +17,7 @@ use crate::{
 
 type Change<T> = dyn for<'a> Fn(&mut Context<'a>, T);
 
-/// Implements `View` for controls.
-macro_rules! control {
-    ($($control:ident),* $(,)?) => {$(
-        impl View for $control {
-            type Output = RenderNode;
-
-            fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
-                self.native_element(cx)
-            }
-        }
-    )*};
-}
-
-control!(
+view!(
     Switch,
     Slider,
     PopUpButton,
@@ -74,7 +62,7 @@ impl<T: Clone + 'static> Binding<T> {
 
 /// A native on/off switch.
 #[derive(Clone)]
-pub struct Switch {
+pub(crate) struct Switch {
     on: bool,
     store: Option<Store<bool>>,
     action: Option<Rc<Change<bool>>>,
@@ -156,7 +144,8 @@ pub struct Slider {
 }
 
 impl Slider {
-    pub fn new(minimum: f64, maximum: f64) -> Self {
+    pub fn new(range: RangeInclusive<f64>) -> Self {
+        let (minimum, maximum) = range.into_inner();
         Self {
             value: minimum,
             minimum,
@@ -175,10 +164,17 @@ impl Slider {
         self
     }
 
-    /// Shows `count` tick marks; `snap` restricts values to them.
-    pub fn tick_marks(mut self, count: usize, snap: bool) -> Self {
+    /// Shows `count` tick marks below the track.
+    pub fn ticks(mut self, count: usize) -> Self {
         self.tick_marks = count;
-        self.snaps_to_ticks = snap;
+        self.snaps_to_ticks = false;
+        self
+    }
+
+    /// Shows `count` tick marks and only allows their values.
+    pub fn snapping_ticks(mut self, count: usize) -> Self {
+        self.tick_marks = count;
+        self.snaps_to_ticks = true;
         self
     }
 
@@ -235,7 +231,7 @@ impl Binding<usize> {
 
 /// A native pop-up button that selects one item.
 #[derive(Clone)]
-pub struct PopUpButton {
+pub(crate) struct PopUpButton {
     items: Vec<String>,
     selected: Option<usize>,
     store: Option<Store<usize>>,
@@ -307,7 +303,7 @@ impl NativeView for PopUpButton {
 
 /// A native segmented control that selects one segment.
 #[derive(Clone)]
-pub struct SegmentedControl {
+pub(crate) struct SegmentedControl {
     segments: Vec<String>,
     selected: Option<usize>,
     store: Option<Store<usize>>,
@@ -501,10 +497,9 @@ impl NumberField {
         self
     }
 
-    /// Limits accepted values to `minimum..=maximum`.
-    pub fn range(mut self, minimum: f64, maximum: f64) -> Self {
-        self.minimum = minimum;
-        self.maximum = maximum;
+    /// Limits accepted values to `range`.
+    pub fn range(mut self, range: RangeInclusive<f64>) -> Self {
+        (self.minimum, self.maximum) = range.into_inner();
         self
     }
 
@@ -736,10 +731,9 @@ impl<T: IntegerValue> IntegerField<T> {
         self
     }
 
-    /// Limits accepted values to `minimum..=maximum`.
-    pub fn range(mut self, minimum: i64, maximum: i64) -> Self {
-        self.minimum = minimum;
-        self.maximum = maximum;
+    /// Limits accepted values to `range`.
+    pub fn range(mut self, range: RangeInclusive<i64>) -> Self {
+        (self.minimum, self.maximum) = range.into_inner();
         self
     }
 
@@ -1121,7 +1115,7 @@ impl NativeView for OptionalDatePicker {
                     });
                 let mut clear = crate::Button::new("")
                     .system_image("xmark.circle.fill")
-                    .bezel_style(None)
+                    .style(crate::ButtonStyle::Borderless)
                     .enabled(enabled)
                     .on_click(self.change(None))
                     .accessibility_label("Clear Date")
@@ -1133,7 +1127,7 @@ impl NativeView for OptionalDatePicker {
                 zintl_ui::list![picker, clear]
             }
         };
-        crate::View::new(row, children).native_element(cx)
+        crate::Container::new(row, children).native_element(cx)
     }
 }
 

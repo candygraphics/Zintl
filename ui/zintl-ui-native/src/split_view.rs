@@ -9,9 +9,10 @@ use zintl_ui::store::Store;
 use zintl_ui::view::View;
 use zintl_ui_layout::{Axis, CrossAxisAlignment, Size};
 
+use crate::graphics::{self, Graphics2D};
 use crate::{
     Canvas2D, Canvas2DHandler, CanvasEvent, CanvasEventContext, Color, Context, Cursor, Frame,
-    Graphics2D, HStack, Layout, PointerButton, PointerPhase, RenderNode, VStack, graphics, list,
+    HStack, Layout, PointerButton, PointerPhase, RenderNode, VStack, list,
 };
 
 /// Two panes with a divider that the user drags to resize the first one.

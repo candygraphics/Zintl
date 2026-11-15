@@ -79,3 +79,17 @@
 1. `zintl-ui-native` という名前を保つか。全ビューを持つなら `zintl-ui-views` などが実態に合います。改名は依存クレート(両バックエンドは native に依存していない)への影響が小さい今が安価です。
 2. `WindowStyle` を公開するか、`Window::new` / `Window::panel` のコンストラクタだけにするか。
 3. `tests/ui` と `examples/notes` は `zintl-ui-native` の名前を直接参照していないことを grep で確認済みですが、`Switch` などの低レベル型を desktop 経由で使っていないかは 2c の前に再確認します(現状 desktop は再エクスポートしていないので使えないはずです)。
+
+## 実装メモ
+
+2a〜2c をまとめて実装しました。仕様との差分と、未決事項の決定は次のとおりです。
+
+- 未決 1: クレート名は `zintl-ui-native` のままです。改名は別の変更にします。
+- 未決 2: `WindowStyle` は公開しません。`Window::new` と `Window::panel` だけで選びます。
+- 未決 3: `tests/ui` と `examples/notes` は低レベル型を使っていませんでした。変更は `NumberField::integer*` の置き換えだけです。
+- スタックは `Stack<A>` の 1 定義で、`HStack` と `VStack` はその型エイリアスです。軸を表す `StackAxis` と目印の型は公開モジュールに出していません。
+- `Slider` は desktop の形に合わせ、`ticks(count)` と `snapping_ticks(count)` を持ちます。`tick_marks(count, snap)` は削除しました(8.4 でさらに整理します)。
+- `IntegerField::range` も `RangeInclusive<i64>` を取ります。
+- native の `TextField` をそのまま公開したので、`font`、`color`、`alignment`、`line_limit`、`TabView::selected`、`ComboBox::value`、`Slider::value` が desktop からも使えるようになりました。
+- テストは `zintl-ui-native/src/testing.rs` の `TestApp`(ヘッドレスバックエンド)に載せ替えました。ステップ 5 の検査用ハーネスができたら置き換えます。
+- desktop には、`App` の描画結果を読むテストと、公開名が desktop から届くことを確かめるテストだけを残しました。

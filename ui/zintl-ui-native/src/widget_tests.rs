@@ -1,15 +1,21 @@
-//! Contracts for the desktop controls, presentations, and menus.
+//! Contracts for the controls, presentations, and menus.
 
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use super::*;
+use zintl_ui::element::ElementFactory;
+use zintl_ui::view::View;
 use zintl_ui_backend_core::{
     AlertButton as AlertButtonDescription, AlertButtonRole, CommandItem, CommandRole,
     FileDialogMode, MenuRole as CommandMenuRole, NumberFormat, Sidebar as SidebarDescription,
+    WindowStyle,
 };
-use zintl_ui_native::{ButtonType, WindowStyle};
+use zintl_ui_layout::{LayoutDimension, LayoutStyle, Size};
+
+use crate::graphics::*;
+use crate::testing::{RenderedNode, TestApp};
+use crate::*;
 
 /// Creates Stores in `init`, publishes them, and renders from them.
 struct Harness<S: Copy + 'static, E> {
@@ -31,27 +37,15 @@ impl<S: Copy + 'static, E: IntoElement<Output = RenderNode> + 'static> View for 
 }
 
 impl<S: Copy + 'static, E: IntoElement<Output = RenderNode> + 'static> Harness<S, E> {
-    fn mount(create: fn(&mut Context<'_>) -> S, render: impl Fn(S) -> E + 'static) -> (App, S) {
+    fn mount(create: fn(&mut Context<'_>) -> S, render: impl Fn(S) -> E + 'static) -> (TestApp, S) {
         let stores = Rc::new(Cell::new(None));
-        let app = App::new(Self {
+        let app = TestApp::new(Self {
             create,
             render: Box::new(render),
             stores: stores.clone(),
         });
         let stores = stores.get().expect("mounting runs init");
         (app, stores)
-    }
-}
-
-impl App {
-    fn get<T: Clone + 'static>(&mut self, store: Store<T>) -> T {
-        self.composer.context(|cx| cx.get(store).clone())
-    }
-
-    fn set<T: 'static>(&mut self, store: Store<T>, value: T) {
-        self.composer
-            .context(|cx| cx.update(store, |current| *current = value));
-        self.composer.flush();
     }
 }
 
@@ -107,7 +101,7 @@ fn bar_chart_estimates_wide_characters_as_one_em() {
 
 /// Returns the chart's group node and its rows' bar canvases.
 fn chart_parts(chart: BarChart) -> (RenderNode, Vec<RenderNode>) {
-    let tree = App::new(chart).render_tree();
+    let tree = TestApp::new(chart).render_tree();
     let bars = tree
         .children
         .iter()
@@ -127,7 +121,7 @@ fn bar_chart_exposes_a_group_with_bar_ids_and_fixed_columns() {
     .label_width(160.0)
     .value_width(96.0)
     .id("expenses");
-    let tree = App::new(chart.clone()).render_tree();
+    let tree = TestApp::new(chart.clone()).render_tree();
     assert!(matches!(
         &tree.value,
         RenderNode::View { id: Some(id), accessibility, .. }
@@ -203,7 +197,7 @@ fn bar_chart_defaults_to_the_accent_color() {
 fn system_text_colors_reach_the_render_node() {
     // Verifies a system color is kept by name, so the backend resolves it for the current appearance.
     let tree =
-        App::new(Text::new("Error").color(TextColor::System(SystemColor::Red))).render_tree();
+        TestApp::new(Text::new("Error").color(TextColor::System(SystemColor::Red))).render_tree();
     assert!(matches!(
         tree.value,
         RenderNode::View {
@@ -216,7 +210,7 @@ fn system_text_colors_reach_the_render_node() {
 #[test]
 fn icon_only_buttons_leave_their_size_to_the_backend() {
     // Verifies a symbol-only button drops the 80 x 32 push button minimum, unless one is declared.
-    let minimum = |button: Button| match App::new(button).render_tree().value {
+    let minimum = |button: Button| match TestApp::new(button).render_tree().value {
         RenderNode::View { layout, .. } => layout.minimum_size,
         _ => None,
     };
@@ -262,7 +256,8 @@ fn switch_toggle_round_trips_through_its_store() {
 #[test]
 fn labeled_toggle_puts_its_id_on_the_switch_and_sizes_on_the_row() {
     // Verifies the switch carries the ID, the labeled row takes the size, and both are disabled.
-    let row = App::new(Toggle::new("Wi-Fi").id("wifi").enabled(false).width(200.0)).render_tree();
+    let row =
+        TestApp::new(Toggle::new("Wi-Fi").id("wifi").enabled(false).width(200.0)).render_tree();
 
     let RenderNode::View {
         id,
@@ -285,7 +280,7 @@ fn labeled_toggle_puts_its_id_on_the_switch_and_sizes_on_the_row() {
 #[test]
 fn toggle_styles_use_native_two_state_controls() {
     // Verifies switch rows lead with the label and other styles use button types.
-    let row = App::new(Toggle::new("Wi-Fi")).render_tree();
+    let row = TestApp::new(Toggle::new("Wi-Fi")).render_tree();
     assert!(matches!(
         row.value,
         RenderNode::View {
@@ -305,8 +300,8 @@ fn toggle_styles_use_native_two_state_controls() {
         }
     ));
 
-    let checkbox = App::new(Toggle::new("Agree").style(ToggleStyle::Checkbox)).render();
-    let button = App::new(Toggle::new("Bold").style(ToggleStyle::Button)).render();
+    let checkbox = TestApp::new(Toggle::new("Agree").style(ToggleStyle::Checkbox)).render();
+    let button = TestApp::new(Toggle::new("Bold").style(ToggleStyle::Button)).render();
     assert!(matches!(
         checkbox,
         RenderNode::View {
@@ -340,7 +335,7 @@ fn radio_picker_selects_exactly_one_option() {
                 .bind(selected)
         },
     );
-    let states = |app: &App| {
+    let states = |app: &TestApp| {
         app.render_tree()
             .children
             .iter()
@@ -386,7 +381,7 @@ fn menu_and_segmented_pickers_render_bound_selection() {
     assert!(app.dispatch_at(&[0], Event::SelectionChanged { index: 0 }));
     assert_eq!(app.get(selected), 0);
 
-    let segmented = App::new(Picker::new(["A", "B"]).style(PickerStyle::Segmented)).render();
+    let segmented = TestApp::new(Picker::new(["A", "B"]).style(PickerStyle::Segmented)).render();
     assert!(matches!(
         segmented,
         RenderNode::View { kind: ViewKind::SegmentedControl { segments, .. }, .. } if segments == ["A", "B"]
@@ -486,7 +481,7 @@ fn text_field_commit_runs_only_when_editing_ends() {
 #[test]
 fn integer_field_parses_and_formats_exact_integers() {
     // Verifies grouping, signs, full-width digits, and range limits, and that decimals are rejected.
-    let field = zintl_ui_native::IntegerField::new().grouping(true);
+    let field = IntegerField::new().grouping(true);
     assert_eq!(field.format(1234567), "1,234,567");
     assert_eq!(field.format(-1234), "-1,234");
     assert_eq!(field.format(999), "999");
@@ -497,9 +492,7 @@ fn integer_field_parses_and_formats_exact_integers() {
     assert_eq!(field.parse("abc"), None);
     // 2^53 + 1 stays exact because it never becomes an f64.
     assert_eq!(field.parse("9007199254740993"), Some(9_007_199_254_740_993));
-    let limited = zintl_ui_native::IntegerField::new()
-        .range(0, 100)
-        .suffix(" pcs");
+    let limited = IntegerField::new().range(0..=100).suffix(" pcs");
     assert_eq!(limited.parse("250 pcs"), Some(100));
     assert_eq!(limited.parse("-3"), Some(0));
     assert_eq!(limited.format(7), "7 pcs");
@@ -510,7 +503,7 @@ fn integer_field_steps_by_its_increment() {
     // Verifies a stepper click moves the bound value by the step, whatever value the stepper reports.
     let (mut app, value) = Harness::mount(
         |cx| cx.store(9_007_199_254_740_993_i64),
-        |value| NumberField::integer().step(2).bind(value),
+        |value| IntegerField::new().step(2).bind(value),
     );
     assert!(app.dispatch_at(&[0], Event::ValueChanged { value: 9.1e15 }));
     assert_eq!(app.get(value), 9_007_199_254_740_995);
@@ -523,7 +516,7 @@ fn integer_field_reports_typed_integers_before_editing_ends() {
     // Verifies typed text that is an integer reaches the Store at once, and partial text does not.
     let (mut app, value) = Harness::mount(
         |cx| cx.store(3_i64),
-        |value| NumberField::integer().grouping(true).bind(value),
+        |value| IntegerField::new().grouping(true).bind(value),
     );
     app.dispatch_at(&[0], Event::TextChanged { value: "42".into() });
     assert_eq!(app.get(value), 42);
@@ -558,22 +551,18 @@ fn integer_field_reports_typed_integers_before_editing_ends() {
 #[test]
 fn optional_integer_field_treats_empty_text_as_none() {
     // Verifies empty text parses to None, zero stays a value, and the field shows None as empty text.
-    let field = zintl_ui_native::IntegerField::optional();
+    let field = IntegerField::optional();
     assert_eq!(field.parse(""), Some(None));
     assert_eq!(field.parse("  "), Some(None));
     assert_eq!(field.parse("0"), Some(Some(0)));
     assert_eq!(field.parse("abc"), None);
     assert_eq!(field.format(None), "");
     // Fields bound to `i64` reject empty text instead.
-    assert_eq!(zintl_ui_native::IntegerField::new().parse(""), None);
+    assert_eq!(IntegerField::new().parse(""), None);
 
     let (mut app, value) = Harness::mount(
         |cx| cx.store(Some(7_i64)),
-        |value| {
-            NumberField::integer_optional()
-                .placeholder("None")
-                .bind(value)
-        },
+        |value| IntegerField::optional().placeholder("None").bind(value),
     );
     app.dispatch_at(&[0], Event::TextChanged { value: "".into() });
     assert_eq!(app.get(value), None);
@@ -591,14 +580,14 @@ fn optional_integer_field_steps_from_zero_when_empty() {
     // Verifies the first stepper click on an empty field starts from zero, limited to the range.
     let (mut app, value) = Harness::mount(
         |cx| cx.store(None::<i64>),
-        |value| NumberField::integer_optional().bind(value),
+        |value| IntegerField::optional().bind(value),
     );
     assert!(app.dispatch_at(&[0], Event::ValueChanged { value: 1.0 }));
     assert_eq!(app.get(value), Some(1));
 
     let (mut app, value) = Harness::mount(
         |cx| cx.store(None::<i64>),
-        |value| NumberField::integer_optional().range(5..=9).bind(value),
+        |value| IntegerField::optional().range(5..=9).bind(value),
     );
     assert!(app.dispatch_at(&[0], Event::ValueChanged { value: 4.0 }));
     assert_eq!(app.get(value), Some(5));
@@ -729,7 +718,7 @@ fn color_well_shows_its_declared_color_and_reports_changes() {
     // Verifies an unbound color well shows `color` and passes picked colors to `on_change`.
     let red = Color::rgba(1.0, 0.0, 0.0, 1.0);
     let picked = Rc::new(Cell::new(None));
-    let mut app = App::new(VStack::new(list![ColorWell::new().color(red).on_change({
+    let mut app = TestApp::new(VStack::new(list![ColorWell::new().color(red).on_change({
         let picked = picked.clone();
         move |_, color| picked.set(Some(color))
     })]));
@@ -754,7 +743,7 @@ fn color_well_shows_its_declared_color_and_reports_changes() {
 fn button_title_color_reaches_the_render_node() {
     // Verifies a title color is declared on the button, and plain buttons leave it to the platform.
     let red = Color::rgba(0.9, 0.1, 0.1, 1.0);
-    let tree = App::new(VStack::new(list![
+    let tree = TestApp::new(VStack::new(list![
         Button::new("Problem").title_color(red),
         Button::new("Plain"),
     ]))
@@ -776,7 +765,7 @@ fn button_title_color_reaches_the_render_node() {
 #[test]
 fn button_roles_and_styles_configure_nsbutton() {
     // Verifies roles become key equivalents or destructive styling and styles pick a bezel.
-    let render = |button: Button| App::new(button).render();
+    let render = |button: Button| TestApp::new(button).render();
     assert!(matches!(
         render(Button::new("OK").role(ButtonRole::Default)),
         RenderNode::View { kind: ViewKind::Button(zintl_ui_backend_core::Button { key_equivalent: Some(key), .. }), .. } if key == "\r"
@@ -809,7 +798,7 @@ fn button_roles_and_styles_configure_nsbutton() {
 fn context_menu_routes_custom_items_by_position() {
     // Verifies context menus attach to their view, assign IDs, and keep actionless items disabled.
     let calls = Calls::default();
-    let mut app = App::new(Button::new("Item").context_menu([
+    let mut app = TestApp::new(Button::new("Item").context_menu([
         MenuItem::new("Rename").on_select(calls.action()),
         MenuItem::separator(),
         MenuItem::standard(StandardAction::Copy),
@@ -847,7 +836,7 @@ fn context_menu_routes_custom_items_by_position() {
 #[test]
 fn view_builders_chain_after_attachments() {
     // Verifies attachment modifiers keep the view type, so its own builders still apply.
-    let app = App::new(
+    let app = TestApp::new(
         VStack::new(list![Text::new("Row")])
             .context_menu([MenuItem::new("Duplicate")])
             .spacing(12.0)
@@ -876,7 +865,7 @@ fn popover_follows_its_presented_store() {
         |cx| cx.store(false),
         |shown| Button::new("Info").popover(Popover::new(Text::new("Details")).bind(shown)),
     );
-    let popover = |app: &App| app.render_tree().children[0].clone();
+    let popover = |app: &TestApp| app.render_tree().children[0].clone();
     assert!(matches!(
         popover(&app).value,
         RenderNode::Popover {
@@ -1079,7 +1068,7 @@ fn main_menu_orders_standard_and_custom_menus() {
 #[test]
 fn menu_localizers_translate_standard_text() {
     // Verifies standard titles come from the localizer and catalog keys stay unique.
-    let roots = App::new(list![
+    let roots = TestApp::new(list![
         MainMenu::standard()
             .app_name("Demo")
             .localizer(JapaneseMenuLocalizer)
@@ -1116,7 +1105,7 @@ fn menu_localizers_translate_standard_text() {
 #[test]
 fn standard_edit_menu_ends_with_a_find_submenu() {
     // Verifies the Edit menu offers text finder actions with macOS shortcuts and translated titles.
-    let roots = App::new(list![
+    let roots = TestApp::new(list![
         MainMenu::standard().localizer(JapaneseMenuLocalizer),
         Window::new(Rect::new(0.0, 0.0, 200.0, 200.0), "Demo"),
     ])
@@ -1214,7 +1203,7 @@ fn tab_view_hosts_one_page_per_tab() {
 #[test]
 fn scroll_view_fills_its_parent_and_hosts_content() {
     // Verifies scroll views grow into free space and keep their content as a child.
-    let tree = App::new(ScrollView::new(VStack::new(list![Text::new("Row")]))).render_tree();
+    let tree = TestApp::new(ScrollView::new(VStack::new(list![Text::new("Row")]))).render_tree();
     assert!(matches!(
         tree.value,
         RenderNode::View {
@@ -1284,7 +1273,7 @@ impl Canvas2DHandler for Meter {
     }
 }
 
-fn canvas_node(node: &RenderNode) -> zintl_ui_native::CanvasNode {
+fn canvas_node(node: &RenderNode) -> CanvasNode {
     match node {
         RenderNode::View {
             kind: ViewKind::Canvas2D { canvas, .. },
@@ -1312,9 +1301,9 @@ struct MeterView {
 }
 
 impl MeterView {
-    fn mount() -> (App, Store<f64>) {
+    fn mount() -> (TestApp, Store<f64>) {
         let published = Rc::new(Cell::new(None));
-        let app = App::new(Self {
+        let app = TestApp::new(Self {
             width: Store::default(),
             published: published.clone(),
         });
@@ -1453,7 +1442,7 @@ impl View for SceneView {
 fn wgpu_canvas_declares_redraw_focus_and_layout() {
     // Verifies the wgpu builder records its redraw policy, focusability, and layout like Canvas2D.
     let published = Rc::new(Cell::new(None));
-    let app = App::new(SceneView {
+    let app = TestApp::new(SceneView {
         color: Store::default(),
         entered: Rc::default(),
         published,
@@ -1480,13 +1469,13 @@ fn wgpu_canvas_keeps_its_handler_and_routes_events() {
     // Verifies a Store-driven re-render keeps the mounted wgpu handler and on_event sees its input.
     let published = Rc::new(Cell::new(None));
     let entered = Rc::new(Cell::new(0));
-    let mut app = App::new(SceneView {
+    let mut app = TestApp::new(SceneView {
         color: Store::default(),
         entered: entered.clone(),
         published: published.clone(),
     });
     let color = published.get().expect("mounting runs init");
-    let node = |app: &App| match app.render() {
+    let node = |app: &TestApp| match app.render() {
         RenderNode::View {
             kind: ViewKind::WgpuCanvas { canvas, .. },
             ..
@@ -1529,7 +1518,7 @@ fn split_view_divider_drag_resizes_the_first_pane_within_its_range() {
             click_count: 1,
         }))
     };
-    let first_width = |app: &App| match &app.render_tree().children[0].value {
+    let first_width = |app: &TestApp| match &app.render_tree().children[0].value {
         RenderNode::View { layout, .. } => layout.width,
         other => panic!("expected the first pane, got {other:?}"),
     };
@@ -1552,7 +1541,7 @@ fn split_view_divider_drag_resizes_the_first_pane_within_its_range() {
 #[test]
 fn split_view_starts_at_its_position_inside_the_range() {
     // Verifies an unbound split view starts at its declared size, clamped to the range.
-    let app = App::new(
+    let app = TestApp::new(
         SplitView::vertical(Text::new("Top"), Text::new("Bottom"))
             .position(40.0)
             .range(80.0..=200.0),
@@ -1691,7 +1680,7 @@ fn toolbar_search_carries_its_id_and_focus_requests() {
             ]))
         },
     );
-    let search = |app: &App| match &app.render_tree().value {
+    let search = |app: &TestApp| match &app.render_tree().value {
         RenderNode::Window {
             toolbar: Some(toolbar),
             ..
@@ -1790,9 +1779,9 @@ struct DocumentWindow {
 }
 
 impl DocumentWindow {
-    fn mount() -> (App, Store<bool>, Store<u32>, Store<i32>) {
+    fn mount() -> (TestApp, Store<bool>, Store<u32>, Store<i32>) {
         let published = Rc::new(Cell::new(None));
-        let app = App::new(Self {
+        let app = TestApp::new(Self {
             allow: Store::default(),
             requests: Store::default(),
             steps: Store::default(),
@@ -1831,7 +1820,7 @@ impl View for DocumentWindow {
     }
 }
 
-fn document(app: &App) -> zintl_ui_native::DocumentState {
+fn document(app: &TestApp) -> DocumentState {
     match app.render() {
         RenderNode::Window { document, .. } => document,
         other => panic!("expected a window, got {other:?}"),
@@ -1859,7 +1848,7 @@ fn undo_events_run_the_window_history_and_update_menu_state() {
     let (mut app, _, _, steps) = DocumentWindow::mount();
     assert_eq!(
         document(&app).undo,
-        Some(zintl_ui_native::UndoState {
+        Some(UndoState {
             can_undo: false,
             can_redo: false
         })
@@ -1879,7 +1868,7 @@ fn undo_events_run_the_window_history_and_update_menu_state() {
 #[test]
 fn help_text_reaches_any_view() {
     // Verifies the help modifier sets the tooltip on controls and containers alike.
-    let app = App::new(
+    let app = TestApp::new(
         VStack::new(list![
             Button::new("Save").enabled(false).help("Nothing to save")
         ])
@@ -1899,7 +1888,7 @@ fn help_text_reaches_any_view() {
 #[test]
 fn menu_button_shows_its_menu_instead_of_activating() {
     // Verifies a menu button marks itself for the native pull-down and carries the menu as an attachment.
-    let app = App::new(Button::new("Samples").menu(Menu::items([MenuItem::new("Load A")])));
+    let app = TestApp::new(Button::new("Samples").menu(Menu::items([MenuItem::new("Load A")])));
     let tree = app.render_tree();
     assert!(matches!(
         &tree.value,
@@ -1920,12 +1909,12 @@ fn menu_button_shows_its_menu_instead_of_activating() {
 #[test]
 fn selected_button_draws_in_the_on_state() {
     // Verifies a selected button is a push-on-push-off button that shows its selection.
-    let app = App::new(Button::new("1").selected(true));
+    let app = TestApp::new(Button::new("1").selected(true));
     assert!(matches!(
         app.render(),
         RenderNode::View {
             kind: ViewKind::Button(zintl_ui_backend_core::Button {
-                button_type: zintl_ui_native::ButtonType::PushOnPushOff,
+                button_type: ButtonType::PushOnPushOff,
                 on: true,
                 ..
             }),
@@ -1938,7 +1927,7 @@ fn selected_button_draws_in_the_on_state() {
 fn selected_button_runs_on_click_and_keeps_its_state() {
     // Verifies a click on a selected button runs `on_click` and leaves the drawn state to the view.
     let clicks = Calls::default();
-    let mut app = App::new(Button::new("1").selected(false).on_click(clicks.action()));
+    let mut app = TestApp::new(Button::new("1").selected(false).on_click(clicks.action()));
     app.render();
 
     assert!(app.dispatch_at(&[0], Event::Activated));
@@ -1960,7 +1949,7 @@ fn selected_button_runs_on_click_and_keeps_its_state() {
 #[test]
 fn indicators_describe_their_kinds() {
     // Verifies the spinner has no value, the bar keeps its fraction, and separators are thin lines.
-    let render = |view: Element<RenderNode>| App::new(view).render();
+    let render = |view: Element<RenderNode>| TestApp::new(view).render();
     assert!(matches!(
         render(ProgressIndicator::spinning().into_element()),
         RenderNode::View {
@@ -1991,7 +1980,7 @@ fn indicators_describe_their_kinds() {
 #[test]
 fn zstack_and_grid_declare_their_arrangements() {
     // Verifies ZStack overlays its children and a striped Grid adds one stripe per shaded row before its cells.
-    let zstack = App::new(ZStack::new(list![
+    let zstack = TestApp::new(ZStack::new(list![
         Text::new("Scene"),
         Text::new("Updating")
     ]));
@@ -2010,7 +1999,7 @@ fn zstack_and_grid_declare_their_arrangements() {
         .map(|index| ElementFactory::new(Text::new(index.to_string())))
         .collect::<Vec<_>>();
     // Six cells in two columns make three rows; only the middle one is shaded.
-    let grid = App::new(Grid::new(2, cells).striped(true)).render_tree();
+    let grid = TestApp::new(Grid::new(2, cells).striped(true)).render_tree();
     assert!(matches!(
         grid.value,
         RenderNode::View {
@@ -2076,7 +2065,7 @@ fn scroll_view_reveals_the_target_row() {
         app.render(),
         RenderNode::View {
             kind: ViewKind::ScrollView {
-                reveal: Some(zintl_ui_native::ScrollTarget { id, alignment: ScrollAlignment::Center, .. }),
+                reveal: Some(ScrollTarget { id, alignment: ScrollAlignment::Center, .. }),
                 ..
             },
             ..
@@ -2094,7 +2083,7 @@ fn scroll_view_reveals_the_same_row_again_when_its_target_is_rewritten() {
                 .scroll_to(target, ScrollAlignment::Nearest)
         },
     );
-    let reveal = |app: &App| match app.render() {
+    let reveal = |app: &TestApp| match app.render() {
         RenderNode::View {
             kind: ViewKind::ScrollView { reveal, .. },
             ..
@@ -2175,15 +2164,6 @@ fn bound_fields_prefer_their_stores_over_values() {
 }
 
 #[test]
-fn signal_is_available_from_the_desktop_crate() {
-    // Verifies apps can share canvas values through `zintl_ui_desktop::Signal` alone.
-    let signal = Signal::new(1);
-    let shared = signal.clone();
-    shared.set(2);
-    assert_eq!(signal.with(|value| *value), 2);
-}
-
-#[test]
 fn table_lays_out_cells_by_row_and_writes_the_selection() {
     // Verifies a table declares its columns and rows, pads short rows to one cell per column, and binds selection.
     let (mut app, selected) = Harness::mount(
@@ -2232,7 +2212,7 @@ fn accessibility_of(node: &RenderedNode) -> &zintl_ui_backend_core::Accessibilit
 #[test]
 fn accessibility_modifiers_reach_any_view() {
     // Verifies every accessibility modifier lands on controls and containers alike.
-    let app = App::new(
+    let app = TestApp::new(
         VStack::new(list![
             Button::new("")
                 .system_image("plus")
@@ -2266,7 +2246,7 @@ fn accessibility_modifiers_reach_any_view() {
 #[test]
 fn views_without_modifiers_keep_the_platform_description() {
     // Verifies unmodified views carry no accessibility overrides.
-    let app = App::new(Button::new("Save"));
+    let app = TestApp::new(Button::new("Save"));
 
     assert!(accessibility_of(&app.render_tree()).is_default());
 }
@@ -2274,7 +2254,7 @@ fn views_without_modifiers_keep_the_platform_description() {
 #[test]
 fn disclosure_group_names_its_section_and_triangle() {
     // Verifies the group and its triangle carry the title, and the visible title is not read twice.
-    let app = App::new(DisclosureGroup::new("Line settings", Text::new("Details")));
+    let app = TestApp::new(DisclosureGroup::new("Line settings", Text::new("Details")));
     let tree = app.render_tree();
     let header = &tree.children[0];
 
@@ -2291,7 +2271,7 @@ fn disclosure_group_names_its_section_and_triangle() {
 #[test]
 fn modifiers_override_a_views_own_description() {
     // Verifies a modifier on a disclosure group replaces its default label but keeps its role.
-    let app = App::new(
+    let app = TestApp::new(
         DisclosureGroup::new("Line settings", Text::new("Details")).accessibility_label("Lines"),
     );
     let group = accessibility_of(&app.render_tree()).clone();
@@ -2304,7 +2284,7 @@ fn modifiers_override_a_views_own_description() {
 fn actions_queue_announcements() {
     // Verifies an action's announcement waits in the queue the backend posts from.
     zintl_ui_backend_core::Announcements::take();
-    let mut app = App::new(Button::new("Save").on_click(|cx| {
+    let mut app = TestApp::new(Button::new("Save").on_click(|cx| {
         cx.announce("Saved", AnnouncementPriority::High);
     }));
 
