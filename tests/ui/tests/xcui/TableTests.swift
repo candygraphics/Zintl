@@ -249,4 +249,24 @@ final class TableTests: ZintlUITestCase {
     XCTAssertTrue(waitUntil { window.frame.width < width - 40 })
     assertHeadersInsideWindow()
   }
+
+  /// Verifies an empty table shows its placeholder inside its frame, below visible headers.
+  func testEmptyTableShowsItsPlaceholder() throws {
+    try launch(scenario: "table")
+
+    let clear = app.checkBoxes["clear-rows"]
+    XCTAssertTrue(clear.waitToExist(timeout: 2))
+    XCTAssertFalse(app.staticTexts["empty-placeholder"].exists)
+    clear.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).click()
+
+    let placeholder = app.staticTexts["empty-placeholder"]
+    XCTAssertTrue(placeholder.waitToExist(timeout: 2))
+    let table = app.tables["sections"]
+    XCTAssertTrue(table.frame.contains(placeholder.frame), "\(placeholder.frame) \(table.frame)")
+    XCTAssertTrue(table.buttons["Name"].exists)
+
+    clear.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).click()
+    XCTAssertTrue(app.staticTexts["name-1"].waitToExist(timeout: 2))
+    XCTAssertTrue(waitUntil { !placeholder.exists })
+  }
 }

@@ -10,6 +10,7 @@ pub struct MainView {
     locked: Store<bool>,
     sort: Store<Option<SortOrder>>,
     more_columns: Store<bool>,
+    cleared: Store<bool>,
 }
 
 impl MainView {
@@ -23,6 +24,7 @@ impl MainView {
             locked: Store::default(),
             sort: Store::default(),
             more_columns: Store::default(),
+            cleared: Store::default(),
         }
     }
 }
@@ -39,6 +41,7 @@ impl View for MainView {
         self.locked = cx.store(false);
         self.sort = cx.store(None);
         self.more_columns = cx.store(false);
+        self.cleared = cx.store(false);
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
@@ -52,7 +55,9 @@ impl View for MainView {
         );
         // The app sorts its own rows by the order the header reports.
         let descending = cx.get(sort).as_ref().is_some_and(|order| !order.ascending);
-        let order: Vec<u32> = if descending {
+        let order: Vec<u32> = if *cx.get(self.cleared) {
+            Vec::new()
+        } else if descending {
             (1..=50).rev().collect()
         } else {
             (1..=50).collect()
@@ -112,10 +117,12 @@ impl View for MainView {
             .content(
                 VStack::new(list![
                     status,
+                    HStack::new(list![select, clear, sort_descending]).spacing(8.0),
                     HStack::new(list![
-                        select,
-                        clear,
-                        sort_descending,
+                        Toggle::new("No rows")
+                            .style(ToggleStyle::Checkbox)
+                            .bind(self.cleared)
+                            .id("clear-rows"),
                         Toggle::new("More columns")
                             .style(ToggleStyle::Checkbox)
                             .bind(self.more_columns)
@@ -146,6 +153,11 @@ impl View for MainView {
                         .should_select(move |cx, _| !*cx.get(locked))
                         .bind_sort(sort)
                         .fit_columns(true)
+                        .empty_content(
+                            Text::new("No sections")
+                                .color(TextColor::Secondary)
+                                .id("empty-placeholder"),
+                        )
                         .id("sections"),
                 ])
                 .spacing(8.0)

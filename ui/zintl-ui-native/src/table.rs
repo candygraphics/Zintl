@@ -6,7 +6,7 @@ use zintl_ui::element::{ElementFactory, IntoElement, KeyedElement, ListFactory};
 use zintl_ui::store::Store;
 use zintl_ui::view::View;
 use zintl_ui_backend_core::{SortOrder, TextAlignment, ViewKind};
-use zintl_ui_layout::{Axis, LayoutDimension, LayoutStyle, Size};
+use zintl_ui_layout::{Arrangement, Axis, CrossAxisAlignment, LayoutDimension, LayoutStyle, Size};
 
 use crate::attach::attachments;
 use crate::{
@@ -104,6 +104,7 @@ pub struct Table {
     should_select: Option<Rc<SelectionCheck>>,
     sort: Option<Store<Option<SortOrder>>>,
     fit_columns: bool,
+    empty_content: Option<ElementFactory<RenderNode>>,
     layout: LayoutStyle,
     id: Option<String>,
     attachments: Attachments,
@@ -125,6 +126,7 @@ impl Table {
             should_select: None,
             sort: None,
             fit_columns: false,
+            empty_content: None,
             layout: LayoutStyle::fill(Size::new(0.0, 0.0)),
             id: None,
             attachments: Attachments::default(),
@@ -137,6 +139,17 @@ impl Table {
     /// No column gets narrower than its header title.
     pub fn fit_columns(mut self, fit: bool) -> Self {
         self.fit_columns = fit;
+        self
+    }
+
+    /// Shows `content` centered in the table while it has no rows, such as "No items yet".
+    ///
+    /// The column headers stay visible.
+    pub fn empty_content<V>(mut self, content: V) -> Self
+    where
+        V: Clone + IntoElement<Output = RenderNode> + 'static,
+    {
+        self.empty_content = Some(ElementFactory::new(content));
         self
     }
 
@@ -244,6 +257,31 @@ impl NativeView for Table {
     attachments!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        let Some(empty) = &self.empty_content else {
+            return self.table_element(cx, self.layout);
+        };
+        // The table and its placeholder share one cell; the placeholder is centered at its own size.
+        let mut overlay = self.layout;
+        overlay.arrangement = Arrangement::Overlay;
+        overlay.cross_axis_alignment = CrossAxisAlignment::Center;
+        let table = self.table_element(cx, LayoutStyle::fill(Size::new(0.0, 0.0)));
+        let placeholder = self.rows.is_empty().then(|| empty.clone().into_element());
+        Element::node(RenderNode::View {
+            kind: ViewKind::Container,
+            layout: overlay,
+            id: None,
+            enabled: true,
+            title_bar_interactive: false,
+            help: None,
+            accessibility: Default::default(),
+        })
+        .with_children(std::iter::once(table).chain(placeholder))
+    }
+}
+
+impl Table {
+    /// Returns the native table laid out with `layout`.
+    fn table_element(&self, cx: &mut Context<'_>, layout: LayoutStyle) -> Element<RenderNode> {
         let cells = self.rows.iter().flat_map(|row| {
             self.cells(row)
                 .enumerate()
@@ -269,7 +307,7 @@ impl NativeView for Table {
                 fit_columns: self.fit_columns,
                 striped: self.striped,
             },
-            layout: self.layout,
+            layout,
             id: self.id.clone(),
             enabled: true,
             title_bar_interactive: false,

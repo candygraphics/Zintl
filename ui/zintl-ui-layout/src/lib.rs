@@ -527,6 +527,12 @@ fn to_taffy_style(style: LayoutStyle) -> TaffyStyle {
         ),
         None => (Line::default(), Line::default()),
     };
+    let cross_alignment = match style.cross_axis_alignment {
+        CrossAxisAlignment::Start => Some(AlignItems::START),
+        CrossAxisAlignment::Center => Some(AlignItems::CENTER),
+        CrossAxisAlignment::End => Some(AlignItems::END),
+        CrossAxisAlignment::Stretch => Some(AlignItems::STRETCH),
+    };
     TaffyStyle {
         display,
         grid_template_columns,
@@ -550,13 +556,14 @@ fn to_taffy_style(style: LayoutStyle) -> TaffyStyle {
             Axis::Horizontal => FlexDirection::Row,
             Axis::Vertical => FlexDirection::Column,
         },
-        align_items: match style.cross_axis_alignment {
-            CrossAxisAlignment::Start => Some(AlignItems::START),
-            CrossAxisAlignment::Center => Some(AlignItems::CENTER),
-            CrossAxisAlignment::End => Some(AlignItems::END),
-            CrossAxisAlignment::Stretch => Some(AlignItems::STRETCH),
+        align_items: cross_alignment,
+        justify_items: match style.arrangement {
+            // Overlays align children across both axes, so a centered child sits in the middle.
+            Arrangement::Overlay => cross_alignment,
+            _ => None,
         },
         align_self: style.stretches.then_some(AlignItems::STRETCH),
+        justify_self: style.stretches.then_some(AlignItems::STRETCH),
         justify_content: match style.main_axis_distribution {
             MainAxisDistribution::Start => None,
             MainAxisDistribution::SpaceBetween => Some(JustifyContent::SPACE_BETWEEN),
@@ -1073,5 +1080,37 @@ mod tests {
         let second = tree.layout(second).unwrap();
         assert_eq!((second.x, second.y), (0.0, 40.0));
         assert_eq!(tree.layout(third).unwrap().x, second.width);
+    }
+
+    #[test]
+    fn centered_overlays_center_small_children_and_keep_filling_ones() {
+        // Verifies a placeholder over a table sits in the middle at its own size while the table fills.
+        let mut tree = LayoutTree::new();
+        let table = tree
+            .create_node(LayoutStyle::fill(Size::new(0.0, 0.0)), &[])
+            .unwrap();
+        let label = tree
+            .create_node(LayoutStyle::leaf(Size::new(100.0, 20.0)), &[])
+            .unwrap();
+        let mut overlay_style = LayoutStyle::stack(Axis::Vertical, 0.0);
+        overlay_style.arrangement = Arrangement::Overlay;
+        overlay_style.cross_axis_alignment = CrossAxisAlignment::Center;
+        overlay_style.width = LayoutDimension::Points(300.0);
+        overlay_style.height = LayoutDimension::Points(200.0);
+        let overlay = tree.create_node(overlay_style, &[table, label]).unwrap();
+
+        tree.compute(overlay, Size::new(300.0, 200.0)).unwrap();
+
+        let table = tree.layout(table).unwrap();
+        assert_eq!((table.width, table.height), (300.0, 200.0));
+        assert_eq!(
+            tree.layout(label).unwrap(),
+            Rect {
+                x: 100.0,
+                y: 90.0,
+                width: 100.0,
+                height: 20.0,
+            }
+        );
     }
 }
