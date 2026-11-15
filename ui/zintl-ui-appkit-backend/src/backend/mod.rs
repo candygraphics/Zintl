@@ -570,7 +570,6 @@ impl AppKitBackend {
                 && let RenderNode::View {
                     kind,
                     id,
-                    enabled,
                     title_bar_interactive,
                     help,
                     accessibility,
@@ -585,7 +584,8 @@ impl AppKitBackend {
                     &self.pending_error,
                 )?;
                 native.identifier_view().set_identifier(id.as_deref())?;
-                if !enabled {
+                // A disabled view also disables the views inside it.
+                if !self.tree.is_enabled(child) {
                     native.set_enabled(false)?;
                 }
                 if title_bar_interactive {
@@ -960,6 +960,16 @@ impl AppKitBackend {
         Ok(())
     }
 
+    /// Enables or disables the natives of `id` and of the views inside it.
+    fn apply_enabled(&self, id: NodeId) -> Result<(), AppError> {
+        for node in self.tree.subtree(id) {
+            if let Some(native) = self.state(node).native.as_ref() {
+                native.set_enabled(self.tree.is_enabled(node))?;
+            }
+        }
+        Ok(())
+    }
+
     fn update_native(
         &self,
         id: NodeId,
@@ -973,7 +983,6 @@ impl AppKitBackend {
             RenderNode::View {
                 kind: old_kind,
                 id: old_id,
-                enabled: old_enabled,
                 title_bar_interactive: old_interactive,
                 help: old_help,
                 accessibility: old_accessibility,
@@ -982,7 +991,6 @@ impl AppKitBackend {
             RenderNode::View {
                 kind: new_kind,
                 id: new_id,
-                enabled: new_enabled,
                 title_bar_interactive: new_interactive,
                 help: new_help,
                 accessibility: new_accessibility,
@@ -994,9 +1002,6 @@ impl AppKitBackend {
         };
         if old_id != new_id {
             native.identifier_view().set_identifier(new_id.as_deref())?;
-        }
-        if old_enabled != new_enabled {
-            native.set_enabled(*new_enabled)?;
         }
         if old_interactive != new_interactive {
             native
@@ -1167,7 +1172,15 @@ impl RenderBackend<RenderNode> for AppKitBackend {
         {
             self.structure_dirty = true;
         }
+        let enabled_changed = matches!(
+            (&old, &new),
+            (RenderNode::View { enabled: old, .. }, RenderNode::View { enabled: new, .. })
+                if old != new
+        );
         self.tree.node_mut(id).value = Some(new);
+        if enabled_changed && let Err(error) = self.apply_enabled(id) {
+            self.record_error(error);
+        }
         self.layout_dirty = true;
     }
 

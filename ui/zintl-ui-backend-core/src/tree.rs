@@ -150,6 +150,33 @@ impl<S: Default> NodeTree<S> {
         self.node_mut(child).parent = Some(parent);
     }
 
+    /// Returns whether the view at `id` takes input: it and every view above it are enabled.
+    ///
+    /// Windows and presentations such as popovers start a new scope.
+    pub fn is_enabled(&self, id: NodeId) -> bool {
+        let mut current = Some(id);
+        while let Some(id) = current {
+            let node = self.node(id);
+            match &node.value {
+                Some(RenderNode::View { enabled: false, .. }) => return false,
+                Some(RenderNode::View { .. }) => current = node.parent,
+                _ => break,
+            }
+        }
+        true
+    }
+
+    /// Returns `id` and its descendants, parents before their children.
+    pub fn subtree(&self, id: NodeId) -> Vec<NodeId> {
+        let mut nodes = vec![id];
+        let mut next = 0;
+        while let Some(node) = nodes.get(next).copied() {
+            nodes.extend_from_slice(self.children(node));
+            next += 1;
+        }
+        nodes
+    }
+
     /// Returns whether `child` already sits at `index` in `parent`.
     pub fn is_at(&self, parent: NodeId, index: usize, child: NodeId) -> bool {
         self.node(child).parent == Some(parent)
@@ -350,6 +377,59 @@ impl<E> ErrorSlot<E> {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Builds trees of plain containers.
+    struct Containers;
+
+    impl Containers {
+        fn node(enabled: bool) -> RenderNode {
+            RenderNode::View {
+                kind: crate::ViewKind::Container,
+                layout: zintl_ui_layout::LayoutStyle::leaf(Default::default()),
+                id: None,
+                enabled,
+                title_bar_interactive: false,
+                help: None,
+                accessibility: Default::default(),
+            }
+        }
+
+        /// Creates a container under `parent`.
+        fn add(tree: &mut NodeTree<()>, parent: NodeId, enabled: bool) -> NodeId {
+            let id = tree.create(&Self::node(enabled), None);
+            let index = tree.children(parent).len();
+            tree.insert_child(parent, index, id);
+            id
+        }
+    }
+
+    #[test]
+    fn views_inside_a_disabled_view_are_disabled() {
+        // Verifies a view is enabled only while it and every view above it are.
+        let mut tree = NodeTree::<()>::new();
+        let disabled = Containers::add(&mut tree, NodeTree::<()>::ROOT, false);
+        let child = Containers::add(&mut tree, disabled, true);
+        let grandchild = Containers::add(&mut tree, child, true);
+        let sibling = Containers::add(&mut tree, NodeTree::<()>::ROOT, true);
+
+        assert!(!tree.is_enabled(disabled));
+        assert!(!tree.is_enabled(child));
+        assert!(!tree.is_enabled(grandchild));
+        assert!(tree.is_enabled(sibling));
+    }
+
+    #[test]
+    fn subtree_lists_parents_before_their_children() {
+        // Verifies a subtree walk covers every descendant and nothing outside it.
+        let mut tree = NodeTree::<()>::new();
+        let parent = Containers::add(&mut tree, NodeTree::<()>::ROOT, true);
+        let first = Containers::add(&mut tree, parent, true);
+        let second = Containers::add(&mut tree, parent, true);
+        let nested = Containers::add(&mut tree, first, true);
+        Containers::add(&mut tree, NodeTree::<()>::ROOT, true);
+
+        assert_eq!(tree.subtree(parent), vec![parent, first, second, nested]);
+    }
 
     #[test]
     fn main_tasks_wait_until_a_sender_connects() {

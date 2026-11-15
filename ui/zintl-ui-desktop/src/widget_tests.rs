@@ -260,8 +260,8 @@ fn switch_toggle_round_trips_through_its_store() {
 }
 
 #[test]
-fn labeled_toggle_puts_identity_on_the_switch_and_sizes_on_the_row() {
-    // Verifies the switch carries the ID and enabled state while the labeled row takes the size.
+fn labeled_toggle_puts_its_id_on_the_switch_and_sizes_on_the_row() {
+    // Verifies the switch carries the ID, the labeled row takes the size, and both are disabled.
     let row = App::new(Toggle::new("Wi-Fi").id("wifi").enabled(false).width(200.0)).render_tree();
 
     let RenderNode::View {
@@ -274,7 +274,7 @@ fn labeled_toggle_puts_identity_on_the_switch_and_sizes_on_the_row() {
         panic!("expected a row, got {:?}", row.value);
     };
     assert_eq!(id, &None);
-    assert!(enabled);
+    assert!(!enabled);
     assert_eq!(layout.width, LayoutDimension::Points(200.0));
     assert!(matches!(
         &row.children[1].value,

@@ -103,8 +103,6 @@ impl Toggle {
     }
 }
 
-impl Control for Toggle {}
-
 impl NativeView for Toggle {
     fn modifiers(&self) -> &ViewModifiers {
         &self.modifiers
@@ -114,8 +112,8 @@ impl NativeView for Toggle {
         &mut self.modifiers
     }
 
-    // The switch or button carries the ID and enabled state, not the labeled row.
-    fn places_identity(&self) -> bool {
+    // The switch or button carries the ID, not the labeled row.
+    fn places_id(&self) -> bool {
         true
     }
 
@@ -226,8 +224,6 @@ impl Picker {
     }
 }
 
-impl Control for Picker {}
-
 impl NativeView for Picker {
     fn modifiers(&self) -> &ViewModifiers {
         &self.modifiers
@@ -237,8 +233,8 @@ impl NativeView for Picker {
         &mut self.modifiers
     }
 
-    // The native picker or each radio button carries the enabled state.
-    fn places_identity(&self) -> bool {
+    // The native picker or the radio group carries the ID.
+    fn places_id(&self) -> bool {
         true
     }
 
@@ -728,20 +724,3 @@ impl TabView {
         self
     }
 }
-
-/// Lets wrapped controls be disabled.
-macro_rules! control {
-    ($($name:ident),* $(,)?) => {$(
-        impl Control for $name {}
-    )*};
-}
-
-control!(
-    ComboBox,
-    Slider,
-    NumberField,
-    IntegerField,
-    OptionalIntegerField,
-    SearchField,
-    ColorWell,
-);

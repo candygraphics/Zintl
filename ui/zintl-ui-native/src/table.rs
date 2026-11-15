@@ -236,7 +236,7 @@ impl Table {
 impl NativeView for Table {
     modifiers!();
 
-    fn places_identity(&self) -> bool {
+    fn places_id(&self) -> bool {
         true
     }
 

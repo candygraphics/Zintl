@@ -8,7 +8,7 @@ use zintl_ui_layout::{LayoutStyle, Size};
 
 use crate::modifiers;
 use crate::{
-    Attach, BezelStyle, ButtonRole, ButtonType, Context, Control, Element, Event, EventKind, Menu,
+    Attach, BezelStyle, ButtonRole, ButtonType, Context, Element, Event, EventKind, Menu,
     NativeView, RenderNode, ViewModifiers,
 };
 
@@ -217,8 +217,6 @@ impl NativeView for Button {
         element
     }
 }
-
-impl Control for Button {}
 
 impl View for Button {
     type Output = RenderNode;

@@ -29,13 +29,6 @@ macro_rules! control {
     )*};
 }
 
-/// Lets controls be disabled.
-macro_rules! enabled {
-    ($($control:ident),* $(,)?) => {$(
-        impl Control for $control {}
-    )*};
-}
-
 control!(
     Switch,
     Slider,
@@ -47,20 +40,6 @@ control!(
     ColorWell,
     DatePicker,
 );
-enabled!(
-    Switch,
-    Slider,
-    PopUpButton,
-    SegmentedControl,
-    ComboBox,
-    NumberField,
-    ColorWell,
-    DatePicker,
-    SearchField,
-    OptionalDatePicker,
-);
-
-impl<T: IntegerValue> Control for IntegerField<T> {}
 
 /// Registers a handler that writes event values to `store` and then calls `action`.
 struct Binding<T: 'static> {
@@ -1105,8 +1084,8 @@ impl OptionalDatePicker {
 impl NativeView for OptionalDatePicker {
     modifiers!();
 
-    // The picker and the buttons carry the ID and enabled state, not the row.
-    fn places_identity(&self) -> bool {
+    // The picker and the buttons carry the ID, not the row.
+    fn places_id(&self) -> bool {
         true
     }
 

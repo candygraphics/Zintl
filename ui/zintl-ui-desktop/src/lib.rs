@@ -316,8 +316,6 @@ pub enum ButtonStyle {
     Disclosure,
 }
 
-impl Control for Button {}
-
 impl NativeView for Button {
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         self.inner.base_element(cx)
@@ -394,8 +392,6 @@ impl Default for TextField {
         Self::new()
     }
 }
-
-impl Control for TextField {}
 
 impl NativeView for TextField {
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {

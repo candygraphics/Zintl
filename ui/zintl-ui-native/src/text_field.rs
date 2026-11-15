@@ -8,7 +8,7 @@ use zintl_ui_backend_core::{TextAlignment, TextColor, TextStyle, ViewKind};
 use zintl_ui_layout::{LayoutDimension, LayoutStyle, Size};
 
 use crate::modifiers;
-use crate::{Context, Control, Element, Event, EventKind, NativeView, RenderNode, ViewModifiers};
+use crate::{Context, Element, Event, EventKind, NativeView, RenderNode, ViewModifiers};
 
 type ChangeAction = dyn for<'a> Fn(&mut Context<'a>, &str);
 
@@ -168,8 +168,6 @@ impl Default for TextField {
         Self::new()
     }
 }
-
-impl Control for TextField {}
 
 impl View for TextField {
     type Output = RenderNode;

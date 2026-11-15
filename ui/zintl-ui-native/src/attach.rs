@@ -15,9 +15,9 @@ pub trait NativeView: Clone + 'static {
 
     fn modifiers_mut(&mut self) -> &mut ViewModifiers;
 
-    /// Returns whether the view hands its ID and enabled state to an inner
-    /// control itself, such as a labeled switch whose root is only a row.
-    fn places_identity(&self) -> bool {
+    /// Returns whether the view hands its ID to an inner control itself,
+    /// such as a labeled switch whose root is only a row.
+    fn places_id(&self) -> bool {
         false
     }
 
@@ -39,13 +39,11 @@ pub trait NativeView: Clone + 'static {
             ..
         } = &mut element
         {
-            if !self.places_identity() {
-                if modifiers.id.is_some() {
-                    id.clone_from(&modifiers.id);
-                }
-                if let Some(value) = modifiers.enabled {
-                    *enabled = value;
-                }
+            if !self.places_id() && modifiers.id.is_some() {
+                id.clone_from(&modifiers.id);
+            }
+            if let Some(value) = modifiers.enabled {
+                *enabled = value;
             }
             modifiers.layout.apply(layout);
             *title_bar_interactive |= modifiers.title_bar_interactive;
@@ -115,14 +113,19 @@ pub trait Layout: NativeView + Sized {
 
 impl<V: NativeView> Layout for V {}
 
-/// The enabled state of views that take input.
+/// The enabled state, available on every [`NativeView`].
 pub trait Control: NativeView + Sized {
-    /// Disables the control with `false`; it then ignores input and draws dimmed.
+    /// Disables the view and every view inside it with `false`; they then
+    /// ignore input and draw dimmed.
+    ///
+    /// A view inside a disabled one stays disabled whatever it declares.
     fn enabled(mut self, enabled: bool) -> Self {
         self.modifiers_mut().enabled = Some(enabled);
         self
     }
 }
+
+impl<V: NativeView> Control for V {}
 
 /// Presentation modifiers available on every [`NativeView`].
 ///
@@ -327,14 +330,25 @@ mod tests {
             Self(composer)
         }
 
-        /// Returns the layout, ID, and enabled state of the node at `path` below the root view.
-        fn view(&self, path: &[usize]) -> (LayoutStyle, Option<String>, bool) {
+        /// Returns the node at `path` below the root view.
+        fn node(&self, path: &[usize]) -> crate::NodeId {
             let backend = self.0.backend();
             let mut node = backend.children(backend.root())[0];
             for index in path {
                 node = backend.children(node)[*index];
             }
-            match backend.value(node) {
+            node
+        }
+
+        /// Returns whether the view at `path` and every view above it are enabled.
+        fn is_enabled(&self, path: &[usize]) -> bool {
+            self.0.backend().is_enabled(self.node(path))
+        }
+
+        /// Returns the layout, ID, and enabled state declared on the node at `path`.
+        fn view(&self, path: &[usize]) -> (LayoutStyle, Option<String>, bool) {
+            let backend = self.0.backend();
+            match backend.value(self.node(path)) {
                 Some(RenderNode::View {
                     layout,
                     id,
@@ -436,6 +450,35 @@ mod tests {
         assert!(filling.wraps);
         assert_eq!(filling.width, LayoutDimension::Percent(1.0));
         assert!(filling.minimum_size.is_some_and(|size| size.width == 0.0));
+    }
+
+    #[test]
+    fn disabling_a_container_disables_the_views_inside_it() {
+        // Verifies a disabled container disables its descendants, whatever they declare themselves.
+        let mounted = Mounted::new(
+            View::new(
+                LayoutStyle::stack(Axis::Vertical, 0.0),
+                crate::list![
+                    Button::new("Save").enabled(true),
+                    View::new(
+                        LayoutStyle::stack(Axis::Vertical, 0.0),
+                        crate::list![TextField::new()],
+                    ),
+                ],
+            )
+            .enabled(false),
+        );
+        let enabled = Mounted::new(View::new(
+            LayoutStyle::stack(Axis::Vertical, 0.0),
+            crate::list![Button::new("Save")],
+        ));
+
+        assert!(!mounted.is_enabled(&[]));
+        assert!(!mounted.is_enabled(&[0]));
+        assert!(!mounted.is_enabled(&[1, 0]));
+        // The button's own node still says what it declared.
+        assert!(mounted.view(&[0]).2);
+        assert!(enabled.is_enabled(&[0]));
     }
 
     #[test]

@@ -235,7 +235,7 @@ impl View for DisclosureGroup {
 
 impl NativeView for DisclosureGroup {
     // The ID names the disclosure button, such as for UI tests.
-    fn places_identity(&self) -> bool {
+    fn places_id(&self) -> bool {
         true
     }
 
