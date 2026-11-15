@@ -9,10 +9,13 @@ use zintl_ui_backend_core::{TextAlignment, ViewKind};
 use zintl_ui_layout::{Axis, LayoutDimension, LayoutStyle, Size};
 
 use crate::attach::attachments;
-use crate::{Attach, Attachments, Context, Element, Event, EventKind, Menu, NativeView, RenderNode};
+use crate::{
+    Attach, Attachments, Context, Element, Event, EventKind, Menu, NativeView, RenderNode,
+};
 
 type SelectionAction = dyn for<'a> Fn(&mut Context<'a>, Option<&str>);
 type RowAction = dyn for<'a> Fn(&mut Context<'a>, &str);
+type SelectionCheck = dyn for<'a> Fn(&mut Context<'a>, Option<&str>) -> bool;
 
 /// A titled column of a [`Table`].
 #[derive(Clone, Debug, PartialEq)]
@@ -90,6 +93,7 @@ pub struct Table {
     action: Option<Rc<SelectionAction>>,
     activate: Option<Rc<RowAction>>,
     delete: Option<Rc<RowAction>>,
+    should_select: Option<Rc<SelectionCheck>>,
     layout: LayoutStyle,
     id: Option<String>,
     attachments: Attachments,
@@ -108,6 +112,7 @@ impl Table {
             action: None,
             activate: None,
             delete: None,
+            should_select: None,
             layout: LayoutStyle::fill(Size::new(0.0, 0.0)),
             id: None,
             attachments: Attachments::default(),
@@ -132,6 +137,19 @@ impl Table {
         action: impl for<'a> Fn(&mut Context<'a>, Option<&str>) + 'static,
     ) -> Self {
         self.action = Some(Rc::new(action));
+        self
+    }
+
+    /// Decides whether the user may select a row, or clear the selection for `None`.
+    ///
+    /// It runs for clicks and keyboard navigation before the bound Store and
+    /// `on_select`. Returning `false` keeps the current row selected; the app
+    /// can then ask, for example about unsaved edits, and change the Store later.
+    pub fn should_select(
+        mut self,
+        check: impl for<'a> Fn(&mut Context<'a>, Option<&str>) -> bool + 'static,
+    ) -> Self {
+        self.should_select = Some(Rc::new(check));
         self
     }
 
@@ -215,6 +233,7 @@ impl NativeView for Table {
                     .collect(),
                 rows: self.rows.iter().map(|row| row.id.clone()).collect(),
                 selected: self.selection.and_then(|store| cx.get(store).clone()),
+                follows_selection: self.selection.is_some() || self.should_select.is_some(),
                 striped: self.striped,
             },
             layout: self.layout,
@@ -243,11 +262,19 @@ impl NativeView for Table {
         };
         let store = self.selection;
         let action = self.action.clone();
-        if store.is_none() && action.is_none() {
+        let check = self.should_select.clone();
+        if store.is_none() && action.is_none() && check.is_none() {
             return element;
         }
         element.on_event(EventKind::ListSelectionChanged, move |cx, event| {
             if let Event::ListSelectionChanged { id } = event {
+                // A rejected change leaves the Store as it is; the backend then shows it again.
+                if check
+                    .as_ref()
+                    .is_some_and(|check| !check(cx, id.as_deref()))
+                {
+                    return;
+                }
                 if let Some(store) = store {
                     cx.update(store, |selection| *selection = id.clone());
                 }

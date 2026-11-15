@@ -158,6 +158,8 @@ pub enum ViewKind {
         /// Row IDs; each row has one cell per column.
         rows: Vec<String>,
         selected: Option<String>,
+        /// Whether the table always shows `selected`, so a selection the app rejects is undone.
+        follows_selection: bool,
         striped: bool,
     },
     /// A view drawn by its canvas handler.
@@ -201,6 +203,9 @@ impl ViewKind {
         match self {
             Self::Button(button) => button.button_type != ButtonType::MomentaryPushIn,
             Self::Switch { .. } | Self::PopUpButton { .. } | Self::SegmentedControl { .. } => true,
+            Self::Table {
+                follows_selection, ..
+            } => *follows_selection,
             _ => false,
         }
     }

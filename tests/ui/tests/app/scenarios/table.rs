@@ -7,6 +7,7 @@ pub struct MainView {
     deleted: Store<String>,
     note: Store<String>,
     log: Store<String>,
+    locked: Store<bool>,
 }
 
 impl MainView {
@@ -17,6 +18,7 @@ impl MainView {
             deleted: Store::default(),
             note: Store::default(),
             log: Store::default(),
+            locked: Store::default(),
         }
     }
 }
@@ -30,11 +32,17 @@ impl View for MainView {
         self.deleted = cx.store(String::new());
         self.note = cx.store("draft".into());
         self.log = cx.store(String::new());
+        self.locked = cx.store(false);
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
-        let (selected, activated, deleted, log) =
-            (self.selected, self.activated, self.deleted, self.log);
+        let (selected, activated, deleted, log, locked) = (
+            self.selected,
+            self.activated,
+            self.deleted,
+            self.log,
+            self.locked,
+        );
         let rows = (1..=50).map(|row| {
             let table_row = TableRow::new(
                 format!("section-{row}"),
@@ -76,7 +84,16 @@ impl View for MainView {
             .content(
                 VStack::new(list![
                     status,
-                    HStack::new(list![select, clear]).spacing(8.0),
+                    HStack::new(list![
+                        select,
+                        clear,
+                        // While on, the table keeps its selection.
+                        Toggle::new("Lock")
+                            .style(ToggleStyle::Checkbox)
+                            .bind(locked)
+                            .id("lock-selection"),
+                    ])
+                    .spacing(8.0),
                     cx.watch(activated, |id| Text::new(format!("Activated: {id}")).id("activated")),
                     cx.watch(deleted, |id| Text::new(format!("Deleted: {id}")).id("deleted")),
                     cx.watch(log, |log| Text::new(format!("Log: {log}")).id("log")),
@@ -86,6 +103,7 @@ impl View for MainView {
                         .bind(selected)
                         .on_activate(move |cx, id| cx.update(activated, |activated| *activated = id.into()))
                         .on_delete(move |cx, id| cx.update(deleted, |deleted| *deleted = id.into()))
+                        .should_select(move |cx, _| !*cx.get(locked))
                         .id("sections"),
                 ])
                 .spacing(8.0)

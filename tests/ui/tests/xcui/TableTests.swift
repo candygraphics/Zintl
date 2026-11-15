@@ -157,4 +157,34 @@ final class TableTests: ZintlUITestCase {
     let items = app.menuItems.matching(NSPredicate(format: "title BEGINSWITH 'Archive'"))
     XCTAssertFalse(waitUntil(timeout: 1) { items.count > 0 })
   }
+
+  /// Returns whether the table row for `section` is selected.
+  private func isRowSelected(_ section: Int) -> Bool {
+    app.tables["sections"].tableRows.element(boundBy: section - 1).isSelected
+  }
+
+  /// Verifies should_select can keep the current row selected for clicks and arrow keys.
+  func testRejectedSelectionKeepsTheCurrentRow() throws {
+    try launch(scenario: "table")
+
+    app.staticTexts["name-5"].click()
+    assertLabel("selection", "Selected: section-5")
+    let lock = app.checkBoxes["lock-selection"]
+    lock.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).click()
+    XCTAssertTrue(waitUntil { lock.value as? Int == 1 })
+
+    app.staticTexts["name-3"].click()
+    XCTAssertTrue(waitUntil { self.isRowSelected(5) }, "section 5 lost its selection")
+    XCTAssertFalse(isRowSelected(3))
+    assertLabel("selection", "Selected: section-5")
+
+    app.typeKey(.downArrow, modifierFlags: [])
+    XCTAssertTrue(waitUntil { self.isRowSelected(5) && !self.isRowSelected(6) })
+    assertLabel("selection", "Selected: section-5")
+
+    // Unlocked, clicking selects as before.
+    lock.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).click()
+    app.staticTexts["name-3"].click()
+    assertLabel("selection", "Selected: section-3")
+  }
 }

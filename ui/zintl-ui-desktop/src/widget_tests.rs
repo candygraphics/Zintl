@@ -1857,7 +1857,7 @@ fn table_lays_out_cells_by_row_and_writes_the_selection() {
     assert!(matches!(
         &tree.value,
         RenderNode::View {
-            kind: ViewKind::Table { columns, rows, striped: true, selected: None },
+            kind: ViewKind::Table { columns, rows, striped: true, selected: None, .. },
             ..
         } if columns.len() == 2 && columns[0].width == Some(120.0) && rows == &["a", "b"]
     ));

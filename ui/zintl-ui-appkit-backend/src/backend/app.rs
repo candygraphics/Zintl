@@ -120,6 +120,7 @@ impl MessageLoopHandler<Message> for AppHandler<'_> {
                         event.kind,
                         WindowEventKind::StateChanged { .. }
                             | WindowEventKind::SelectionChanged { .. }
+                            | WindowEventKind::ListSelectionChanged { .. }
                     ) {
                         self.composer.backend_mut().note_user_change(route);
                     }

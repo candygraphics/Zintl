@@ -441,4 +441,23 @@ mod tests {
         // A text field the user typed into keeps its text.
         assert!(tree.user_change_targets(&[search]).is_empty());
     }
+
+    #[test]
+    fn only_tables_that_follow_their_selection_revert_it() {
+        // Verifies a bound table shows its Store again after a rejected click, but a free one keeps the click.
+        let table = |follows_selection| {
+            view(crate::ViewKind::Table {
+                columns: Vec::new(),
+                rows: Vec::new(),
+                selected: None,
+                follows_selection,
+                striped: false,
+            })
+        };
+        let mut tree = NodeTree::<()>::new();
+        let bound = tree.create(&table(true), None);
+        let free = tree.create(&table(false), None);
+        assert_eq!(tree.user_change_targets(&[bound]), [bound]);
+        assert!(tree.user_change_targets(&[free]).is_empty());
+    }
 }
