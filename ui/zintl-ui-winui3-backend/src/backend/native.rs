@@ -9,7 +9,8 @@ use zintl_ui_backend_core::layout::{HostLayout, LayoutNative, LayoutSnapshot};
 use zintl_ui_backend_core::tree::ErrorSlot;
 use zintl_ui_backend_core::{
     Accessibility, BezelStyle, ButtonType, Color, Event, MainTaskSender, RedrawPolicy,
-    ScrollAlignment, ScrollTarget, TableColumn, TextAlignment, TextColor, TextStyle, ViewKind,
+    ScrollAlignment, ScrollTarget, SystemColor, TableColumn, TextAlignment, TextColor, TextStyle,
+    ViewKind,
 };
 use zintl_ui_layout::{LayoutDimension, LayoutStyle, Rect as LayoutRect, Size};
 use zpd_winui3::{
@@ -566,6 +567,14 @@ impl NativeNode {
                 TextColor::Secondary => zpd_winui3::TextColor::Secondary,
                 TextColor::Tertiary => zpd_winui3::TextColor::Tertiary,
                 TextColor::Accent => zpd_winui3::TextColor::Accent,
+                TextColor::System(color) => zpd_winui3::TextColor::System(match color {
+                    SystemColor::Red => zpd_winui3::SystemColor::Red,
+                    SystemColor::Orange => zpd_winui3::SystemColor::Orange,
+                    SystemColor::Yellow => zpd_winui3::SystemColor::Yellow,
+                    SystemColor::Green => zpd_winui3::SystemColor::Green,
+                    SystemColor::Blue => zpd_winui3::SystemColor::Blue,
+                    SystemColor::Gray => zpd_winui3::SystemColor::Gray,
+                }),
                 TextColor::Custom(color) => zpd_winui3::TextColor::Custom(Self::color(color)),
             },
             alignment: match style.alignment {

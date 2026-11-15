@@ -233,7 +233,20 @@ pub enum TextColor {
     Secondary,
     Tertiary,
     Accent,
+    /// A theme brush for meaning, such as `SystemFillColorCriticalBrush`.
+    System(SystemColor),
     Custom(Color),
+}
+
+/// A theme color for meaning; WinUI has no separate orange, so it shares the caution brush.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SystemColor {
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Blue,
+    Gray,
 }
 
 #[repr(i32)]
@@ -642,6 +655,17 @@ impl Control {
             TextColor::Tertiary => (2, Color::default()),
             TextColor::Accent => (3, Color::default()),
             TextColor::Custom(color) => (4, color),
+            TextColor::System(system) => (
+                match system {
+                    SystemColor::Red => 5,
+                    SystemColor::Orange => 6,
+                    SystemColor::Yellow => 7,
+                    SystemColor::Green => 8,
+                    SystemColor::Blue => 9,
+                    SystemColor::Gray => 10,
+                },
+                Color::default(),
+            ),
         };
         let font = style.font.unwrap_or(Font {
             family: None,

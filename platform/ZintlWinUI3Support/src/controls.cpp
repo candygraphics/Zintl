@@ -705,6 +705,12 @@ Media::Brush text_color(zpd_winui3_text_style const& style) {
     case ZPD_WINUI3_TEXT_COLOR_TERTIARY: return theme_brush(L"TextFillColorTertiaryBrush");
     case ZPD_WINUI3_TEXT_COLOR_ACCENT: return theme_brush(L"AccentTextFillColorPrimaryBrush");
     case ZPD_WINUI3_TEXT_COLOR_CUSTOM: return brush_from(style.custom);
+    case ZPD_WINUI3_TEXT_COLOR_SYSTEM_RED: return theme_brush(L"SystemFillColorCriticalBrush");
+    case ZPD_WINUI3_TEXT_COLOR_SYSTEM_ORANGE:
+    case ZPD_WINUI3_TEXT_COLOR_SYSTEM_YELLOW: return theme_brush(L"SystemFillColorCautionBrush");
+    case ZPD_WINUI3_TEXT_COLOR_SYSTEM_GREEN: return theme_brush(L"SystemFillColorSuccessBrush");
+    case ZPD_WINUI3_TEXT_COLOR_SYSTEM_BLUE: return theme_brush(L"SystemFillColorAttentionBrush");
+    case ZPD_WINUI3_TEXT_COLOR_SYSTEM_GRAY: return theme_brush(L"SystemFillColorNeutralBrush");
     default: return nullptr;
   }
 }

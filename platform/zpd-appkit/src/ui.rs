@@ -58,7 +58,7 @@ pub use scroll_view::{ScrollAlignment, ScrollAxes, ScrollView};
 pub use sidebar::{Sidebar, SidebarItem, SidebarSearch, SidebarSection};
 pub use tab_view::TabView;
 pub use text_editor::TextEditor;
-pub use text_field::{TextAlignment, TextColor, TextField};
+pub use text_field::{SystemColor, TextAlignment, TextColor, TextField};
 pub use toolbar::{Toolbar, ToolbarItem};
 pub use view::{AsView, View, ViewRef};
 pub use window::{TitleBar, UndoState, Window, WindowStyle};

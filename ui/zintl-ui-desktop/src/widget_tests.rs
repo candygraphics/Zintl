@@ -71,6 +71,20 @@ impl Calls {
 }
 
 #[test]
+fn system_text_colors_reach_the_render_node() {
+    // Verifies a system color is kept by name, so the backend resolves it for the current appearance.
+    let tree =
+        App::new(Text::new("Error").color(TextColor::System(SystemColor::Red))).render_tree();
+    assert!(matches!(
+        tree.value,
+        RenderNode::View {
+            kind: ViewKind::TextField { style, .. },
+            ..
+        } if style.color == TextColor::System(SystemColor::Red)
+    ));
+}
+
+#[test]
 fn icon_only_buttons_leave_their_size_to_the_backend() {
     // Verifies a symbol-only button drops the 80 x 32 push button minimum, unless one is declared.
     let minimum = |button: Button| match App::new(button).render_tree().value {

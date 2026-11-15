@@ -386,6 +386,14 @@ impl Native for core::TextColor {
             Self::Secondary => ui::TextColor::SecondaryLabel,
             Self::Tertiary => ui::TextColor::TertiaryLabel,
             Self::Accent => ui::TextColor::Accent,
+            Self::System(color) => ui::TextColor::System(match color {
+                core::SystemColor::Red => ui::SystemColor::Red,
+                core::SystemColor::Orange => ui::SystemColor::Orange,
+                core::SystemColor::Yellow => ui::SystemColor::Yellow,
+                core::SystemColor::Green => ui::SystemColor::Green,
+                core::SystemColor::Blue => ui::SystemColor::Blue,
+                core::SystemColor::Gray => ui::SystemColor::Gray,
+            }),
             Self::Custom(color) => ui::TextColor::Custom(color.native()),
         }
     }

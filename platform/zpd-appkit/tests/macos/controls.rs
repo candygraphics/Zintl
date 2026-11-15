@@ -10,7 +10,7 @@ use zpd_appkit::ui::{
     AlertButton, AlertButtonRole, AlertConfig, AlertSheet, AsView, Button, ButtonType, Color,
     ColorWell, ListEntry, ListStyle, ListView, CommandItem, CommandMenu, CommandRole, CommandSet, ContextMenu, MenuRole,
     NumberField, NumberFormat, PopUpButton, Popover, ScrollView, SegmentedControl, Sidebar,
-    SidebarItem, SidebarSearch, SidebarSection, Slider, Switch, TabView, TextAlignment, TextColor,
+    SidebarItem, SidebarSearch, SidebarSection, Slider, Switch, SystemColor, TabView, TextAlignment, TextColor,
     RichParagraph, RichRun, RichStyle, TableColumn, TextEditor, TextField, Toolbar, ToolbarItem, View,
     WindowStyle,
 };
@@ -309,6 +309,16 @@ fn main() {
             zpd_objc::msg_send!(label_native, zpd_objc::sel!("maximumNumberOfLines"), () => isize),
             2
         );
+    }
+    // Verifies system colors stay dynamic NSColors instead of fixed RGB values.
+    label
+        .set_text_color(TextColor::System(SystemColor::Red))
+        .unwrap();
+    // SAFETY: The label is a live NSTextField; the color getters return live objects.
+    unsafe {
+        let color = zpd_objc::msg_send!(label_native, zpd_objc::sel!("textColor"), () => Id);
+        let red = zpd_objc::msg_send!(zpd_objc::class!("NSColor"), zpd_objc::sel!("systemRedColor"), () => Id);
+        assert!(zpd_objc::msg_send!(color, zpd_objc::sel!("isEqual:"), ((red): Id) => bool));
     }
     label.set_font(None).unwrap();
     // SAFETY: The label is a live NSTextField with a font.

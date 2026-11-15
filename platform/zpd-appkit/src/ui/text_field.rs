@@ -16,7 +16,20 @@ pub enum TextColor {
     SecondaryLabel,
     TertiaryLabel,
     Accent,
+    /// A dynamic system color, resolved when the text is drawn.
+    System(SystemColor),
     Custom(Color),
+}
+
+/// A dynamic `NSColor.system…` color.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SystemColor {
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Blue,
+    Gray,
 }
 
 impl TextColor {
@@ -27,6 +40,12 @@ impl TextColor {
             Self::SecondaryLabel => zpd_objc::sel!("secondaryLabelColor"),
             Self::TertiaryLabel => zpd_objc::sel!("tertiaryLabelColor"),
             Self::Accent => zpd_objc::sel!("controlAccentColor"),
+            Self::System(SystemColor::Red) => zpd_objc::sel!("systemRedColor"),
+            Self::System(SystemColor::Orange) => zpd_objc::sel!("systemOrangeColor"),
+            Self::System(SystemColor::Yellow) => zpd_objc::sel!("systemYellowColor"),
+            Self::System(SystemColor::Green) => zpd_objc::sel!("systemGreenColor"),
+            Self::System(SystemColor::Blue) => zpd_objc::sel!("systemBlueColor"),
+            Self::System(SystemColor::Gray) => zpd_objc::sel!("systemGrayColor"),
             Self::Custom(color) => return color.native(),
         };
         // SAFETY: The NSColor class methods take no arguments and return autoreleased colors.

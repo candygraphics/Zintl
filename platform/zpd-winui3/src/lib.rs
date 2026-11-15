@@ -14,8 +14,8 @@ pub use canvas::{
 };
 pub use control::{
     BoolProperty, Color, Control, ControlEvent, ControlKind, LIST_ROW_INSET, ListEntry,
-    NavigationItem, NumberProperty, ParagraphStyle, RichRun, RichText, ScrollAlignment, TextColor,
-    TextProperty, TextStyle, TextStyleAlignment, TextTraits,
+    NavigationItem, NumberProperty, ParagraphStyle, RichRun, RichText, ScrollAlignment,
+    SystemColor, TextColor, TextProperty, TextStyle, TextStyleAlignment, TextTraits,
 };
 pub use presentation::{
     Dialog, DialogConfig, DialogResult, FileDialogMode, FileDialogOptions, Placement, Popover,

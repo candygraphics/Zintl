@@ -71,7 +71,22 @@ pub enum TextColor {
     Secondary,
     Tertiary,
     Accent,
+    /// A platform color that adapts to dark mode and Increase Contrast.
+    System(SystemColor),
     Custom(Color),
+}
+
+/// A platform color for meaning such as errors or positive amounts.
+///
+/// It is resolved when the text is drawn, so it follows the appearance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SystemColor {
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Blue,
+    Gray,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
