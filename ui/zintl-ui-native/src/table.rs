@@ -103,6 +103,7 @@ pub struct Table {
     delete: Option<Rc<RowAction>>,
     should_select: Option<Rc<SelectionCheck>>,
     sort: Option<Store<Option<SortOrder>>>,
+    fit_columns: bool,
     layout: LayoutStyle,
     id: Option<String>,
     attachments: Attachments,
@@ -123,10 +124,20 @@ impl Table {
             delete: None,
             should_select: None,
             sort: None,
+            fit_columns: false,
             layout: LayoutStyle::fill(Size::new(0.0, 0.0)),
             id: None,
             attachments: Attachments::default(),
         }
+    }
+
+    /// Shrinks columns proportionally whenever they are wider than the table, so none is hidden.
+    ///
+    /// Without it, columns that do not fit are reached by scrolling sideways.
+    /// No column gets narrower than its header title.
+    pub fn fit_columns(mut self, fit: bool) -> Self {
+        self.fit_columns = fit;
+        self
     }
 
     /// Shades every other row; tables are striped by default.
@@ -255,6 +266,7 @@ impl NativeView for Table {
                 selected: self.selection.and_then(|store| cx.get(store).clone()),
                 follows_selection: self.selection.is_some() || self.should_select.is_some(),
                 sort: self.sort.and_then(|store| cx.get(store).clone()),
+                fit_columns: self.fit_columns,
                 striped: self.striped,
             },
             layout: self.layout,

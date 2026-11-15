@@ -360,6 +360,8 @@ pub struct ListView {
     table: ActorRef,
     state: Rc<ListState>,
     columns: Cell<usize>,
+    /// Whether columns shrink to fit the visible width.
+    fits_columns: Cell<bool>,
 }
 
 impl ListView {
@@ -420,6 +422,7 @@ impl ListView {
             table: table_actor,
             state,
             columns: Cell::new(1),
+            fits_columns: Cell::new(false),
         })
     }
 
@@ -543,6 +546,52 @@ impl ListView {
                 zpd_objc::msg_send!(table, zpd_objc::sel!("setHighlightedTableColumn:"), ((highlighted): Id) => ());
             }
         })
+    }
+
+    /// Makes [`ListView::fit_columns`] shrink columns that are wider than the visible width.
+    pub fn set_fits_columns(&self, fits: bool) {
+        self.fits_columns.set(fits);
+    }
+
+    /// Shrinks the columns proportionally when they are wider than the visible width.
+    ///
+    /// No column gets narrower than its header title, so text is truncated
+    /// rather than squeezed away. Does nothing unless fitting is on.
+    pub fn fit_columns(&self) -> Result<(), UiError> {
+        const MINIMUM: f64 = 24.0;
+        if !self.fits_columns.get() {
+            return Ok(());
+        }
+        self.table.with(|table| {
+            // SAFETY: The live table sits in its scroll view and owns its columns.
+            unsafe {
+                let scroll = zpd_objc::msg_send!(table, zpd_objc::sel!("enclosingScrollView"), () => Id);
+                if scroll.is_null() {
+                    return;
+                }
+                let available = zpd_objc::msg_send!(scroll, zpd_objc::sel!("contentSize"), () => native::Size).width;
+                let spacing = zpd_objc::msg_send!(table, zpd_objc::sel!("intercellSpacing"), () => native::Size).width;
+                let columns = zpd_objc::msg_send!(table, zpd_objc::sel!("tableColumns"), () => Id);
+                let count = zpd_objc::msg_send!(columns, zpd_objc::sel!("count"), () => usize);
+                let column = |index: usize| zpd_objc::msg_send!(columns, zpd_objc::sel!("objectAtIndex:"), ((index): usize) => Id);
+                let total: f64 = (0..count)
+                    .map(|index| zpd_objc::msg_send!(column(index), zpd_objc::sel!("width"), () => f64) + spacing)
+                    .sum();
+                if available <= 0.0 || total <= available + 0.5 {
+                    return;
+                }
+                let factor = available / total;
+                for index in 0..count {
+                    let column = column(index);
+                    let header = zpd_objc::msg_send!(column, zpd_objc::sel!("headerCell"), () => Id);
+                    let title = zpd_objc::msg_send!(header, zpd_objc::sel!("cellSize"), () => native::Size).width;
+                    let width = zpd_objc::msg_send!(column, zpd_objc::sel!("width"), () => f64);
+                    let fitted = ((width + spacing) * factor - spacing).max(title.max(MINIMUM));
+                    zpd_objc::msg_send!(column, zpd_objc::sel!("setWidth:"), ((fitted): f64) => ());
+                }
+            }
+        })?;
+        Ok(())
     }
 
     /// Shades every other row.

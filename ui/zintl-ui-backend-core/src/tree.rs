@@ -452,6 +452,7 @@ mod tests {
                 selected: None,
                 follows_selection,
                 sort: None,
+                fit_columns: false,
                 striped: false,
             })
         };

@@ -220,4 +220,33 @@ final class TableTests: ZintlUITestCase {
     app.tables["sections"].buttons["Name"].click()
     assertLabel("sort", "Sort: name ascending")
   }
+
+  /// Asserts that every column header lies inside the window.
+  private func assertHeadersInsideWindow(file: StaticString = #filePath, line: UInt = #line) {
+    let window = app.windows["main-window"].frame
+    for title in ["Name", "Length", "Col A", "Col B", "Col C", "Col D"] {
+      let header = app.tables["sections"].buttons[title].frame
+      XCTAssertGreaterThanOrEqual(header.minX, window.minX - 1, title, file: file, line: line)
+      XCTAssertLessThanOrEqual(header.maxX, window.maxX + 1, title, file: file, line: line)
+    }
+  }
+
+  /// Verifies added columns shrink to fit the table instead of running past its edge.
+  func testAddedColumnsFitTheTableWidth() throws {
+    try launch(scenario: "table")
+
+    let more = app.checkBoxes["more-columns"]
+    XCTAssertTrue(more.waitToExist(timeout: 2))
+    more.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).click()
+    XCTAssertTrue(app.tables["sections"].buttons["Col D"].waitToExist(timeout: 2))
+    assertHeadersInsideWindow()
+
+    // A narrower window keeps every header visible.
+    let window = app.windows["main-window"]
+    let corner = window.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.99))
+    let width = window.frame.width
+    corner.click(forDuration: 0.2, thenDragTo: corner.withOffset(CGVector(dx: -80, dy: 0)))
+    XCTAssertTrue(waitUntil { window.frame.width < width - 40 })
+    assertHeadersInsideWindow()
+  }
 }

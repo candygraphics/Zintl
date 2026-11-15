@@ -9,6 +9,7 @@ pub struct MainView {
     log: Store<String>,
     locked: Store<bool>,
     sort: Store<Option<SortOrder>>,
+    more_columns: Store<bool>,
 }
 
 impl MainView {
@@ -21,6 +22,7 @@ impl MainView {
             log: Store::default(),
             locked: Store::default(),
             sort: Store::default(),
+            more_columns: Store::default(),
         }
     }
 }
@@ -36,6 +38,7 @@ impl View for MainView {
         self.log = cx.store(String::new());
         self.locked = cx.store(false);
         self.sort = cx.store(None);
+        self.more_columns = cx.store(false);
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
@@ -93,13 +96,17 @@ impl View for MainView {
         let clear = Button::new("Clear selection")
             .id("clear-selection")
             .on_click(move |cx| cx.update(selected, |selected| *selected = None));
-        let columns = [
+        let mut columns = vec![
             TableColumn::new("Name").width(200.0).sort_key("name"),
             // Cells keep the default alignment, so they follow the column's.
             TableColumn::new("Length")
                 .width(120.0)
                 .alignment(TextAlignment::Trailing),
         ];
+        // Extra columns are wider than the table, which fits them to its width.
+        if *cx.get(self.more_columns) {
+            columns.extend(["A", "B", "C", "D"].map(|name| TableColumn::new(format!("Col {name}")).width(150.0)));
+        }
         Window::new(Rect::new(100.0, 100.0, 480.0, 420.0), "Zintl Table UI Test")
             .id("main-window")
             .content(
@@ -109,6 +116,10 @@ impl View for MainView {
                         select,
                         clear,
                         sort_descending,
+                        Toggle::new("More columns")
+                            .style(ToggleStyle::Checkbox)
+                            .bind(self.more_columns)
+                            .id("more-columns"),
                         // While on, the table keeps its selection.
                         Toggle::new("Lock")
                             .style(ToggleStyle::Checkbox)
@@ -134,6 +145,7 @@ impl View for MainView {
                         .on_delete(move |cx, id| cx.update(deleted, |deleted| *deleted = id.into()))
                         .should_select(move |cx, _| !*cx.get(locked))
                         .bind_sort(sort)
+                        .fit_columns(true)
                         .id("sections"),
                 ])
                 .spacing(8.0)

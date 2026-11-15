@@ -685,12 +685,15 @@ impl NativeNode {
                     selected,
                     striped,
                     sort,
+                    fit_columns,
                     ..
                 },
             ) => {
                 if old.is_none() {
                     list.set_style(zpd_appkit::ui::ListStyle::Plain)?;
                 }
+                // Columns are fitted whenever the table lays out.
+                list.set_fits_columns(*fit_columns);
                 // New columns take effect when the rows are attached again.
                 let new_columns =
                     !matches!(old, Some(ViewKind::Table { columns: old, .. }) if old == columns);

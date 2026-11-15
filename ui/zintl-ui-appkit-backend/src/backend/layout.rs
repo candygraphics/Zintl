@@ -67,6 +67,7 @@ impl LayoutNative for NativeNode {
                 }
             }
             Self::List(list, cells) => {
+                list.fit_columns().map_err(AppError::Ui)?;
                 // Cells stretch across their column; a row is as tall as its tallest cell.
                 let columns = list.column_count();
                 let widths = (0..columns)

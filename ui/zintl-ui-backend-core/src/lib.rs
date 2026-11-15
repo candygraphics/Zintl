@@ -162,6 +162,8 @@ pub enum ViewKind {
         follows_selection: bool,
         /// The order the header shows; the app sorts `rows` itself.
         sort: Option<SortOrder>,
+        /// Whether columns wider than the table shrink to fit its width.
+        fit_columns: bool,
         striped: bool,
     },
     /// A view drawn by its canvas handler.
