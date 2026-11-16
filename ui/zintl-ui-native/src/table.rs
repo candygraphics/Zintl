@@ -293,7 +293,7 @@ impl Table {
             },
             layout,
             // The ID names the table itself, not a container around it.
-            id: self.modifiers.id().map(str::to_owned),
+            id: self.modifiers.id().map(|id| id.as_str().to_owned()),
             enabled: true,
             title_bar_interactive: false,
             help: None,

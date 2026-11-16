@@ -2054,7 +2054,7 @@ fn disclosure_group_shows_content_only_while_expanded() {
 fn scroll_view_reveals_the_target_row() {
     // Verifies a fired trigger becomes the scroll view's reveal request with its alignment.
     let (mut app, target) = WithStores::mount(
-        |cx| cx.trigger::<String>(),
+        |cx| cx.trigger::<ViewId>(),
         |target| {
             ScrollView::new(VStack::new(list![Text::new("Row").id("row-1")]))
                 .scroll_to(target, ScrollAlignment::Center)
@@ -2068,7 +2068,7 @@ fn scroll_view_reveals_the_target_row() {
         }
     ));
 
-    app.fire(target, "row-1".to_owned());
+    app.fire(target, "row-1".into());
     assert!(matches!(
         app.tree().value,
         RenderNode::View {
@@ -2085,7 +2085,7 @@ fn scroll_view_reveals_the_target_row() {
 fn scroll_view_reveals_the_same_row_again_when_its_trigger_fires_again() {
     // Verifies firing the same ID again makes a new reveal request, while plain rerenders do not.
     let (mut app, target) = WithStores::mount(
-        |cx| cx.trigger::<String>(),
+        |cx| cx.trigger::<ViewId>(),
         |target| {
             ScrollView::new(VStack::new(list![Text::new("Row").id("row-1")]))
                 .scroll_to(target, ScrollAlignment::Nearest)
@@ -2098,11 +2098,11 @@ fn scroll_view_reveals_the_same_row_again_when_its_trigger_fires_again() {
         } => reveal,
         _ => panic!("expected a scroll view"),
     };
-    app.fire(target, "row-1".to_owned());
+    app.fire(target, "row-1".into());
     let first = reveal(&app).expect("the row is requested");
     assert_eq!(reveal(&app), Some(first.clone()));
 
-    app.fire(target, "row-1".to_owned());
+    app.fire(target, "row-1".into());
     let second = reveal(&app).expect("the row is requested again");
     assert_eq!(second.id, first.id);
     assert_ne!(second.revision, first.revision);

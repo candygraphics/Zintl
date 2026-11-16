@@ -19,7 +19,8 @@ pub use zintl_ui_native::{
     ScrollAlignment, ScrollAxes, ScrollStatus, ScrollView, SearchField, Separator, Sidebar,
     SidebarItem, SidebarSection, Slider, SortOrder, Spacer, SplitView, SystemColor, Tab, TabView,
     Table, TableColumn, TableRow, Text, TextAlignment, TextColor, TextEditor, TextField, TitleBar,
-    Toggle, ToggleStyle, Toolbar, ToolbarItem, UndoHandler, VStack, Window, ZStack, graphics, list,
+    Toggle, ToggleStyle, Toolbar, ToolbarItem, UndoHandler, VStack, ViewId, Window, ZStack,
+    graphics, list,
 };
 
 /// Menus, their items, and keyboard shortcuts.

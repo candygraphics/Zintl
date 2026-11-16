@@ -75,7 +75,7 @@ pub use table::{Table, TableColumn, TableRow};
 pub use text::Text;
 pub use text_field::{TextEditor, TextField};
 pub use toolbar::{Toolbar, ToolbarItem};
-pub use types::{ButtonRole, ScrollStatus};
+pub use types::{ButtonRole, ScrollStatus, ViewId};
 pub use window::{UndoHandler, Window};
 pub use zintl_ui::element::{Element, IntoElement, ListFactory};
 pub use zintl_ui::list;
