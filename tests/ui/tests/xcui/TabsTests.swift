@@ -7,7 +7,7 @@ final class TabsTests: ZintlUITestCase {
     app.tabGroups["tabs"].tabs[title]
   }
 
-  /// Verifies clicking a tab shows only its page and writes its index to the Store.
+  /// Verifies clicking a tab shows only its page and writes its value to the Store.
   func testClickingATabShowsItsPage() throws {
     try launch(scenario: "tabs")
 
@@ -15,8 +15,8 @@ final class TabsTests: ZintlUITestCase {
     XCTAssertFalse(app.staticTexts["advanced-page"].exists)
 
     tab("Advanced").click()
-    assertLabel("tab-value", "Tab: 1")
-    assertLabel("changes", "Changes: 1")
+    assertLabel("tab-value", "Tab: advanced")
+    assertLabel("changes", "Changes: advanced")
     XCTAssertTrue(app.staticTexts["advanced-page"].waitToExist(timeout: 2))
     XCTAssertFalse(app.staticTexts["general-page"].exists)
     XCTAssertEqual(tab("Advanced").value as? Int, 1)
@@ -45,7 +45,7 @@ final class TabsTests: ZintlUITestCase {
     try launch(scenario: "tabs")
 
     app.buttons["show-about"].click()
-    assertLabel("tab-value", "Tab: 2")
+    assertLabel("tab-value", "Tab: about")
     XCTAssertTrue(app.staticTexts["about-page"].waitToExist(timeout: 2))
     XCTAssertTrue(waitUntil { self.tab("About").value as? Int == 1 })
     assertLabel("changes", "Changes: ")

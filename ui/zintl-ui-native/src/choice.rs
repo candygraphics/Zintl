@@ -13,7 +13,7 @@ use crate::{
     ViewModifiers, list,
 };
 
-native_view!(Toggle, Picker);
+native_view!(Toggle);
 
 /// How a [`Toggle`] is drawn.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -141,24 +141,41 @@ pub enum PickerStyle {
     Radio,
 }
 
-/// Selects one option by index.
+/// Selects one of several values, each shown with a label.
+///
+/// The shown value comes from `bind`, then `selection`, and otherwise is the
+/// first option. A value that no option has shows nothing selected.
 #[derive(Clone)]
-pub struct Picker {
-    options: Vec<String>,
+pub struct Picker<V: Clone + PartialEq + 'static = usize> {
+    options: Vec<(V, String)>,
     style: PickerStyle,
-    store: Option<Store<usize>>,
-    selected: usize,
-    action: Option<Rc<Change<usize>>>,
+    store: Option<Store<V>>,
+    selection: Option<V>,
+    action: Option<Rc<Change<V>>>,
     modifiers: ViewModifiers,
 }
 
-impl Picker {
-    pub fn new(options: impl IntoIterator<Item = impl Into<String>>) -> Self {
+impl<V: Clone + PartialEq + 'static> Picker<V> {
+    /// Creates a picker from values and their labels, in display order.
+    pub fn new<L: Into<String>>(options: impl IntoIterator<Item = (V, L)>) -> Self {
+        let options: Vec<(V, String)> = options
+            .into_iter()
+            .map(|(value, label)| (value, label.into()))
+            .collect();
+        debug_assert!(
+            options
+                .iter()
+                .enumerate()
+                .all(|(index, (value, _))| !options[..index]
+                    .iter()
+                    .any(|(other, _)| other == value)),
+            "picker options must have distinct values"
+        );
         Self {
-            options: options.into_iter().map(Into::into).collect(),
+            options,
             style: PickerStyle::Menu,
             store: None,
-            selected: 0,
+            selection: None,
             action: None,
             modifiers: ViewModifiers::default(),
         }
@@ -169,25 +186,57 @@ impl Picker {
         self
     }
 
-    /// Reads and writes the selected option index.
-    pub fn bind(mut self, store: Store<usize>) -> Self {
+    /// Reads and writes the selected value.
+    pub fn bind(mut self, store: Store<V>) -> Self {
         self.store = Some(store);
         self
     }
 
-    /// Selects the option at `index`.
-    pub fn selection(mut self, index: usize) -> Self {
-        self.selected = index;
+    /// Selects the option with `value`.
+    pub fn selection(mut self, value: V) -> Self {
+        self.selection = Some(value);
         self
     }
 
-    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, usize) + 'static) -> Self {
-        self.action = Some(ChangeRoute::copied(action));
+    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, &V) + 'static) -> Self {
+        self.action = Some(Rc::new(action));
         self
+    }
+
+    /// Returns the index of the option to show as selected.
+    fn selected_index(&self, cx: &mut Context<'_>) -> Option<usize> {
+        let value = match self.store {
+            Some(store) => cx.get(store).clone(),
+            None => match &self.selection {
+                Some(value) => value.clone(),
+                None => return (!self.options.is_empty()).then_some(0),
+            },
+        };
+        self.options.iter().position(|(option, _)| *option == value)
+    }
+
+    /// Turns the option indexes the native controls report into values.
+    fn index_route(&self) -> ChangeRoute<usize> {
+        ChangeRoute::new(self.store, self.action.clone())
+            .by_index(self.options.iter().map(|(value, _)| value.clone()))
+    }
+
+    fn labels(&self) -> Vec<String> {
+        self.options
+            .iter()
+            .map(|(_, label)| label.clone())
+            .collect()
     }
 }
 
-impl NativeView for Picker {
+impl Picker<usize> {
+    /// Creates a picker that selects its labels by index.
+    pub fn indexed<L: Into<String>>(labels: impl IntoIterator<Item = L>) -> Self {
+        Self::new(labels.into_iter().enumerate())
+    }
+}
+
+impl<V: Clone + PartialEq + 'static> NativeView for Picker<V> {
     modifiers!();
 
     // The native picker or the radio group carries the ID.
@@ -196,11 +245,12 @@ impl NativeView for Picker {
     }
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let route = ChangeRoute::new(self.store, self.action.clone());
+        let selected = self.selected_index(cx);
+        let route = self.index_route();
         match self.style {
             PickerStyle::Menu => {
-                let mut picker = PopUpButton::new(self.options.clone())
-                    .selection(self.selected)
+                let mut picker = PopUpButton::new(self.labels())
+                    .selection(selected)
                     .enabled(self.modifiers.enabled())
                     .route(route);
                 if let Some(id) = self.modifiers.id() {
@@ -209,8 +259,8 @@ impl NativeView for Picker {
                 picker.native_element(cx)
             }
             PickerStyle::Segmented => {
-                let mut picker = SegmentedControl::new(self.options.clone())
-                    .selection(self.selected)
+                let mut picker = SegmentedControl::new(self.labels())
+                    .selection(selected)
                     .enabled(self.modifiers.enabled())
                     .route(route);
                 if let Some(id) = self.modifiers.id() {
@@ -219,13 +269,12 @@ impl NativeView for Picker {
                 picker.native_element(cx)
             }
             PickerStyle::Radio => {
-                let selected = self.store.map_or(self.selected, |store| *cx.get(store));
                 let enabled = self.modifiers.enabled();
                 let radios = self
                     .options
                     .iter()
                     .enumerate()
-                    .map(|(index, option)| {
+                    .map(|(index, (_, label))| {
                         // Only the radio that turned on reports the selection.
                         let route = route.clone();
                         let turned_on = ChangeRoute::copied(move |cx, on| {
@@ -234,8 +283,8 @@ impl NativeView for Picker {
                             }
                         });
                         ElementFactory::new(
-                            Button::radio(option.clone())
-                                .on(index == selected)
+                            Button::radio(label.clone())
+                                .on(selected == Some(index))
                                 .enabled(enabled)
                                 .route_state(ChangeRoute::new(None, Some(turned_on))),
                         )
@@ -248,5 +297,16 @@ impl NativeView for Picker {
                 }
             }
         }
+    }
+}
+
+impl<V: Clone + PartialEq + 'static> zintl_ui::view::View for Picker<V> {
+    type Output = RenderNode;
+
+    fn render(
+        &self,
+        cx: &mut Context<'_>,
+    ) -> impl zintl_ui::element::IntoElement<Output = Self::Output> {
+        self.native_element(cx)
     }
 }

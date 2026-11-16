@@ -98,19 +98,21 @@ impl NativeView for ScrollView {
 
 native_view!(ScrollView);
 
-/// One page of a [`TabView`].
+/// One page of a [`TabView`], and the value that selects it.
 #[derive(Clone)]
-pub struct Tab {
+pub struct Tab<V = usize> {
+    value: V,
     title: String,
     content: ElementFactory<RenderNode>,
 }
 
-impl Tab {
-    pub fn new<V>(title: impl Into<String>, content: V) -> Self
+impl<V> Tab<V> {
+    pub fn new<C>(value: V, title: impl Into<String>, content: C) -> Self
     where
-        V: Clone + IntoElement<Output = RenderNode> + 'static,
+        C: Clone + IntoElement<Output = RenderNode> + 'static,
     {
         Self {
+            value,
             title: title.into(),
             content: ElementFactory::new(content),
         }
@@ -118,24 +120,35 @@ impl Tab {
 }
 
 /// A native tab view that shows one page at a time.
+///
+/// The shown page comes from `bind`, then `selection`. Without either, or
+/// with a value no tab has, the first page shows.
 #[derive(Clone)]
-pub struct TabView {
-    items: Vec<Tab>,
-    selected: usize,
-    store: Option<Store<usize>>,
-    action: Option<Rc<Change<usize>>>,
+pub struct TabView<V: Clone + PartialEq + 'static = usize> {
+    items: Vec<Tab<V>>,
+    selection: Option<V>,
+    store: Option<Store<V>>,
+    action: Option<Rc<Change<V>>>,
     layout: LayoutStyle,
     modifiers: ViewModifiers,
 }
 
-impl TabView {
+impl<V: Clone + PartialEq + 'static> TabView<V> {
     /// Inset between the tab view's content area and each page.
     const PAGE_PADDING: f32 = 12.0;
 
-    pub fn new(items: impl IntoIterator<Item = Tab>) -> Self {
+    pub fn new(items: impl IntoIterator<Item = Tab<V>>) -> Self {
+        let items: Vec<Tab<V>> = items.into_iter().collect();
+        debug_assert!(
+            items
+                .iter()
+                .enumerate()
+                .all(|(index, tab)| !items[..index].iter().any(|other| other.value == tab.value)),
+            "tabs must have distinct values"
+        );
         Self {
-            items: items.into_iter().collect(),
-            selected: 0,
+            items,
+            selection: None,
             store: None,
             action: None,
             layout: LayoutStyle::fill(Size::new(200.0, 120.0)),
@@ -143,25 +156,42 @@ impl TabView {
         }
     }
 
-    /// Shows the page at `index`.
-    pub fn selection(mut self, index: usize) -> Self {
-        self.selected = index;
+    /// Shows the page with `value`.
+    pub fn selection(mut self, value: V) -> Self {
+        self.selection = Some(value);
         self
     }
 
-    /// Reads and writes the selected page index.
-    pub fn bind(mut self, store: Store<usize>) -> Self {
+    /// Reads and writes the selected page's value.
+    pub fn bind(mut self, store: Store<V>) -> Self {
         self.store = Some(store);
         self
     }
 
-    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, usize) + 'static) -> Self {
-        self.action = Some(ChangeRoute::copied(action));
+    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, &V) + 'static) -> Self {
+        self.action = Some(Rc::new(action));
         self
+    }
+
+    /// Returns the index of the page to show.
+    ///
+    /// A native tab view always shows a page, so an unknown value shows the first.
+    fn selected_index(&self, cx: &mut Context<'_>) -> usize {
+        let value = match self.store {
+            Some(store) => cx.get(store).clone(),
+            None => match &self.selection {
+                Some(value) => value.clone(),
+                None => return 0,
+            },
+        };
+        self.items
+            .iter()
+            .position(|item| item.value == value)
+            .unwrap_or(0)
     }
 }
 
-impl NativeView for TabView {
+impl<V: Clone + PartialEq + 'static> NativeView for TabView<V> {
     modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
@@ -182,7 +212,7 @@ impl NativeView for TabView {
         let element = Element::node(RenderNode::View {
             kind: ViewKind::TabView {
                 titles: self.items.iter().map(|item| item.title.clone()).collect(),
-                selected: self.store.map_or(self.selected, |store| *cx.get(store)),
+                selected: self.selected_index(cx),
             },
             layout: self.layout,
             id: None,
@@ -192,8 +222,19 @@ impl NativeView for TabView {
             accessibility: Default::default(),
         })
         .with_children(pages);
-        ChangeRoute::new(self.store, self.action.clone()).route_selection(element)
+        ChangeRoute::new(self.store, self.action.clone())
+            .by_index(self.items.iter().map(|item| item.value.clone()))
+            .route_selection(element)
     }
 }
 
-native_view!(TabView);
+impl<V: Clone + PartialEq + 'static> zintl_ui::view::View for TabView<V> {
+    type Output = RenderNode;
+
+    fn render(
+        &self,
+        cx: &mut Context<'_>,
+    ) -> impl zintl_ui::element::IntoElement<Output = Self::Output> {
+        self.native_element(cx)
+    }
+}

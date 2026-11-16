@@ -48,8 +48,8 @@ impl View for MainView {
                         .on_change(move |cx, _| cx.update(well, |count| *count += 1)),
                     rejected(cx, well, "well-rejected"),
                     TabView::new([
-                        Tab::new("First", Text::new("First page").id("first-page")),
-                        Tab::new("Second", Text::new("Second page").id("second-page")),
+                        Tab::new(0, "First", Text::new("First page").id("first-page")),
+                        Tab::new(1, "Second", Text::new("Second page").id("second-page")),
                     ])
                     .selection(0)
                     .id("tabs")

@@ -332,7 +332,7 @@ fn radio_picker_selects_exactly_one_option() {
     let (mut app, selected) = WithStores::mount(
         |cx| cx.store(0_usize),
         |selected| {
-            Picker::new(["Low", "Normal", "High"])
+            Picker::indexed(["Low", "Normal", "High"])
                 .style(PickerStyle::Radio)
                 .bind(selected)
         },
@@ -368,7 +368,7 @@ fn menu_and_segmented_pickers_render_bound_selection() {
     // Verifies other picker styles map to pop-up buttons and segmented controls.
     let (mut app, selected) = WithStores::mount(
         |cx| cx.store(1_usize),
-        |selected| Picker::new(["A", "B"]).bind(selected),
+        |selected| Picker::indexed(["A", "B"]).bind(selected),
     );
     assert!(matches!(
         app.tree().value,
@@ -383,13 +383,279 @@ fn menu_and_segmented_pickers_render_bound_selection() {
     assert!(app.dispatch(&[0], Event::SelectionChanged { index: 0 }));
     assert_eq!(app.get(selected), 0);
 
-    let segmented = Harness::new(Picker::new(["A", "B"]).style(PickerStyle::Segmented))
+    let segmented = Harness::new(Picker::indexed(["A", "B"]).style(PickerStyle::Segmented))
         .tree()
         .value;
     assert!(matches!(
         segmented,
         RenderNode::View { kind: ViewKind::SegmentedControl { segments, .. }, .. } if segments == ["A", "B"]
     ));
+}
+
+/// A value type for pickers and tab views that select by value.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Speed {
+    Slow,
+    Normal,
+    Fast,
+}
+
+impl Speed {
+    const ALL: [(Speed, &'static str); 3] = [
+        (Speed::Slow, "Slow"),
+        (Speed::Normal, "Normal"),
+        (Speed::Fast, "Fast"),
+    ];
+}
+
+/// Returns the option index a picker of any style shows as selected.
+fn picker_selection(node: &RenderedNode) -> Option<usize> {
+    match &node.value {
+        RenderNode::View {
+            kind:
+                ViewKind::PopUpButton { selected, .. } | ViewKind::SegmentedControl { selected, .. },
+            ..
+        } => *selected,
+        // A radio group: the index of the radio that is on, if exactly one is.
+        _ => {
+            let on: Vec<usize> = node
+                .children
+                .iter()
+                .enumerate()
+                .filter(|(_, radio)| {
+                    matches!(
+                        radio.value,
+                        RenderNode::View {
+                            kind: ViewKind::Button(zintl_ui_backend_core::Button { on: true, .. }),
+                            ..
+                        }
+                    )
+                })
+                .map(|(index, _)| index)
+                .collect();
+            assert!(on.len() <= 1, "a radio picker turns on one radio at most");
+            on.first().copied()
+        }
+    }
+}
+
+#[test]
+fn picker_shows_the_option_with_the_selected_value_in_every_style() {
+    // Verifies a value becomes the index of its option, and a missing value selects nothing.
+    for style in [
+        PickerStyle::Menu,
+        PickerStyle::Segmented,
+        PickerStyle::Radio,
+    ] {
+        let shown =
+            |picker: Picker<Speed>| picker_selection(&Harness::new(picker.style(style)).tree());
+
+        assert_eq!(
+            shown(Picker::new(Speed::ALL).selection(Speed::Fast)),
+            Some(2),
+            "{style:?}"
+        );
+        assert_eq!(
+            shown(Picker::new(Speed::ALL)),
+            Some(0),
+            "{style:?} without a value"
+        );
+        assert_eq!(
+            shown(Picker::new(Speed::ALL[..2].to_vec()).selection(Speed::Fast)),
+            None,
+            "{style:?} with a value no option has"
+        );
+    }
+}
+
+#[test]
+fn picker_follows_its_value_when_options_are_reordered() {
+    // Verifies the bound value, not its old position, picks the option after the options move.
+    let (mut app, (speed, reversed)) = WithStores::mount(
+        |cx| (cx.store(Speed::Slow), cx.store(false)),
+        |(speed, reversed)| {
+            WithReversed(reversed, move |reversed: bool| {
+                let mut options = Speed::ALL.to_vec();
+                if reversed {
+                    options.reverse();
+                }
+                Picker::new(options).bind(speed)
+            })
+        },
+    );
+    assert_eq!(picker_selection(&app.tree()), Some(0));
+
+    app.set(reversed, true);
+
+    assert_eq!(picker_selection(&app.tree()), Some(2));
+    assert_eq!(app.get(speed), Speed::Slow);
+}
+
+/// Renders a view built from the current value of a `bool` Store.
+#[derive(Clone)]
+struct WithReversed<F>(Store<bool>, F);
+
+impl<F, E> View for WithReversed<F>
+where
+    F: Fn(bool) -> E + Clone + 'static,
+    E: IntoElement<Output = RenderNode> + 'static,
+{
+    type Output = RenderNode;
+
+    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
+        (self.1)(*cx.get(self.0))
+    }
+}
+
+#[test]
+fn picker_reports_the_value_of_the_chosen_option() {
+    // Verifies a selected index writes that option's value to the Store and passes it to `on_change`.
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let record = seen.clone();
+    let (mut app, speed) = WithStores::mount(
+        |cx| cx.store(Speed::Slow),
+        move |speed| {
+            let record = record.clone();
+            Picker::new(Speed::ALL)
+                .bind(speed)
+                .on_change(move |_, value| record.borrow_mut().push(*value))
+        },
+    );
+
+    assert!(app.dispatch(&[0], Event::SelectionChanged { index: 1 }));
+
+    assert_eq!(app.get(speed), Speed::Normal);
+    assert_eq!(*seen.borrow(), [Speed::Normal]);
+    assert_eq!(picker_selection(&app.tree()), Some(1));
+}
+
+#[test]
+fn picker_ignores_indexes_past_its_options() {
+    // Verifies a stale index from the backend neither writes the Store nor calls `on_change`.
+    let changes = Rc::new(Cell::new(0));
+    let count = changes.clone();
+    let (mut app, speed) = WithStores::mount(
+        |cx| cx.store(Speed::Slow),
+        move |speed| {
+            let count = count.clone();
+            Picker::new(Speed::ALL)
+                .bind(speed)
+                .on_change(move |_, _| count.set(count.get() + 1))
+        },
+    );
+
+    app.dispatch(&[0], Event::SelectionChanged { index: 3 });
+
+    assert_eq!(app.get(speed), Speed::Slow);
+    assert_eq!(changes.get(), 0);
+}
+
+#[test]
+fn radio_picker_reports_the_value_of_the_radio_turned_on() {
+    // Verifies a radio turning on selects its option's value.
+    let (mut app, speed) = WithStores::mount(
+        |cx| cx.store(Speed::Slow),
+        |speed| {
+            Picker::new(Speed::ALL)
+                .style(PickerStyle::Radio)
+                .bind(speed)
+        },
+    );
+
+    assert!(app.dispatch(&[0, 2], Event::StateChanged { on: true }));
+
+    assert_eq!(app.get(speed), Speed::Fast);
+    assert_eq!(picker_selection(&app.tree()), Some(2));
+}
+
+/// Returns the page index a tab view shows.
+fn tab_selection(node: &RenderedNode) -> usize {
+    match node.value {
+        RenderNode::View {
+            kind: ViewKind::TabView { selected, .. },
+            ..
+        } => selected,
+        _ => panic!("expected a tab view"),
+    }
+}
+
+/// Builds a tab view with one page per speed, in `order`.
+fn speed_tabs(order: impl IntoIterator<Item = (Speed, &'static str)>) -> TabView<Speed> {
+    TabView::new(
+        order
+            .into_iter()
+            .map(|(speed, title)| Tab::new(speed, title, Text::new(title))),
+    )
+}
+
+#[test]
+fn tab_view_shows_the_page_with_the_selected_value() {
+    // Verifies a value picks its page, and no value or an unknown one shows the first page.
+    let shown = |tabs: TabView<Speed>| tab_selection(&Harness::new(tabs).tree());
+
+    assert_eq!(shown(speed_tabs(Speed::ALL).selection(Speed::Fast)), 2);
+    assert_eq!(shown(speed_tabs(Speed::ALL)), 0);
+    assert_eq!(
+        shown(speed_tabs(Speed::ALL[..2].to_vec()).selection(Speed::Fast)),
+        0
+    );
+}
+
+#[test]
+fn tab_view_shows_the_first_page_without_changing_an_unknown_bound_value() {
+    // Verifies the fallback to the first page leaves the Store as the app wrote it.
+    let (mut app, speed) = WithStores::mount(
+        |cx| cx.store(Speed::Fast),
+        |speed| speed_tabs(Speed::ALL[..2].to_vec()).bind(speed),
+    );
+
+    assert_eq!(tab_selection(&app.tree()), 0);
+    assert_eq!(app.get(speed), Speed::Fast);
+}
+
+#[test]
+fn tab_view_follows_its_value_when_tabs_are_reordered() {
+    // Verifies the bound value, not its old position, picks the page after the tabs move.
+    let (mut app, (_, reversed)) = WithStores::mount(
+        |cx| (cx.store(Speed::Slow), cx.store(false)),
+        |(speed, reversed)| {
+            WithReversed(reversed, move |reversed: bool| {
+                let mut order = Speed::ALL.to_vec();
+                if reversed {
+                    order.reverse();
+                }
+                speed_tabs(order).bind(speed)
+            })
+        },
+    );
+    assert_eq!(tab_selection(&app.tree()), 0);
+
+    app.set(reversed, true);
+
+    assert_eq!(tab_selection(&app.tree()), 2);
+}
+
+#[test]
+fn tab_view_reports_the_value_of_the_chosen_page() {
+    // Verifies a selected index writes that page's value and passes it to `on_change`, ignoring stale indexes.
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let record = seen.clone();
+    let (mut app, speed) = WithStores::mount(
+        |cx| cx.store(Speed::Slow),
+        move |speed| {
+            let record = record.clone();
+            speed_tabs(Speed::ALL)
+                .bind(speed)
+                .on_change(move |_, value| record.borrow_mut().push(*value))
+        },
+    );
+
+    assert!(app.dispatch(&[0], Event::SelectionChanged { index: 1 }));
+    app.dispatch(&[0], Event::SelectionChanged { index: 3 });
+
+    assert_eq!(app.get(speed), Speed::Normal);
+    assert_eq!(*seen.borrow(), [Speed::Normal]);
+    assert_eq!(tab_selection(&app.tree()), 1);
 }
 
 /// Formats kilometres as `12k345.67`.
@@ -1182,8 +1448,8 @@ fn tab_view_hosts_one_page_per_tab() {
         |cx| cx.store(0_usize),
         |selected| {
             TabView::new([
-                Tab::new("General", Text::new("General page")),
-                Tab::new("Advanced", Text::new("Advanced page")),
+                Tab::new(0, "General", Text::new("General page")),
+                Tab::new(1, "Advanced", Text::new("Advanced page")),
             ])
             .bind(selected)
         },
@@ -2337,21 +2603,21 @@ fn controls_show_value_and_prefer_a_bound_store() {
                 SearchField::new().value("typed"),
                 ComboBox::new(["a"]).value("typed"),
                 ColorWell::new().value(red),
-                Picker::new(["a", "b", "c"]).selection(1),
+                Picker::indexed(["a", "b", "c"]).selection(1),
                 // The Store wins, whichever is declared first.
                 Toggle::new("").value(false).bind(on),
                 Slider::new(0.0..=1.0).bind(level).value(0.25),
                 SearchField::new().value("typed").bind(text),
                 ComboBox::new(["a"]).bind(text).value("typed"),
                 ColorWell::new().value(red).bind(color),
-                Picker::new(["a", "b", "c"]).bind(index).selection(1),
+                Picker::indexed(["a", "b", "c"]).bind(index).selection(1),
                 // The Store alone.
                 Toggle::new("").bind(on),
                 Slider::new(0.0..=1.0).bind(level),
                 SearchField::new().bind(text),
                 ComboBox::new(["a"]).bind(text),
                 ColorWell::new().bind(color),
-                Picker::new(["a", "b", "c"]).bind(index),
+                Picker::indexed(["a", "b", "c"]).bind(index),
             ])
         },
     );
@@ -2392,13 +2658,13 @@ fn discrete_controls_keep_their_value_when_on_change_ignores_the_change() {
             let count = count.clone();
             move |_, _| count.set(count.get() + 1)
         }),
-        Picker::new(["a", "b"]).selection(1).on_change({
+        Picker::indexed(["a", "b"]).selection(1).on_change({
             let count = count.clone();
             move |_, _| count.set(count.get() + 1)
         }),
         TabView::new([
-            Tab::new("One", Text::new("1")),
-            Tab::new("Two", Text::new("2"))
+            Tab::new(0, "One", Text::new("1")),
+            Tab::new(1, "Two", Text::new("2"))
         ])
         .selection(1)
         .on_change(move |_, _| count.set(count.get() + 1)),

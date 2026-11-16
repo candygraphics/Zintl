@@ -15,8 +15,8 @@ impl View for MainView {
         .spacing(4.0);
         let pickers = |row: u32| {
             HStack::new(list![
-                Picker::new(["A long first option"]).id(format!("first-picker-{row}")),
-                Picker::new(["A long second option"]).id(format!("second-picker-{row}")),
+                Picker::indexed(["A long first option"]).id(format!("first-picker-{row}")),
+                Picker::indexed(["A long second option"]).id(format!("second-picker-{row}")),
             ])
             .spacing(4.0)
         };
