@@ -523,6 +523,32 @@ mod tests {
     }
 
     #[test]
+    fn sliders_color_wells_and_tab_views_revert_user_changes() {
+        // Verifies the value controls that follow the app's value show it again after a rejected change.
+        let mut tree = NodeTree::<()>::new();
+        let kinds = [
+            crate::ViewKind::Slider {
+                value: 0.5,
+                minimum: 0.0,
+                maximum: 1.0,
+                tick_marks: 0,
+                snaps_to_ticks: false,
+            },
+            crate::ViewKind::ColorWell {
+                color: crate::Color::WHITE,
+            },
+            crate::ViewKind::TabView {
+                titles: vec!["One".into()],
+                selected: 0,
+            },
+        ];
+        for kind in kinds {
+            let id = tree.create(&view(kind), None);
+            assert_eq!(tree.user_change_targets(&[id]), [id]);
+        }
+    }
+
+    #[test]
     fn only_tables_that_follow_their_selection_revert_it() {
         // Verifies a bound table shows its Store again after a rejected click, but a free one keeps the click.
         let table = |follows_selection| {

@@ -1,17 +1,15 @@
 use std::rc::Rc;
 
-use zintl_ui::store::Store;
 use zintl_ui_backend_core::{Color, ViewKind};
 use zintl_ui_layout::{LayoutStyle, Size};
 
 use crate::modifiers;
 use crate::{
-    Attach, BezelStyle, ButtonRole, ButtonType, Context, Element, Event, EventKind, Menu,
-    NativeView, RenderNode, ViewModifiers,
+    Attach, BezelStyle, ButtonRole, ButtonType, ChangeRoute, Context, Element, Event, EventKind,
+    Menu, NativeView, RenderNode, ViewModifiers,
 };
 
 type Action = dyn for<'a> Fn(&mut Context<'a>);
-type StateAction = dyn for<'a> Fn(&mut Context<'a>, bool);
 
 /// The bezel drawn around a [`Button`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -41,11 +39,10 @@ pub struct Button {
     role: ButtonRole,
     system_image: Option<String>,
     on: bool,
-    state: Option<Store<bool>>,
+    state: ChangeRoute<bool>,
     layout: LayoutStyle,
     modifiers: ViewModifiers,
     action: Option<Rc<Action>>,
-    state_action: Option<Rc<StateAction>>,
     shows_menu: bool,
     keeps_state: bool,
     title_color: Option<Color>,
@@ -60,11 +57,10 @@ impl Button {
             role: ButtonRole::Normal,
             system_image: None,
             on: false,
-            state: None,
+            state: ChangeRoute::default(),
             layout: LayoutStyle::leaf(Size::new(80.0, 32.0)),
             modifiers: ViewModifiers::default(),
             action: None,
-            state_action: None,
             shows_menu: false,
             keeps_state: false,
             title_color: None,
@@ -141,9 +137,10 @@ impl Button {
         self
     }
 
-    /// Reads and writes the on state of a toggle, checkbox, or radio button.
-    pub(crate) fn bind_state(mut self, store: Store<bool>) -> Self {
-        self.state = Some(store);
+    /// Reads the on state of a toggle, checkbox, or radio button from the
+    /// route's Store and reports changes to it.
+    pub(crate) fn route_state(mut self, route: ChangeRoute<bool>) -> Self {
+        self.state = route;
         self
     }
 
@@ -170,15 +167,6 @@ impl Button {
         self.action = Some(Rc::new(action));
         self
     }
-
-    /// Runs after a toggle, checkbox, or radio button changes state.
-    pub(crate) fn on_state_change(
-        mut self,
-        action: impl for<'a> Fn(&mut Context<'a>, bool) + 'static,
-    ) -> Self {
-        self.state_action = Some(Rc::new(action));
-        self
-    }
 }
 
 impl Button {
@@ -199,7 +187,7 @@ impl NativeView for Button {
     modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let on = self.state.map_or(self.on, |store| *cx.get(store));
+        let on = self.state.store().map_or(self.on, |store| *cx.get(store));
         let key_equivalent = match self.role {
             ButtonRole::Default => Some("\r".to_owned()),
             ButtonRole::Cancel => Some("\u{1b}".to_owned()),
@@ -232,21 +220,12 @@ impl NativeView for Button {
                 }
             });
         }
-        if self.state.is_some() || self.state_action.is_some() {
-            let store = self.state;
-            let action = self.state_action.clone();
-            element = element.on_event(EventKind::StateChanged, move |cx, event| {
-                if let Event::StateChanged { on } = event {
-                    if let Some(store) = store {
-                        cx.update(store, |current| *current = on);
-                    }
-                    if let Some(action) = &action {
-                        action(cx, on);
-                    }
-                }
-            });
-        }
-        element
+        self.state
+            .clone()
+            .route(element, EventKind::StateChanged, |event| match event {
+                Event::StateChanged { on } => Some(on),
+                _ => None,
+            })
     }
 }
 

@@ -79,7 +79,7 @@ impl View for MainView {
                     // The app keeps this toggle on and only counts the attempts.
                     Toggle::new("Always on")
                         .style(ToggleStyle::Checkbox)
-                        .on(true)
+                        .value(true)
                         .id("always-on")
                         .on_change(move |cx, _| cx.update(rejected, |count| *count += 1)),
                     cx.watch(rejected, |count| {

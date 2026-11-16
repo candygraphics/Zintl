@@ -46,6 +46,7 @@ scenarios! {
         file_dialog::MainView::new(options.variable("ZINTL_UI_TEST_DIRECTORY"))
     },
     find_menu => "find-menu": |_| find_menu::MainView::new(),
+    fixed_values => "fixed-values": |_| fixed_values::MainView::new(),
     full_size_sidebar => "full-size-sidebar": |_| full_size_sidebar::MainView::default(),
     full_width_stack => "full-width-stack": |_| full_width_stack::MainView,
     grid_variants => "grid-variants": |_| grid_variants::MainView,

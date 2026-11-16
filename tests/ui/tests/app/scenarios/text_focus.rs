@@ -4,8 +4,8 @@ use zintl_ui_desktop::*;
 /// requests focus for it in the same update.
 pub struct MainView {
     values: [Store<String>; 3],
-    focus_second: Store<u64>,
-    focus_added: Store<u64>,
+    focus_second: Trigger,
+    focus_added: Trigger,
     added: Store<bool>,
 }
 
@@ -13,8 +13,8 @@ impl MainView {
     pub fn new() -> Self {
         Self {
             values: [Store::default(); 3],
-            focus_second: Store::default(),
-            focus_added: Store::default(),
+            focus_second: Trigger::default(),
+            focus_added: Trigger::default(),
             added: Store::default(),
         }
     }
@@ -25,8 +25,8 @@ impl View for MainView {
 
     fn init(&mut self, cx: &mut Context<'_>) {
         self.values = [(); 3].map(|_| cx.store(String::new()));
-        self.focus_second = cx.store(0);
-        self.focus_added = cx.store(0);
+        self.focus_second = cx.trigger();
+        self.focus_added = cx.trigger();
         self.added = cx.store(false);
     }
 
@@ -59,11 +59,11 @@ impl View for MainView {
                     HStack::new(list![
                         Button::new("Focus second")
                             .id("focus-second")
-                            .on_click(move |cx| cx.update(focus_second, |count| *count += 1)),
+                            .on_click(move |cx| cx.fire(focus_second, ())),
                         // Shows the field and requests its focus in one update.
                         Button::new("Add field").id("add-field").on_click(move |cx| {
                             cx.update(added, |added| *added = true);
-                            cx.update(focus_added, |count| *count += 1);
+                            cx.fire(focus_added, ());
                         }),
                     ])
                     .spacing(8.0),

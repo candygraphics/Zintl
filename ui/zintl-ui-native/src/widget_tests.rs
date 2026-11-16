@@ -719,10 +719,10 @@ fn slider_combo_box_search_and_color_write_their_stores() {
 
 #[test]
 fn color_well_shows_its_declared_color_and_reports_changes() {
-    // Verifies an unbound color well shows `color` and passes picked colors to `on_change`.
+    // Verifies an unbound color well shows `value` and passes picked colors to `on_change`.
     let red = Color::rgba(1.0, 0.0, 0.0, 1.0);
     let picked = Rc::new(Cell::new(None));
-    let mut app = Harness::new(VStack::new(list![ColorWell::new().color(red).on_change({
+    let mut app = Harness::new(VStack::new(list![ColorWell::new().value(red).on_change({
         let picked = picked.clone();
         move |_, color| picked.set(Some(color))
     })]));
@@ -867,7 +867,9 @@ fn popover_follows_its_presented_store() {
     // Verifies popovers render content as children and native dismissal clears the Store.
     let (mut app, shown) = WithStores::mount(
         |cx| cx.store(false),
-        |shown| Button::new("Info").popover(Popover::new(Text::new("Details")).bind(shown)),
+        |shown| {
+            Button::new("Info").popover(Popover::new(Text::new("Details")).bind_presented(shown))
+        },
     );
     let popover = |app: &Harness| app.tree().children[0].clone();
     assert!(matches!(
@@ -908,7 +910,7 @@ fn alert_buttons_run_their_action_and_dismiss() {
                             .on_click(action.action()),
                     )
                     .button(AlertButton::new("Cancel").role(ButtonRole::Cancel))
-                    .bind(shown),
+                    .bind_presented(shown),
             )
         },
     );
@@ -951,7 +953,7 @@ fn file_dialog_reports_paths_or_cancellation() {
             Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Files").file_dialog(
                 FileDialog::save()
                     .file_name("notes.txt")
-                    .bind(shown)
+                    .bind_presented(shown)
                     .on_select(move |_, paths| received.borrow_mut().extend_from_slice(paths))
                     .on_cancel(cancel.action()),
             )
@@ -985,7 +987,7 @@ fn color_panel_writes_color_and_presentation_stores() {
         |cx| (cx.store(Color::BLACK), cx.store(true)),
         |(color, shown)| {
             Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Colors")
-                .color_panel(ColorPanel::new().bind_color(color).bind(shown))
+                .color_panel(ColorPanel::new().bind(color).bind_presented(shown))
         },
     );
     let red = Color::rgb(1.0, 0.0, 0.0);
@@ -1228,7 +1230,7 @@ fn scroll_view_binding_saves_and_restores_offset() {
     // Verifies native scrolling updates the bound status, which the node carries for restoring.
     let (mut app, status) = WithStores::mount(
         |cx| cx.store(ScrollStatus::default()),
-        |status| ScrollView::new(VStack::new(list![Text::new("Row")])).bind(status),
+        |status| ScrollView::new(VStack::new(list![Text::new("Row")])).bind_offset(status),
     );
     assert!(app.dispatch(&[0], Event::Scrolled { x: 0.0, y: 120.0 }));
     assert_eq!(app.get(status), ScrollStatus { x: 0.0, y: 120.0 });
@@ -1640,9 +1642,11 @@ fn text_editor_updates_its_store_before_on_change() {
         },
         move |body| {
             let recorded = recorded.clone();
-            TextEditor::new()
-                .bind(body)
-                .on_change(move |cx| recorded.borrow_mut().push(cx.get(body).text().to_owned()))
+            TextEditor::new().bind(body).on_change(move |cx, text| {
+                // The Store already holds the text the action receives.
+                assert_eq!(cx.get(body), text);
+                recorded.borrow_mut().push(text.text().to_owned())
+            })
         },
     );
 
@@ -1673,9 +1677,9 @@ fn text_editor_updates_its_store_before_on_change() {
 
 #[test]
 fn toolbar_search_carries_its_id_and_focus_requests() {
-    // Verifies the search item declares its ID and the focus request count from its Store.
+    // Verifies the search item declares its ID and counts the fires of its focus trigger.
     let (mut app, (focus, _)) = WithStores::mount(
-        |cx| (cx.store(0_u64), cx.store(String::new())),
+        |cx| (cx.trigger(), cx.store(String::new())),
         |(focus, query)| {
             Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Toolbar").toolbar(Toolbar::new([
                 ToolbarItem::search(query)
@@ -1695,7 +1699,7 @@ fn toolbar_search_carries_its_id_and_focus_requests() {
         search(&app),
         zintl_ui_backend_core::ToolbarItem::Search { id: Some(id), focus: 0, .. } if id == "toolbar-search"
     ));
-    app.set(focus, 1);
+    app.fire(focus, ());
     assert!(matches!(
         search(&app),
         zintl_ui_backend_core::ToolbarItem::Search { focus: 1, .. }
@@ -2048,9 +2052,9 @@ fn disclosure_group_shows_content_only_while_expanded() {
 
 #[test]
 fn scroll_view_reveals_the_target_row() {
-    // Verifies the target Store becomes the scroll view's reveal request with its alignment.
+    // Verifies a fired trigger becomes the scroll view's reveal request with its alignment.
     let (mut app, target) = WithStores::mount(
-        |cx| cx.store(None::<String>),
+        |cx| cx.trigger::<String>(),
         |target| {
             ScrollView::new(VStack::new(list![Text::new("Row").id("row-1")]))
                 .scroll_to(target, ScrollAlignment::Center)
@@ -2064,7 +2068,7 @@ fn scroll_view_reveals_the_target_row() {
         }
     ));
 
-    app.set(target, Some("row-1".to_owned()));
+    app.fire(target, "row-1".to_owned());
     assert!(matches!(
         app.tree().value,
         RenderNode::View {
@@ -2078,10 +2082,10 @@ fn scroll_view_reveals_the_target_row() {
 }
 
 #[test]
-fn scroll_view_reveals_the_same_row_again_when_its_target_is_rewritten() {
-    // Verifies writing the same ID again makes a new reveal request, while plain rerenders do not.
+fn scroll_view_reveals_the_same_row_again_when_its_trigger_fires_again() {
+    // Verifies firing the same ID again makes a new reveal request, while plain rerenders do not.
     let (mut app, target) = WithStores::mount(
-        |cx| cx.store(None::<String>),
+        |cx| cx.trigger::<String>(),
         |target| {
             ScrollView::new(VStack::new(list![Text::new("Row").id("row-1")]))
                 .scroll_to(target, ScrollAlignment::Nearest)
@@ -2094,11 +2098,11 @@ fn scroll_view_reveals_the_same_row_again_when_its_target_is_rewritten() {
         } => reveal,
         _ => panic!("expected a scroll view"),
     };
-    app.set(target, Some("row-1".to_owned()));
+    app.fire(target, "row-1".to_owned());
     let first = reveal(&app).expect("the row is requested");
     assert_eq!(reveal(&app), Some(first.clone()));
 
-    app.set(target, Some("row-1".to_owned()));
+    app.fire(target, "row-1".to_owned());
     let second = reveal(&app).expect("the row is requested again");
     assert_eq!(second.id, first.id);
     assert_ne!(second.revision, first.revision);
@@ -2298,4 +2302,175 @@ fn actions_queue_announcements() {
     assert_eq!(announcements.len(), 1);
     assert_eq!(announcements[0].text, "Saved");
     assert_eq!(announcements[0].priority, AnnouncementPriority::High);
+}
+
+/// Returns the first node of `kind` below `node`, depth first.
+fn find_kind(node: &RenderedNode, kind: fn(&ViewKind) -> bool) -> Option<ViewKind> {
+    match &node.value {
+        RenderNode::View { kind: found, .. } if kind(found) => Some(found.clone()),
+        _ => node
+            .children
+            .iter()
+            .find_map(|child| find_kind(child, kind)),
+    }
+}
+
+#[test]
+fn controls_show_value_and_prefer_a_bound_store() {
+    // Verifies each control shows `value` alone, its Store alone, and the Store when given both.
+    let red = Color::rgb(1.0, 0.0, 0.0);
+    let (app, _) = WithStores::mount(
+        |cx| {
+            (
+                cx.store(true),
+                cx.store(0.75),
+                cx.store("bound".to_owned()),
+                cx.store(Color::BLACK),
+                cx.store(2_usize),
+            )
+        },
+        move |(on, level, text, color, index)| {
+            VStack::new(list![
+                // `value` alone.
+                Toggle::new("").value(true),
+                Slider::new(0.0..=1.0).value(0.25),
+                SearchField::new().value("typed"),
+                ComboBox::new(["a"]).value("typed"),
+                ColorWell::new().value(red),
+                Picker::new(["a", "b", "c"]).selection(1),
+                // The Store wins, whichever is declared first.
+                Toggle::new("").value(false).bind(on),
+                Slider::new(0.0..=1.0).bind(level).value(0.25),
+                SearchField::new().value("typed").bind(text),
+                ComboBox::new(["a"]).bind(text).value("typed"),
+                ColorWell::new().value(red).bind(color),
+                Picker::new(["a", "b", "c"]).bind(index).selection(1),
+                // The Store alone.
+                Toggle::new("").bind(on),
+                Slider::new(0.0..=1.0).bind(level),
+                SearchField::new().bind(text),
+                ComboBox::new(["a"]).bind(text),
+                ColorWell::new().bind(color),
+                Picker::new(["a", "b", "c"]).bind(index),
+            ])
+        },
+    );
+    let kinds: Vec<_> = app
+        .tree()
+        .children
+        .iter()
+        .map(|child| match &child.value {
+            RenderNode::View { kind, .. } => kind.clone(),
+            _ => panic!("expected a view"),
+        })
+        .collect();
+    let shown = |kind: &ViewKind| match kind {
+        ViewKind::Switch { on } => format!("{on}"),
+        ViewKind::Slider { value, .. } => format!("{value}"),
+        ViewKind::SearchField { value, .. } | ViewKind::ComboBox { value, .. } => value.clone(),
+        ViewKind::ColorWell { color } => format!("{}", *color == red),
+        ViewKind::PopUpButton { selected, .. } => format!("{selected:?}"),
+        _ => panic!("unexpected control"),
+    };
+    let shown: Vec<_> = kinds.iter().map(shown).collect();
+    assert_eq!(
+        shown[..6],
+        ["true", "0.25", "typed", "typed", "true", "Some(1)"]
+    );
+    let bound = ["true", "0.75", "bound", "bound", "false", "Some(2)"];
+    assert_eq!(shown[6..12], bound);
+    assert_eq!(shown[12..], bound);
+}
+
+#[test]
+fn discrete_controls_keep_their_value_when_on_change_ignores_the_change() {
+    // Verifies a toggle, picker, and tab view with a fixed value still render it after a change nobody stores.
+    let changes = Rc::new(Cell::new(0));
+    let count = changes.clone();
+    let mut app = Harness::new(VStack::new(list![
+        Toggle::new("").value(true).on_change({
+            let count = count.clone();
+            move |_, _| count.set(count.get() + 1)
+        }),
+        Picker::new(["a", "b"]).selection(1).on_change({
+            let count = count.clone();
+            move |_, _| count.set(count.get() + 1)
+        }),
+        TabView::new([
+            Tab::new("One", Text::new("1")),
+            Tab::new("Two", Text::new("2"))
+        ])
+        .selection(1)
+        .on_change(move |_, _| count.set(count.get() + 1)),
+    ]));
+    assert!(app.dispatch(&[0, 0], Event::StateChanged { on: false }));
+    assert!(app.dispatch(&[0, 1], Event::SelectionChanged { index: 0 }));
+    assert!(app.dispatch(&[0, 2], Event::SelectionChanged { index: 0 }));
+
+    assert_eq!(changes.get(), 3);
+    assert!(
+        find_kind(&app.tree(), |kind| matches!(
+            kind,
+            ViewKind::Switch { on: true }
+        ))
+        .is_some()
+    );
+    assert!(
+        find_kind(&app.tree(), |kind| matches!(
+            kind,
+            ViewKind::PopUpButton {
+                selected: Some(1),
+                ..
+            }
+        ))
+        .is_some()
+    );
+    assert!(
+        find_kind(&app.tree(), |kind| matches!(
+            kind,
+            ViewKind::TabView { selected: 1, .. }
+        ))
+        .is_some()
+    );
+}
+
+#[test]
+fn text_controls_report_edits_as_str() {
+    // Verifies combo boxes and search fields pass the edited text to `on_change` as `&str`.
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let record = |seen: &Rc<RefCell<Vec<String>>>| {
+        let seen = seen.clone();
+        move |_: &mut Context<'_>, text: &str| seen.borrow_mut().push(text.to_owned())
+    };
+    let mut app = Harness::new(VStack::new(list![
+        ComboBox::new(["a"]).on_change(record(&seen)),
+        SearchField::new().on_change(record(&seen)),
+    ]));
+
+    app.dispatch(&[0, 0], Event::TextChanged { value: "c".into() });
+    app.dispatch(&[0, 1], Event::TextChanged { value: "s".into() });
+
+    assert_eq!(*seen.borrow(), ["c", "s"]);
+}
+
+#[test]
+fn focus_trigger_counts_fires_and_starts_at_zero() {
+    // Verifies a field mounted with an unfired trigger requests no focus, and each fire adds one request.
+    let (mut app, focus) = WithStores::mount(
+        |cx| cx.trigger(),
+        |focus| VStack::new(list![TextField::new().focus_on(focus)]),
+    );
+    let requests = |app: &Harness| match find_kind(&app.tree(), |kind| {
+        matches!(kind, ViewKind::TextField { .. })
+    }) {
+        Some(ViewKind::TextField { focus, .. }) => focus,
+        _ => panic!("expected a text field"),
+    };
+    assert_eq!(requests(&app), 0);
+
+    app.fire(focus, ());
+    assert_eq!(requests(&app), 1);
+    // An equal value fires again.
+    app.fire(focus, ());
+    assert_eq!(requests(&app), 2);
 }

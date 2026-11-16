@@ -8,8 +8,9 @@ use zintl_ui_layout::{Axis, LayoutStyle, MainAxisDistribution, Size};
 
 use crate::modifiers;
 use crate::{
-    Attach, Button, ButtonType, Change, Container, Context, Control, Element, Layout, ListFactory,
-    NativeView, PopUpButton, RenderNode, SegmentedControl, Switch, Text, ViewModifiers, list,
+    Attach, Button, ButtonType, Change, ChangeRoute, Container, Context, Control, Element, Layout,
+    ListFactory, NativeView, PopUpButton, RenderNode, SegmentedControl, Switch, Text,
+    ViewModifiers, list,
 };
 
 native_view!(Toggle, Picker);
@@ -59,28 +60,25 @@ impl Toggle {
         self
     }
 
-    /// Shows `on`; a bound Store takes precedence.
-    ///
-    /// The toggle always shows this value: a click that `on_change` does not
-    /// turn into a new value is undone.
-    pub fn on(mut self, on: bool) -> Self {
+    pub fn value(mut self, on: bool) -> Self {
         self.on = on;
         self
     }
 
     pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, bool) + 'static) -> Self {
-        self.action = Some(Rc::new(action));
+        self.action = Some(ChangeRoute::copied(action));
         self
     }
 
+    fn route(&self) -> ChangeRoute<bool> {
+        ChangeRoute::new(self.store, self.action.clone())
+    }
+
     fn button(&self, button: Button) -> Button {
-        let mut button = button.on(self.on).enabled(self.modifiers.enabled());
-        if let Some(store) = self.store {
-            button = button.bind_state(store);
-        }
-        if let Some(action) = self.action.clone() {
-            button = button.on_state_change(move |cx, on| action(cx, on));
-        }
+        let button = button
+            .on(self.on)
+            .enabled(self.modifiers.enabled())
+            .route_state(self.route());
         match self.modifiers.id() {
             Some(id) => button.id(id),
             None => button,
@@ -111,13 +109,10 @@ impl NativeView for Toggle {
                 .native_element(cx)
             }
             ToggleStyle::Switch => {
-                let mut switch = Switch::new().on(self.on).enabled(self.modifiers.enabled());
-                if let Some(store) = self.store {
-                    switch = switch.bind(store);
-                }
-                if let Some(action) = self.action.clone() {
-                    switch = switch.on_change(move |cx, on| action(cx, on));
-                }
+                let mut switch = Switch::new()
+                    .value(self.on)
+                    .enabled(self.modifiers.enabled())
+                    .route(self.route());
                 if let Some(id) = self.modifiers.id() {
                     switch = switch.id(id);
                 }
@@ -180,17 +175,14 @@ impl Picker {
         self
     }
 
-    /// Selects `index`; a bound Store takes precedence.
-    ///
-    /// The picker always shows this option: a choice that `on_change` does
-    /// not turn into a new selection is undone.
-    pub fn selected(mut self, index: usize) -> Self {
+    /// Selects the option at `index`.
+    pub fn selection(mut self, index: usize) -> Self {
         self.selected = index;
         self
     }
 
     pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, usize) + 'static) -> Self {
-        self.action = Some(Rc::new(action));
+        self.action = Some(ChangeRoute::copied(action));
         self
     }
 }
@@ -204,21 +196,13 @@ impl NativeView for Picker {
     }
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let action = self.action.clone();
-        let on_change = move |cx: &mut Context<'_>, index: usize| {
-            if let Some(action) = &action {
-                action(cx, index);
-            }
-        };
+        let route = ChangeRoute::new(self.store, self.action.clone());
         match self.style {
             PickerStyle::Menu => {
                 let mut picker = PopUpButton::new(self.options.clone())
-                    .selected(self.selected)
+                    .selection(self.selected)
                     .enabled(self.modifiers.enabled())
-                    .on_change(on_change);
-                if let Some(store) = self.store {
-                    picker = picker.bind(store);
-                }
+                    .route(route);
                 if let Some(id) = self.modifiers.id() {
                     picker = picker.id(id);
                 }
@@ -226,12 +210,9 @@ impl NativeView for Picker {
             }
             PickerStyle::Segmented => {
                 let mut picker = SegmentedControl::new(self.options.clone())
-                    .selected(self.selected)
+                    .selection(self.selected)
                     .enabled(self.modifiers.enabled())
-                    .on_change(on_change);
-                if let Some(store) = self.store {
-                    picker = picker.bind(store);
-                }
+                    .route(route);
                 if let Some(id) = self.modifiers.id() {
                     picker = picker.id(id);
                 }
@@ -239,28 +220,24 @@ impl NativeView for Picker {
             }
             PickerStyle::Radio => {
                 let selected = self.store.map_or(self.selected, |store| *cx.get(store));
-                let store = self.store;
                 let enabled = self.modifiers.enabled();
-                let on_change = Rc::new(on_change);
                 let radios = self
                     .options
                     .iter()
                     .enumerate()
                     .map(|(index, option)| {
-                        let on_change = on_change.clone();
+                        // Only the radio that turned on reports the selection.
+                        let route = route.clone();
+                        let turned_on = ChangeRoute::copied(move |cx, on| {
+                            if on {
+                                route.send(cx, index);
+                            }
+                        });
                         ElementFactory::new(
                             Button::radio(option.clone())
                                 .on(index == selected)
                                 .enabled(enabled)
-                                .on_state_change(move |cx, on| {
-                                    if !on {
-                                        return;
-                                    }
-                                    if let Some(store) = store {
-                                        cx.update(store, |selected| *selected = index);
-                                    }
-                                    on_change(cx, index);
-                                }),
+                                .route_state(ChangeRoute::new(None, Some(turned_on))),
                         )
                     })
                     .collect::<ListFactory<RenderNode>>();

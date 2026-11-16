@@ -55,7 +55,7 @@ impl View for MainView {
                         .id("colored-button"),
                     Button::new("Plain").id("plain-button"),
                     ColorWell::new()
-                        .color(Color::rgba(1.0, 0.0, 0.0, 1.0))
+                        .value(Color::rgba(1.0, 0.0, 0.0, 1.0))
                         .id("declared-color"),
                 ])
                 .spacing(8.0),

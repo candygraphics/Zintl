@@ -3,7 +3,7 @@
 use zintl_ui::composer::Composer;
 use zintl_ui::element::IntoElement;
 use zintl_ui::renderer::RenderBackend;
-use zintl_ui::store::Store;
+use zintl_ui::store::{Store, Trigger};
 use zintl_ui_backend_core::HeadlessBackend;
 
 use crate::{Context, Event, NodeId, RenderNode};
@@ -99,6 +99,12 @@ impl Harness {
     /// Writes `value` to `store` and renders the views that depend on it.
     pub fn set<T: 'static>(&mut self, store: Store<T>, value: T) {
         self.update(store, |current| *current = value);
+    }
+
+    /// Fires `trigger` with `value` and renders the views that obey it.
+    pub fn fire<T: 'static>(&mut self, trigger: Trigger<T>, value: T) {
+        self.composer.context(|cx| cx.fire(trigger, value));
+        self.composer.flush();
     }
 
     /// Updates `store` and renders the views that depend on it.

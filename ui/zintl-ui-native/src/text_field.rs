@@ -1,21 +1,23 @@
 use std::rc::Rc;
 
-use zintl_ui::store::Store;
+use zintl_ui::store::{Store, Trigger};
 use zintl_ui_backend_core::graphics::{AttributedText, Font};
 use zintl_ui_backend_core::{TextAlignment, TextColor, TextStyle, ViewKind};
 use zintl_ui_layout::{LayoutDimension, LayoutStyle, Size};
 
 use crate::modifiers;
-use crate::{Context, Element, Event, EventKind, NativeView, RenderNode, ViewModifiers};
+use crate::{
+    Change, ChangeRoute, Context, Element, Event, EventKind, NativeView, RenderNode, ViewModifiers,
+};
 
-type ChangeAction = dyn for<'a> Fn(&mut Context<'a>, &str);
+type CommitAction = dyn for<'a> Fn(&mut Context<'a>, &str);
 
 #[derive(Clone)]
 pub struct TextField {
     value: String,
     binding: Option<Store<String>>,
-    action: Option<Rc<ChangeAction>>,
-    commit: Option<Rc<ChangeAction>>,
+    action: Option<Rc<Change<String>>>,
+    commit: Option<Rc<CommitAction>>,
     placeholder: Option<String>,
     editable: bool,
     selectable: bool,
@@ -23,7 +25,7 @@ pub struct TextField {
     draws_background: bool,
     multiline: bool,
     style: TextStyle,
-    focus: Option<Store<u64>>,
+    focus: Option<Trigger>,
     layout: LayoutStyle,
     modifiers: ViewModifiers,
 }
@@ -117,9 +119,6 @@ impl TextField {
         self
     }
 
-    /// Shows `value`; a bound Store takes precedence.
-    ///
-    /// The field keeps typed text until `value` itself changes.
     pub fn value(mut self, value: impl Into<String>) -> Self {
         self.value = value.into();
         self
@@ -132,7 +131,7 @@ impl TextField {
 
     /// Runs after each edit, once the bound Store is updated.
     pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static) -> Self {
-        self.action = Some(Rc::new(action));
+        self.action = Some(ChangeRoute::text(action));
         self
     }
 
@@ -150,11 +149,11 @@ impl TextField {
         self
     }
 
-    /// Takes keyboard focus whenever `requests` increases, for example after "New Item".
+    /// Takes keyboard focus each time `trigger` fires, for example after "New Item".
     ///
-    /// A field created in the same update as the request takes focus once it is shown.
-    pub fn focus_on(mut self, requests: Store<u64>) -> Self {
-        self.focus = Some(requests);
+    /// A field created in the same update as the fire takes focus once it is shown.
+    pub fn focus_on(mut self, trigger: Trigger) -> Self {
+        self.focus = Some(trigger);
         self
     }
 }
@@ -191,7 +190,7 @@ impl NativeView for TextField {
                 draws_background: self.draws_background,
                 multiline: sized.multiline,
                 style: self.style.clone(),
-                focus: self.focus.map_or(0, |store| *cx.get(store)),
+                focus: self.focus.map_or(0, |trigger| cx.revision(trigger.store())),
             },
             layout: sized.layout,
             id: None,
@@ -200,7 +199,14 @@ impl NativeView for TextField {
             help: None,
             accessibility: Default::default(),
         });
-        let element = TextChange::route(element, self.binding, self.action.clone());
+        let element = ChangeRoute::new(self.binding, self.action.clone()).route(
+            element,
+            EventKind::TextChanged,
+            |event| match event {
+                Event::TextChanged { value } => Some(value),
+                _ => None,
+            },
+        );
         let Some(commit) = self.commit.clone() else {
             return element;
         };
@@ -212,33 +218,6 @@ impl NativeView for TextField {
     }
 }
 
-/// Routes text edits to a bound Store and a change action.
-struct TextChange;
-
-impl TextChange {
-    fn route(
-        element: Element<RenderNode>,
-        binding: Option<Store<String>>,
-        action: Option<Rc<ChangeAction>>,
-    ) -> Element<RenderNode> {
-        if binding.is_none() && action.is_none() {
-            return element;
-        }
-        element.on_event(EventKind::TextChanged, move |cx, event| {
-            if let Event::TextChanged { value } = event {
-                if let Some(store) = binding {
-                    cx.update(store, |current| current.clone_from(&value));
-                }
-                if let Some(action) = &action {
-                    action(cx, &value);
-                }
-            }
-        })
-    }
-}
-
-type EditAction = dyn for<'a> Fn(&mut Context<'a>);
-
 /// A scrolling rich text editor that fills its parent, like a document body.
 ///
 /// It edits styled runs and paragraph styles; `StandardAction::Bold` and the
@@ -246,8 +225,8 @@ type EditAction = dyn for<'a> Fn(&mut Context<'a>);
 #[derive(Clone)]
 pub struct TextEditor {
     binding: Option<Store<AttributedText>>,
-    action: Option<Rc<EditAction>>,
-    focus: Option<Store<u64>>,
+    action: Option<Rc<Change<AttributedText>>>,
+    focus: Option<Trigger>,
     modifiers: ViewModifiers,
 }
 
@@ -268,14 +247,17 @@ impl TextEditor {
     }
 
     /// Runs after each edit, once the bound Store is updated.
-    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>) + 'static) -> Self {
+    pub fn on_change(
+        mut self,
+        action: impl for<'a> Fn(&mut Context<'a>, &AttributedText) + 'static,
+    ) -> Self {
         self.action = Some(Rc::new(action));
         self
     }
 
-    /// Takes keyboard focus whenever `requests` increases, for example after creating a note.
-    pub fn focus_on(mut self, requests: Store<u64>) -> Self {
-        self.focus = Some(requests);
+    /// Takes keyboard focus each time `trigger` fires, for example after creating a note.
+    pub fn focus_on(mut self, trigger: Trigger) -> Self {
+        self.focus = Some(trigger);
         self
     }
 }
@@ -295,7 +277,7 @@ impl NativeView for TextEditor {
                 text: self
                     .binding
                     .map_or_else(AttributedText::new, |store| cx.get(store).clone()),
-                focus: self.focus.map_or(0, |store| *cx.get(store)),
+                focus: self.focus.map_or(0, |trigger| cx.revision(trigger.store())),
             },
             layout: LayoutStyle::fill(Size::new(80.0, 40.0)),
             id: None,
@@ -304,20 +286,14 @@ impl NativeView for TextEditor {
             help: None,
             accessibility: Default::default(),
         });
-        let (store, action) = (self.binding, self.action.clone());
-        if store.is_none() && action.is_none() {
-            return element;
-        }
-        element.on_event(EventKind::RichTextChanged, move |cx, event| {
-            if let Event::RichTextChanged { text } = event {
-                if let Some(store) = store {
-                    cx.update(store, |current| current.clone_from(&text));
-                }
-                if let Some(action) = &action {
-                    action(cx);
-                }
-            }
-        })
+        ChangeRoute::new(self.binding, self.action.clone()).route(
+            element,
+            EventKind::RichTextChanged,
+            |event| match event {
+                Event::RichTextChanged { text } => Some(text),
+                _ => None,
+            },
+        )
     }
 }
 

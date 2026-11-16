@@ -55,12 +55,12 @@ impl View for MainView {
         };
         let mut save = FileDialog::save()
             .file_name("route.txt")
-            .bind(saving)
+            .bind_presented(saving)
             .on_select(report("Saved"))
             .on_cancel(cancelled);
         let mut open = FileDialog::open()
             .allowed_extensions(["txt"])
-            .bind(opening)
+            .bind_presented(opening)
             .on_select(report("Opened"))
             .on_cancel(cancelled);
         if let Some(directory) = &self.directory {

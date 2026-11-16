@@ -2,7 +2,7 @@ use crate::element::{Bound, BoundBuilder, Element, IntoElement};
 use crate::hook::HookId;
 use crate::renderer::RenderNode;
 use crate::sequence::Arena;
-use crate::store::Store;
+use crate::store::{Store, Trigger};
 use std::any::{TypeId, type_name};
 use std::cell::RefCell;
 use std::collections::BTreeSet;
@@ -93,6 +93,16 @@ impl StoreContext<'_> {
         self.stores.revision(handle.id)
     }
 
+    /// Creates a [`Trigger`] that has not fired; call it from `View::init`.
+    pub fn trigger<T: 'static>(&mut self) -> Trigger<T> {
+        Trigger::new(self.store(None))
+    }
+
+    /// Runs `trigger` once with `value`, even when it last fired with an equal value.
+    pub fn fire<T: 'static>(&mut self, trigger: Trigger<T>, value: T) {
+        self.update(trigger.store(), |fired| *fired = Some(value));
+    }
+
     /// Rebuilds the element being rendered when the hook's Store changes.
     fn depend(&self, hook_id: HookId) {
         if let Some(dependencies) = self.dependencies {
@@ -165,6 +175,14 @@ pub trait Context<'a> {
 
     fn update<T: 'static, U>(&mut self, store: Store<T>, update: impl FnOnce(&mut T) -> U) -> U {
         self.store_context_mut().update(store, update)
+    }
+
+    fn trigger<T: 'static>(&mut self) -> Trigger<T> {
+        self.store_context_mut().trigger()
+    }
+
+    fn fire<T: 'static>(&mut self, trigger: Trigger<T>, value: T) {
+        self.store_context_mut().fire(trigger, value)
     }
 }
 

@@ -114,6 +114,26 @@ pub trait Layout: NativeView + Sized {
 impl<V: NativeView> Layout for V {}
 
 /// The enabled state, available on every [`NativeView`].
+///
+/// # Values
+///
+/// Controls that edit a value share one vocabulary:
+///
+/// - `value(..)`, or `selection(..)` for a choice, shows a value the app owns.
+/// - `bind(store)` reads and writes the value in a Store; it takes precedence
+///   over `value`. Other Stores have named binders, such as `bind_presented`.
+/// - `on_change` runs after each change, once the bound Store is updated.
+///   `Copy` values arrive by value and text as `&str`.
+///
+/// Without `bind`, a control follows `value` in one of two ways:
+///
+/// - Discrete controls ([`crate::Toggle`], [`crate::Picker`],
+///   [`crate::TabView`], [`crate::Slider`], [`crate::ColorWell`],
+///   [`crate::DatePicker`]) always show `value`: a change that `on_change`
+///   does not turn into a new value is undone.
+/// - Text inputs ([`crate::TextField`], [`crate::NumberField`],
+///   [`crate::IntegerField`], [`crate::ComboBox`], [`crate::SearchField`])
+///   keep what the user typed until `value` itself changes.
 pub trait Control: NativeView + Sized {
     /// Disables the view and every view inside it with `false`; they then
     /// ignore input and draw dimmed.

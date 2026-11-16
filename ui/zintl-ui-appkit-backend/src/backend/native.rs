@@ -608,7 +608,10 @@ impl NativeNode {
                 }
             }
             (Self::ColorWell(well), ViewKind::ColorWell { color }) => {
-                if !matches!(old, Some(ViewKind::ColorWell { color: old }) if old == color) {
+                // The shown color is compared, so a color the app rejected is shown again.
+                let unchanged =
+                    matches!(old, Some(ViewKind::ColorWell { color: old }) if old == color);
+                if !unchanged || well.color()?.shared() != *color {
                     well.set_color(color.native())?;
                 }
             }
