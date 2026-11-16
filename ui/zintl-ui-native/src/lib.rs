@@ -55,11 +55,11 @@ pub use chart::{BarChart, ChartBar};
 pub use choice::{Picker, PickerStyle, Toggle, ToggleStyle};
 pub(crate) use container::Container;
 pub use containers::{ScrollView, Tab, TabView};
+pub(crate) use controls::{ChangeRoute, PopUpButton, SegmentedControl, Switch};
 pub use controls::{
     ColorWell, ComboBox, DatePicker, IntegerField, IntegerValue, NumberField, OptionalDatePicker,
     SearchField, Slider,
 };
-pub(crate) use controls::{PopUpButton, SegmentedControl, Switch};
 pub use indicators::{ProgressIndicator, Separator};
 pub use list::{List, ListRow, ListSection};
 pub use menu::{
@@ -79,7 +79,7 @@ pub use types::{ButtonRole, ScrollStatus};
 pub use window::{UndoHandler, Window};
 pub use zintl_ui::element::{Element, IntoElement, ListFactory};
 pub use zintl_ui::list;
-pub use zintl_ui::store::Store;
+pub use zintl_ui::store::{Store, Trigger};
 pub use zintl_ui_backend_core::{
     Accessibility, AccessibilityRole, AlertStyle, AnnouncementPriority, CalendarDate,
     Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasId, CanvasNode, CanvasSetup, Color,
@@ -99,7 +99,7 @@ pub use zintl_ui_backend_core::{
 pub use zintl_ui_layout::{LayoutStyle, Size};
 
 /// An action that receives a control's new value.
-pub(crate) type Change<T> = dyn for<'a> Fn(&mut Context<'a>, T);
+pub(crate) type Change<T> = dyn for<'a, 'b> Fn(&mut Context<'a>, &'b T);
 
 /// The context views receive while rendering.
 pub type Context<'a> = <RenderNode as zintl_ui::renderer::RenderNode>::Context<'a>;

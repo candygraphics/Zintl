@@ -6,7 +6,7 @@ pub struct MainView {
     count: Store<u32>,
     removes: Store<u32>,
     query: Store<String>,
-    search_focus: Store<u64>,
+    search_focus: Trigger,
 }
 
 impl MainView {
@@ -15,7 +15,7 @@ impl MainView {
             count: Store::default(),
             removes: Store::default(),
             query: Store::default(),
-            search_focus: Store::default(),
+            search_focus: Trigger::default(),
         }
     }
 }
@@ -27,7 +27,7 @@ impl View for MainView {
         self.count = cx.store(0);
         self.removes = cx.store(0);
         self.query = cx.store(String::new());
-        self.search_focus = cx.store(0);
+        self.search_focus = cx.trigger();
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
@@ -61,7 +61,7 @@ impl View for MainView {
                         .on_click(move |cx| cx.update(query, |query| *query = "Osaka".into())),
                     Button::new("Find")
                         .id("find")
-                        .on_click(move |cx| cx.update(search_focus, |count| *count += 1)),
+                        .on_click(move |cx| cx.fire(search_focus, ())),
                 ])
                 .spacing(10.0),
             )

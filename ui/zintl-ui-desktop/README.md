@@ -74,7 +74,8 @@ removes its sidebar. SF Symbol names are interpreted by AppKit.
 ## Controls
 
 Controls bind to Stores with `bind` and report changes with `on_change`.
-Each renders a native control.
+Without a Store, `value` (or `selection` for a `Picker` or `TabView`) shows a
+value the app owns; `bind` takes precedence. Each renders a native control.
 
 ```rust,ignore
 VStack::new(list![
@@ -109,7 +110,7 @@ its parent, with undo and a find bar. `TextField` and `TextEditor` take
 ```rust,ignore
 TextEditor::new()
     .bind(self.draft)
-    .on_change(|cx| { /* save */ })
+    .on_change(|cx, text| { /* save */ })
 ```
 
 Replacing the bound text from code moves the insertion point to the end and
@@ -184,7 +185,7 @@ Text::new("Item").context_menu([
 
 Button::new("Info")
     .on_click(move |cx| cx.update(info, |shown| *shown = true))
-    .popover(Popover::new(Text::new("Details")).bind(info));
+    .popover(Popover::new(Text::new("Details")).bind_presented(info));
 ```
 
 ## Windows, sheets, and panels
@@ -205,10 +206,10 @@ Window::new(bounds, "Editor")
         Alert::new("Delete the item?")
             .button(AlertButton::new("Delete").role(ButtonRole::Destructive).on_click(delete))
             .button(AlertButton::new("Cancel").role(ButtonRole::Cancel))
-            .bind(self.confirm),
+            .bind_presented(self.confirm),
     )
-    .file_dialog(FileDialog::open().multiple().bind(self.open).on_select(|cx, paths| { /* … */ }))
-    .color_panel(ColorPanel::new().bind_color(self.tint).bind(self.colors));
+    .file_dialog(FileDialog::open().multiple().bind_presented(self.open).on_select(|cx, paths| { /* … */ }))
+    .color_panel(ColorPanel::new().bind(self.tint).bind_presented(self.colors));
 
 Window::panel(bounds, "Inspector").bind_open(self.inspector)
 ```
@@ -279,8 +280,10 @@ Window::new(bounds, "Notes")
     ]))
 ```
 
-`TextEditor::focus_on(store)` moves keyboard focus to the editor whenever the
-`u64` in `store` increases, for example after creating a note.
+`TextEditor::focus_on(trigger)` moves keyboard focus to the editor each time
+the `Trigger` fires, for example after creating a note. Create it in
+`View::init` with `cx.trigger()` and fire it with `cx.fire(trigger, ())`.
+`ScrollView::scroll_to` takes a `Trigger<String>` fired with a view ID.
 
 ## Sidebar badges and menus
 

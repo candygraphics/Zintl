@@ -129,6 +129,15 @@ native の `controls.rs` にある `Binding<T>`(Store への書き込み + `on_c
 - `Trigger`: マウント直後は発火しないこと。`fire` 1 回で revision が 1 増えること。同じ値で 2 回 `fire` して 2 回とも伝わること。
 - `ComboBox` / `SearchField` の `on_change` が `&str` を受け取ること(コンパイルで担保)。
 
+## 実装時の決定
+
+- 未決事項 1: 追加していません。
+- 未決事項 2: `Window::bind_open` のままです。
+- 未決事項 3: 追加していません。
+- 未決事項 4: `Trigger` は `zintl-ui`(`zintl_ui::store`)に置き、`trigger` / `fire` は `StoreContext` と `Context` トレイトの既定メソッドです。
+- 規則 4: `Slider`、`ColorWell`、`TabView` は取り消しが未実装だったので、表に合わせました。`ViewKind::reverts_user_changes` に 3 種を加え、両バックエンドで `ValueChanged` と `ColorChanged` を利用者の変更として記録し、`ColorWell` は表示中の色と比較して書き戻します。このためステップ 3 にはバックエンド変更が含まれます。
+- 内部の `Switch` / `PopUpButton` / `SegmentedControl` / `Button` は `bind` と `on_change` の代わりに `ChangeRoute` を 1 つ受け取ります。
+
 ## 未決事項
 
 1. `List` / `Table` / `Sidebar` に Store を使わない `selection(..)` を追加するか。

@@ -49,7 +49,7 @@ impl View for MainView {
                         .on_click(move |cx| cx.update(shown, |shown| *shown = true))
                         .popover(
                             Popover::new(content)
-                                .bind(shown)
+                                .bind_presented(shown)
                                 .edge(PopoverEdge::Bottom)
                                 .on_close(move |cx| cx.update(closes, |closes| *closes += 1)),
                         ),

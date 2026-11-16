@@ -72,3 +72,43 @@ impl<T: 'static> Hook for Store<T> {
             .hook_id
     }
 }
+
+/// A one-shot command carrying a value, such as "focus this field" or
+/// "scroll to this row". Each [`crate::view::Context::fire`] runs it once,
+/// even with an equal value.
+///
+/// Create it in [`crate::view::View::init`] with
+/// [`crate::view::Context::trigger`] and pass it to the view that obeys it.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Trigger<T: 'static = ()>(Store<Option<T>>);
+
+impl<T: 'static> Copy for Trigger<T> {}
+
+impl<T: 'static> Clone for Trigger<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: 'static> Trigger<T> {
+    /// Creates a Trigger declaration that is not yet attached to a Composer.
+    pub const fn uninitialized() -> Self {
+        Self(Store::uninitialized())
+    }
+
+    pub(crate) fn new(store: Store<Option<T>>) -> Self {
+        Self(store)
+    }
+
+    /// Returns the Store behind the trigger, for views that obey it: its
+    /// value is the last fired value and its revision counts the fires.
+    pub fn store(self) -> Store<Option<T>> {
+        self.0
+    }
+}
+
+impl<T: 'static> Default for Trigger<T> {
+    fn default() -> Self {
+        Self::uninitialized()
+    }
+}

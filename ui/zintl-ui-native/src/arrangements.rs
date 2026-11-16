@@ -7,9 +7,9 @@ use zintl_ui_layout::{Arrangement, Axis, LayoutStyle, Size};
 use crate::graphics::Graphics2D;
 use crate::modifiers;
 use crate::{
-    AccessibilityRole, Attach, BezelStyle, Button, ButtonType, Canvas2D, Canvas2DHandler, Color,
-    Container, Context, Element, Frame, HStack, Layout, ListFactory, NativeView, RenderNode, Store,
-    Text, VStack, ViewModifiers, list,
+    AccessibilityRole, Attach, BezelStyle, Button, ButtonType, Canvas2D, Canvas2DHandler,
+    ChangeRoute, Color, Container, Context, Element, Frame, HStack, Layout, ListFactory,
+    NativeView, RenderNode, Store, Text, VStack, ViewModifiers, list,
 };
 
 native_view!(ZStack, Grid, GridCell);
@@ -220,7 +220,7 @@ impl NativeView for DisclosureGroup {
             .bezel_style(Some(BezelStyle::Disclosure))
             .button_type(ButtonType::PushOnPushOff)
             .minimum_size(Size::new(13.0, 13.0))
-            .bind_state(expanded)
+            .route_state(ChangeRoute::new(Some(expanded), None))
             .accessibility_label(self.title.clone());
         if let Some(id) = self.modifiers.id() {
             toggle = toggle.id(id);

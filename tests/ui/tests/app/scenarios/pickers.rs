@@ -63,17 +63,17 @@ impl View for MainView {
                         .bind(radio)
                         .id("radio-picker"),
                     Picker::new(options)
-                        .selected(1)
+                        .selection(1)
                         .enabled(false)
                         .id("disabled-picker"),
                     // The app keeps these pickers on their first option and only counts the attempts.
                     Picker::new(["Fixed", "Other"])
-                        .selected(0)
+                        .selection(0)
                         .id("fixed-picker")
                         .on_change(reject),
                     Picker::new(["North", "South"])
                         .style(PickerStyle::Radio)
-                        .selected(0)
+                        .selection(0)
                         .on_change(reject),
                     cx.watch(rejected, |count| {
                         Text::new(format!("Rejected: {count}")).id("rejected")

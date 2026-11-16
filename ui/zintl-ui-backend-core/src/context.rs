@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 use zintl_ui::element::IntoElement;
-use zintl_ui::store::Store;
+use zintl_ui::store::{Store, Trigger};
 use zintl_ui::view::{Context as ContextTrait, StoreContext, StoreWatcher};
 
 use crate::{Announcement, AnnouncementPriority, Announcements, MainTaskSender};
@@ -73,6 +73,16 @@ impl<'a> Context<'a> {
     /// Returns how many times `store` has been written, even with an equal value.
     pub fn revision<T: 'static>(&self, store: Store<T>) -> u64 {
         self.store_context.revision(store)
+    }
+
+    /// Creates a [`Trigger`] that has not fired; call it from `View::init`.
+    pub fn trigger<T: 'static>(&mut self) -> Trigger<T> {
+        self.store_context.trigger()
+    }
+
+    /// Runs `trigger` once with `value`, even when it last fired with an equal value.
+    pub fn fire<T: 'static>(&mut self, trigger: Trigger<T>, value: T) {
+        self.store_context.fire(trigger, value)
     }
 
     pub fn watch<T, F, E>(&self, store: Store<T>, render: F) -> StoreWatcher<T, F, E>

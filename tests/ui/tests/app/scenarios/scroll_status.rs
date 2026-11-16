@@ -26,7 +26,7 @@ impl View for MainView {
             ElementFactory::new(
                 ScrollView::new(VStack::new(rows).spacing(6.0).padding(8.0))
                     .id("rows")
-                    .bind(self.scroll),
+                    .bind_offset(self.scroll),
             )
         } else {
             ElementFactory::new(Text::new("Hidden").id("hidden"))

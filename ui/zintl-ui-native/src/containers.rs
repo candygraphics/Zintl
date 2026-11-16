@@ -1,17 +1,15 @@
 use std::rc::Rc;
 
 use zintl_ui::element::{ElementFactory, IntoElement};
-use zintl_ui::store::Store;
+use zintl_ui::store::{Store, Trigger};
 use zintl_ui_backend_core::{ScrollAlignment, ScrollTarget, ViewKind};
 use zintl_ui_layout::{Axis, LayoutStyle, Size};
 
 use crate::modifiers;
 use crate::{
-    Context, Element, Event, EventKind, NativeView, RenderNode, ScrollAxes, ScrollStatus,
-    ViewModifiers,
+    Change, ChangeRoute, Context, Element, Event, EventKind, NativeView, RenderNode, ScrollAxes,
+    ScrollStatus, ViewModifiers,
 };
-
-type SelectionAction = dyn for<'a> Fn(&mut Context<'a>, usize);
 
 /// A native scroll view around its content.
 #[derive(Clone)]
@@ -19,7 +17,7 @@ pub struct ScrollView {
     content: ElementFactory<RenderNode>,
     axes: ScrollAxes,
     store: Option<Store<ScrollStatus>>,
-    target: Option<(Store<Option<String>>, ScrollAlignment)>,
+    target: Option<(Trigger<String>, ScrollAlignment)>,
     layout: LayoutStyle,
     modifiers: ViewModifiers,
 }
@@ -45,17 +43,17 @@ impl ScrollView {
     }
 
     /// Saves the scroll position and restores it when the view is created again.
-    pub fn bind(mut self, store: Store<ScrollStatus>) -> Self {
+    pub fn bind_offset(mut self, store: Store<ScrollStatus>) -> Self {
         self.store = Some(store);
         self
     }
 
-    /// Scrolls the descendant with the view ID in `target` into view whenever
-    /// `target` is written, even with the same ID.
+    /// Scrolls the descendant with the view ID `trigger` fires into view, each
+    /// time it fires, even with the same ID.
     ///
     /// Give the rows IDs with their `id` builders, such as the row of a selected item.
-    pub fn scroll_to(mut self, target: Store<Option<String>>, alignment: ScrollAlignment) -> Self {
-        self.target = Some((target, alignment));
+    pub fn scroll_to(mut self, trigger: Trigger<String>, alignment: ScrollAlignment) -> Self {
+        self.target = Some((trigger, alignment));
         self
     }
 }
@@ -71,11 +69,11 @@ impl NativeView for ScrollView {
                     let status = *cx.get(store);
                     (status.x, status.y)
                 }),
-                reveal: self.target.and_then(|(target, alignment)| {
+                reveal: self.target.and_then(|(trigger, alignment)| {
                     Some(ScrollTarget {
-                        id: cx.get(target).clone()?,
+                        id: cx.get(trigger.store()).clone()?,
                         alignment,
-                        revision: cx.revision(target),
+                        revision: cx.revision(trigger.store()),
                     })
                 }),
             },
@@ -125,7 +123,7 @@ pub struct TabView {
     items: Vec<Tab>,
     selected: usize,
     store: Option<Store<usize>>,
-    action: Option<Rc<SelectionAction>>,
+    action: Option<Rc<Change<usize>>>,
     layout: LayoutStyle,
     modifiers: ViewModifiers,
 }
@@ -145,7 +143,8 @@ impl TabView {
         }
     }
 
-    pub fn selected(mut self, index: usize) -> Self {
+    /// Shows the page at `index`.
+    pub fn selection(mut self, index: usize) -> Self {
         self.selected = index;
         self
     }
@@ -157,7 +156,7 @@ impl TabView {
     }
 
     pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, usize) + 'static) -> Self {
-        self.action = Some(Rc::new(action));
+        self.action = Some(ChangeRoute::copied(action));
         self
     }
 }
@@ -193,21 +192,7 @@ impl NativeView for TabView {
             accessibility: Default::default(),
         })
         .with_children(pages);
-        if self.store.is_none() && self.action.is_none() {
-            return element;
-        }
-        let store = self.store;
-        let action = self.action.clone();
-        element.on_event(EventKind::SelectionChanged, move |cx, event| {
-            if let Event::SelectionChanged { index } = event {
-                if let Some(store) = store {
-                    cx.update(store, |selected| *selected = index);
-                }
-                if let Some(action) = &action {
-                    action(cx, index);
-                }
-            }
-        })
+        ChangeRoute::new(self.store, self.action.clone()).route_selection(element)
     }
 }
 

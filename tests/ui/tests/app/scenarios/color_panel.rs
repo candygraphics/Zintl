@@ -40,7 +40,7 @@ impl View for MainView {
             (self.color, self.panel_color, self.panel_shown, self.changes);
         Window::new(Rect::new(100.0, 100.0, 420.0, 300.0), "Zintl Color Panel UI Test")
             .id("main-window")
-            .color_panel(ColorPanel::new().bind_color(panel_color).bind(panel_shown))
+            .color_panel(ColorPanel::new().bind(panel_color).bind_presented(panel_shown))
             .content(
                 VStack::new(list![
                     ColorWell::new()

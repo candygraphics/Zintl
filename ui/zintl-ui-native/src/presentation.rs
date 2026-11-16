@@ -10,12 +10,12 @@ use zintl_ui_layout::Size;
 use zintl_ui_backend_core::{AlertButtonRole, AlertConfig, FileDialogConfig, FileDialogMode};
 
 use crate::{
-    AlertStyle, ButtonRole, Color, Context, Element, Event, EventKind, PopoverEdge, RenderNode,
+    AlertStyle, ButtonRole, Change, ChangeRoute, Color, Context, Element, Event, EventKind,
+    PopoverEdge, RenderNode,
 };
 
 type Action = dyn for<'a> Fn(&mut Context<'a>);
 type PathsAction = dyn for<'a> Fn(&mut Context<'a>, &[PathBuf]);
-type ColorAction = dyn for<'a> Fn(&mut Context<'a>, Color);
 
 /// Reads a presentation flag; unbound presentations stay hidden.
 struct Presented(Option<Store<bool>>);
@@ -58,7 +58,7 @@ impl Popover {
     }
 
     /// Shows the popover while `presented` is `true`; closing it writes `false`.
-    pub fn bind(mut self, presented: Store<bool>) -> Self {
+    pub fn bind_presented(mut self, presented: Store<bool>) -> Self {
         self.presented = Some(presented);
         self
     }
@@ -166,7 +166,7 @@ impl Alert {
         self
     }
 
-    pub fn bind(mut self, presented: Store<bool>) -> Self {
+    pub fn bind_presented(mut self, presented: Store<bool>) -> Self {
         self.presented = Some(presented);
         self
     }
@@ -301,7 +301,7 @@ impl FileDialog {
         self
     }
 
-    pub fn bind(mut self, presented: Store<bool>) -> Self {
+    pub fn bind_presented(mut self, presented: Store<bool>) -> Self {
         self.presented = Some(presented);
         self
     }
@@ -348,7 +348,7 @@ pub struct ColorPanel {
     color: Option<Store<Color>>,
     presented: Option<Store<bool>>,
     shows_alpha: bool,
-    on_change: Option<Rc<ColorAction>>,
+    on_change: Option<Rc<Change<Color>>>,
 }
 
 impl ColorPanel {
@@ -362,12 +362,12 @@ impl ColorPanel {
     }
 
     /// Reads and writes the edited color.
-    pub fn bind_color(mut self, color: Store<Color>) -> Self {
+    pub fn bind(mut self, color: Store<Color>) -> Self {
         self.color = Some(color);
         self
     }
 
-    pub fn bind(mut self, presented: Store<bool>) -> Self {
+    pub fn bind_presented(mut self, presented: Store<bool>) -> Self {
         self.presented = Some(presented);
         self
     }
@@ -378,32 +378,26 @@ impl ColorPanel {
     }
 
     pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, Color) + 'static) -> Self {
-        self.on_change = Some(Rc::new(action));
+        self.on_change = Some(ChangeRoute::copied(action));
         self
     }
 
     pub(crate) fn element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let store = self.presented;
         let color_store = self.color;
-        let on_change = self.on_change.clone();
-        Element::node(RenderNode::ColorPanel {
+        let element = Element::node(RenderNode::ColorPanel {
             presented: Presented(store).get(cx),
             color: color_store.map_or(Color::WHITE, |color| *cx.get(color)),
             shows_alpha: self.shows_alpha,
-        })
-        .on_event(EventKind::ColorChanged, move |cx, event| {
-            if let Event::ColorChanged { color } = event {
-                if let Some(store) = color_store {
-                    cx.update(store, |current| *current = color);
-                }
-                if let Some(action) = &on_change {
-                    action(cx, color);
-                }
-            }
-        })
-        .on_event(EventKind::ColorPanelClosed, move |cx, _| {
-            Presented::dismissed(store, cx);
-        })
+        });
+        ChangeRoute::new(color_store, self.on_change.clone())
+            .route(element, EventKind::ColorChanged, |event| match event {
+                Event::ColorChanged { color } => Some(color),
+                _ => None,
+            })
+            .on_event(EventKind::ColorPanelClosed, move |cx, _| {
+                Presented::dismissed(store, cx);
+            })
     }
 }
 

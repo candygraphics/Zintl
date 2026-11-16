@@ -27,32 +27,90 @@ native_view!(
     DatePicker,
 );
 
-/// Registers a handler that writes event values to `store` and then calls `action`.
-struct Binding<T: 'static> {
+/// Writes a control's new value to its bound Store, then reports it to `on_change`.
+pub(crate) struct ChangeRoute<T: 'static> {
     store: Option<Store<T>>,
     action: Option<Rc<Change<T>>>,
 }
 
-impl<T: Clone + 'static> Binding<T> {
-    fn route(
+impl<T: 'static> Clone for ChangeRoute<T> {
+    fn clone(&self) -> Self {
+        Self {
+            store: self.store,
+            action: self.action.clone(),
+        }
+    }
+}
+
+impl<T: 'static> Default for ChangeRoute<T> {
+    fn default() -> Self {
+        Self {
+            store: None,
+            action: None,
+        }
+    }
+}
+
+impl<T: Copy + 'static> ChangeRoute<T> {
+    /// Wraps an `on_change` action that takes its value by copy.
+    pub(crate) fn copied(action: impl for<'a> Fn(&mut Context<'a>, T) + 'static) -> Rc<Change<T>> {
+        Rc::new(move |cx: &mut Context<'_>, value: &T| action(cx, *value))
+    }
+}
+
+impl ChangeRoute<String> {
+    /// Wraps an `on_change` action that takes text as `&str`.
+    pub(crate) fn text(
+        action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static,
+    ) -> Rc<Change<String>> {
+        Rc::new(move |cx: &mut Context<'_>, value: &String| action(cx, value))
+    }
+}
+
+impl<T: 'static> ChangeRoute<T> {
+    pub(crate) fn new(store: Option<Store<T>>, action: Option<Rc<Change<T>>>) -> Self {
+        Self { store, action }
+    }
+
+    /// The bound Store, whose value the control shows.
+    pub(crate) fn store(&self) -> Option<Store<T>> {
+        self.store
+    }
+
+    /// Writes `value` to the Store, then calls the action.
+    pub(crate) fn send(&self, cx: &mut Context<'_>, value: T)
+    where
+        T: Clone,
+    {
+        let Some(action) = &self.action else {
+            if let Some(store) = self.store {
+                cx.update(store, |current| *current = value);
+            }
+            return;
+        };
+        if let Some(store) = self.store {
+            let stored = value.clone();
+            cx.update(store, |current| *current = stored);
+        }
+        action(cx, &value);
+    }
+
+    /// Sends the value `value` reads from each `kind` event.
+    pub(crate) fn route(
         self,
         element: Element<RenderNode>,
         kind: EventKind,
         value: impl Fn(Event) -> Option<T> + 'static,
-    ) -> Element<RenderNode> {
+    ) -> Element<RenderNode>
+    where
+        T: Clone,
+    {
         if self.store.is_none() && self.action.is_none() {
             return element;
         }
         element.on_event(kind, move |cx, event| {
-            let Some(value) = value(event) else {
-                return;
-            };
-            if let Some(store) = self.store {
-                let stored = value.clone();
-                cx.update(store, |current| *current = stored);
-            }
-            if let Some(action) = &self.action {
-                action(cx, value);
+            if let Some(value) = value(event) {
+                self.send(cx, value);
             }
         })
     }
@@ -79,18 +137,15 @@ impl Switch {
         }
     }
 
-    pub fn on(mut self, on: bool) -> Self {
+    pub fn value(mut self, on: bool) -> Self {
         self.on = on;
         self
     }
 
-    pub fn bind(mut self, store: Store<bool>) -> Self {
-        self.store = Some(store);
-        self
-    }
-
-    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, bool) + 'static) -> Self {
-        self.action = Some(Rc::new(action));
+    /// Reads the shown state from the route's Store and reports changes to it.
+    pub fn route(mut self, route: ChangeRoute<bool>) -> Self {
+        self.store = route.store;
+        self.action = route.action;
         self
     }
 }
@@ -116,14 +171,14 @@ impl NativeView for Switch {
             help: None,
             accessibility: Default::default(),
         });
-        Binding {
-            store: self.store,
-            action: self.action.clone(),
-        }
-        .route(element, EventKind::StateChanged, |event| match event {
-            Event::StateChanged { on } => Some(on),
-            _ => None,
-        })
+        ChangeRoute::new(self.store, self.action.clone()).route(
+            element,
+            EventKind::StateChanged,
+            |event| match event {
+                Event::StateChanged { on } => Some(on),
+                _ => None,
+            },
+        )
     }
 }
 
@@ -182,7 +237,7 @@ impl Slider {
     }
 
     pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, f64) + 'static) -> Self {
-        self.action = Some(Rc::new(action));
+        self.action = Some(ChangeRoute::copied(action));
         self
     }
 }
@@ -206,20 +261,20 @@ impl NativeView for Slider {
             help: None,
             accessibility: Default::default(),
         });
-        Binding {
-            store: self.store,
-            action: self.action.clone(),
-        }
-        .route(element, EventKind::ValueChanged, |event| match event {
-            Event::ValueChanged { value } => Some(value),
-            _ => None,
-        })
+        ChangeRoute::new(self.store, self.action.clone()).route(
+            element,
+            EventKind::ValueChanged,
+            |event| match event {
+                Event::ValueChanged { value } => Some(value),
+                _ => None,
+            },
+        )
     }
 }
 
-impl Binding<usize> {
+impl ChangeRoute<usize> {
     /// Routes selection indexes for choice controls.
-    fn route_selection(self, element: Element<RenderNode>) -> Element<RenderNode> {
+    pub(crate) fn route_selection(self, element: Element<RenderNode>) -> Element<RenderNode> {
         self.route(element, EventKind::SelectionChanged, |event| match event {
             Event::SelectionChanged { index } => Some(index),
             _ => None,
@@ -258,19 +313,15 @@ impl PopUpButton {
         }
     }
 
-    pub fn selected(mut self, index: usize) -> Self {
+    pub fn selection(mut self, index: usize) -> Self {
         self.selected = Some(index);
         self
     }
 
-    /// Reads and writes the selected item index.
-    pub fn bind(mut self, store: Store<usize>) -> Self {
-        self.store = Some(store);
-        self
-    }
-
-    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, usize) + 'static) -> Self {
-        self.action = Some(Rc::new(action));
+    /// Reads the selected item index from the route's Store and reports changes to it.
+    pub fn route(mut self, route: ChangeRoute<usize>) -> Self {
+        self.store = route.store;
+        self.action = route.action;
         self
     }
 }
@@ -291,11 +342,7 @@ impl NativeView for PopUpButton {
             help: None,
             accessibility: Default::default(),
         });
-        Binding {
-            store: self.store,
-            action: self.action.clone(),
-        }
-        .route_selection(element)
+        ChangeRoute::new(self.store, self.action.clone()).route_selection(element)
     }
 }
 
@@ -327,19 +374,15 @@ impl SegmentedControl {
         }
     }
 
-    pub fn selected(mut self, index: usize) -> Self {
+    pub fn selection(mut self, index: usize) -> Self {
         self.selected = Some(index);
         self
     }
 
-    /// Reads and writes the selected segment index.
-    pub fn bind(mut self, store: Store<usize>) -> Self {
-        self.store = Some(store);
-        self
-    }
-
-    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, usize) + 'static) -> Self {
-        self.action = Some(Rc::new(action));
+    /// Reads the selected segment index from the route's Store and reports changes to it.
+    pub fn route(mut self, route: ChangeRoute<usize>) -> Self {
+        self.store = route.store;
+        self.action = route.action;
         self
     }
 }
@@ -360,11 +403,7 @@ impl NativeView for SegmentedControl {
             help: None,
             accessibility: Default::default(),
         });
-        Binding {
-            store: self.store,
-            action: self.action.clone(),
-        }
-        .route_selection(element)
+        ChangeRoute::new(self.store, self.action.clone()).route_selection(element)
     }
 }
 
@@ -408,11 +447,8 @@ impl ComboBox {
         self
     }
 
-    pub fn on_change(
-        mut self,
-        action: impl for<'a> Fn(&mut Context<'a>, String) + 'static,
-    ) -> Self {
-        self.action = Some(Rc::new(action));
+    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static) -> Self {
+        self.action = Some(ChangeRoute::text(action));
         self
     }
 }
@@ -436,14 +472,14 @@ impl NativeView for ComboBox {
             help: None,
             accessibility: Default::default(),
         });
-        Binding {
-            store: self.store,
-            action: self.action.clone(),
-        }
-        .route(element, EventKind::TextChanged, |event| match event {
-            Event::TextChanged { value } => Some(value),
-            _ => None,
-        })
+        ChangeRoute::new(self.store, self.action.clone()).route(
+            element,
+            EventKind::TextChanged,
+            |event| match event {
+                Event::TextChanged { value } => Some(value),
+                _ => None,
+            },
+        )
     }
 }
 
@@ -539,7 +575,7 @@ impl NumberField {
     }
 
     pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, f64) + 'static) -> Self {
-        self.action = Some(Rc::new(action));
+        self.action = Some(ChangeRoute::copied(action));
         self
     }
 
@@ -600,10 +636,7 @@ impl NativeView for NumberField {
             help: None,
             accessibility: Default::default(),
         });
-        let binding = || Binding {
-            store: self.store,
-            action: self.action.clone(),
-        };
+        let binding = || ChangeRoute::new(self.store, self.action.clone());
         let (minimum, maximum) = (self.minimum, self.maximum);
         let element = binding().route(element, EventKind::ValueChanged, move |event| match event {
             Event::ValueChanged { value } => Some(value.clamp(minimum, maximum)),
@@ -759,7 +792,7 @@ impl<T: IntegerValue> IntegerField<T> {
     }
 
     pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, T) + 'static) -> Self {
-        self.action = Some(Rc::new(action));
+        self.action = Some(ChangeRoute::copied(action));
         self
     }
 
@@ -856,10 +889,7 @@ impl<T: IntegerValue> NativeView for IntegerField<T> {
             help: None,
             accessibility: Default::default(),
         });
-        let binding = || Binding {
-            store: self.store,
-            action: self.action.clone(),
-        };
+        let binding = || ChangeRoute::new(self.store, self.action.clone());
         let field = self.clone();
         let element = binding().route(element, EventKind::ValueChanged, move |event| match event {
             // The stepper reports a rounded value, so only its direction is used.
@@ -911,7 +941,7 @@ pub struct DatePicker {
 }
 
 impl DatePicker {
-    /// The date an unbound picker shows until [`DatePicker::date`] sets one.
+    /// The date an unbound picker shows until [`DatePicker::value`] sets one.
     const DEFAULT_DATE: CalendarDate = CalendarDate {
         year: 2000,
         month: 1,
@@ -929,8 +959,7 @@ impl DatePicker {
         }
     }
 
-    /// Shows `date`; a bound Store takes precedence.
-    pub fn date(mut self, date: CalendarDate) -> Self {
+    pub fn value(mut self, date: CalendarDate) -> Self {
         self.date = date;
         self
     }
@@ -950,7 +979,7 @@ impl DatePicker {
         mut self,
         action: impl for<'a> Fn(&mut Context<'a>, CalendarDate) + 'static,
     ) -> Self {
-        self.action = Some(Rc::new(action));
+        self.action = Some(ChangeRoute::copied(action));
         self
     }
 }
@@ -977,10 +1006,7 @@ impl NativeView for DatePicker {
             help: None,
             accessibility: Default::default(),
         });
-        let binding = || Binding {
-            store: self.store,
-            action: self.action.clone(),
-        };
+        let binding = || ChangeRoute::new(self.store, self.action.clone());
         let element = binding().route(element, EventKind::DateChanged, |event| match event {
             Event::DateChanged { date } => Some(date),
             _ => None,
@@ -1028,8 +1054,7 @@ impl OptionalDatePicker {
         }
     }
 
-    /// Shows `date`; a bound Store takes precedence.
-    pub fn date(mut self, date: Option<CalendarDate>) -> Self {
+    pub fn value(mut self, date: Option<CalendarDate>) -> Self {
         self.date = date;
         self
     }
@@ -1055,21 +1080,14 @@ impl OptionalDatePicker {
         mut self,
         action: impl for<'a> Fn(&mut Context<'a>, Option<CalendarDate>) + 'static,
     ) -> Self {
-        self.action = Some(Rc::new(action));
+        self.action = Some(ChangeRoute::copied(action));
         self
     }
 
     /// Returns an action that writes `date` to the Store and reports it.
     fn change(&self, date: Option<CalendarDate>) -> impl for<'a> Fn(&mut Context<'a>) + 'static {
-        let (store, action) = (self.store, self.action.clone());
-        move |cx| {
-            if let Some(store) = store {
-                cx.update(store, |current| *current = date);
-            }
-            if let Some(action) = &action {
-                action(cx, date);
-            }
-        }
+        let route = ChangeRoute::new(self.store, self.action.clone());
+        move |cx| route.send(cx, date)
     }
 }
 
@@ -1098,19 +1116,12 @@ impl NativeView for OptionalDatePicker {
                 zintl_ui::list![button]
             }
             Some(date) => {
-                let (store, action) = (self.store, self.action.clone());
+                let route = ChangeRoute::new(self.store, self.action.clone());
                 let mut picker = DatePicker::new()
-                    .date(date)
+                    .value(date)
                     .style(self.style)
                     .enabled(enabled)
-                    .on_change(move |cx, date| {
-                        if let Some(store) = store {
-                            cx.update(store, |current| *current = Some(date));
-                        }
-                        if let Some(action) = &action {
-                            action(cx, Some(date));
-                        }
-                    });
+                    .on_change(move |cx, date| route.send(cx, Some(date)));
                 let mut clear = crate::Button::new("")
                     .system_image("xmark.circle.fill")
                     .style(crate::ButtonStyle::Borderless)
@@ -1154,6 +1165,11 @@ impl SearchField {
         }
     }
 
+    pub fn value(mut self, value: impl Into<String>) -> Self {
+        self.value = value.into();
+        self
+    }
+
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = Some(placeholder.into());
         self
@@ -1164,11 +1180,8 @@ impl SearchField {
         self
     }
 
-    pub fn on_change(
-        mut self,
-        action: impl for<'a> Fn(&mut Context<'a>, String) + 'static,
-    ) -> Self {
-        self.action = Some(Rc::new(action));
+    pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static) -> Self {
+        self.action = Some(ChangeRoute::text(action));
         self
     }
 }
@@ -1197,14 +1210,14 @@ impl NativeView for SearchField {
             help: None,
             accessibility: Default::default(),
         });
-        Binding {
-            store: self.store,
-            action: self.action.clone(),
-        }
-        .route(element, EventKind::TextChanged, |event| match event {
-            Event::TextChanged { value } => Some(value),
-            _ => None,
-        })
+        ChangeRoute::new(self.store, self.action.clone()).route(
+            element,
+            EventKind::TextChanged,
+            |event| match event {
+                Event::TextChanged { value } => Some(value),
+                _ => None,
+            },
+        )
     }
 }
 
@@ -1229,7 +1242,7 @@ impl ColorWell {
         }
     }
 
-    pub fn color(mut self, color: Color) -> Self {
+    pub fn value(mut self, color: Color) -> Self {
         self.color = color;
         self
     }
@@ -1240,7 +1253,7 @@ impl ColorWell {
     }
 
     pub fn on_change(mut self, action: impl for<'a> Fn(&mut Context<'a>, Color) + 'static) -> Self {
-        self.action = Some(Rc::new(action));
+        self.action = Some(ChangeRoute::copied(action));
         self
     }
 }
@@ -1266,13 +1279,13 @@ impl NativeView for ColorWell {
             help: None,
             accessibility: Default::default(),
         });
-        Binding {
-            store: self.store,
-            action: self.action.clone(),
-        }
-        .route(element, EventKind::ColorChanged, |event| match event {
-            Event::ColorChanged { color } => Some(color),
-            _ => None,
-        })
+        ChangeRoute::new(self.store, self.action.clone()).route(
+            element,
+            EventKind::ColorChanged,
+            |event| match event {
+                Event::ColorChanged { color } => Some(color),
+                _ => None,
+            },
+        )
     }
 }

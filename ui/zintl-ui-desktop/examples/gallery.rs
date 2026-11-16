@@ -135,7 +135,8 @@ impl Gallery {
             .bind(self.tab)
             .minimum_size(Size::new(320.0, 140.0)),
             Text::new("Scrollable list"),
-            ScrollView::new(VStack::new(rows).spacing(6.0).padding(8.0)).bind(self.scroll_status),
+            ScrollView::new(VStack::new(rows).spacing(6.0).padding(8.0))
+                .bind_offset(self.scroll_status),
         ])
         .spacing(12.0)
         .padding(20.0)
@@ -199,7 +200,7 @@ impl Gallery {
                         ])
                         .spacing(8.0),
                     )
-                    .bind(self.info),
+                    .bind_presented(self.info),
                 ),
             Text::new("Right-click for a context menu")
                 .minimum_size(Size::new(240.0, 20.0))
@@ -360,12 +361,12 @@ impl View for Gallery {
                             .on_click(move |cx| report(cx, "Item deleted".into())),
                     )
                     .button(AlertButton::new("Cancel").role(ButtonRole::Cancel))
-                    .bind(self.confirm_delete),
+                    .bind_presented(self.confirm_delete),
             )
             .file_dialog(
                 FileDialog::open()
                     .multiple()
-                    .bind(self.open_file)
+                    .bind_presented(self.open_file)
                     .on_select(move |cx, paths| {
                         report(cx, format!("Opened {} item(s)", paths.len()))
                     })
@@ -375,15 +376,15 @@ impl View for Gallery {
                 FileDialog::save()
                     .file_name("Untitled.txt")
                     .allowed_extensions(["txt"])
-                    .bind(self.save_file)
+                    .bind_presented(self.save_file)
                     .on_select(move |cx, paths| {
                         report(cx, format!("Save to {}", paths[0].display()))
                     }),
             )
             .color_panel(
                 ColorPanel::new()
-                    .bind_color(self.tint)
-                    .bind(self.color_panel),
+                    .bind(self.tint)
+                    .bind_presented(self.color_panel),
             );
         let inspector = Window::panel(Rect::new(960.0, 160.0, 260.0, 200.0), "Inspector")
             .content(

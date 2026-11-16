@@ -22,8 +22,8 @@ struct State {
     saver: Store<Saver>,
     /// Text in the toolbar search field; non-empty text searches every folder.
     query: Store<String>,
-    /// Increases to move keyboard focus to the editor.
-    focus: Store<u64>,
+    /// Fires to move keyboard focus to the editor.
+    focus: Trigger,
     /// The folder being renamed and the name being typed.
     renaming: Store<Option<String>>,
     rename_text: Store<String>,
@@ -79,7 +79,7 @@ impl State {
         let id = self.change(cx, |library| library.create(&folder));
         cx.update(self.query, String::clear);
         self.select(cx, Some(id));
-        cx.update(self.focus, |focus| *focus += 1);
+        cx.fire(self.focus, ());
         cx.announce("New note", AnnouncementPriority::Medium);
     }
 
@@ -207,7 +207,7 @@ impl View for NotesApp {
             draft: cx.store(first.map(|note| note.body).unwrap_or_default()),
             saver: cx.store(saver),
             query: cx.store(String::new()),
-            focus: cx.store(0),
+            focus: cx.trigger(),
             renaming: cx.store(None),
             rename_text: cx.store(String::new()),
             rename_open: cx.store(false),
@@ -479,7 +479,7 @@ impl View for Editor {
             TextEditor::new()
                 .bind(state.draft)
                 .focus_on(state.focus)
-                .on_change(move |cx| state.save(cx))
+                .on_change(move |cx, _| state.save(cx))
                 .accessibility_label(title),
         ])
         .fill_width()

@@ -211,7 +211,7 @@ impl View for CanvasExample {
                 cx.watch(settings, move |current| {
                     HStack::new(list![
                         Toggle::new("Animate")
-                            .on(current.animate)
+                            .value(current.animate)
                             .on_change(move |cx, on| {
                                 cx.update(settings, |settings| settings.animate = on)
                             }),

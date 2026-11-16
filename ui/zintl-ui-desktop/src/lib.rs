@@ -7,7 +7,7 @@ mod app;
 
 pub use app::*;
 pub use zintl_ui::element::{ElementFactory, IntoElement};
-pub use zintl_ui::store::Store;
+pub use zintl_ui::store::{Store, Trigger};
 pub use zintl_ui::view::View;
 pub use zintl_ui_layout::{Axis, CrossAxisAlignment, MainAxisDistribution, Size};
 pub use zintl_ui_native::graphics::{AttributedText, Font, FontWeight};

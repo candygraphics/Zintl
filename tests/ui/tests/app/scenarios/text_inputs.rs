@@ -46,7 +46,7 @@ impl View for MainView {
                         .placeholder("Search lines")
                         .id("search")
                         .minimum_size(Size::new(200.0, 24.0))
-                        .on_change(move |cx, text| cx.update(searches, |searches| searches.push(text))),
+                        .on_change(move |cx, text| cx.update(searches, |searches| searches.push(text.to_owned()))),
                     NumberField::new()
                         .range(0.0..=10.0)
                         .step(1.0)

@@ -59,14 +59,14 @@ impl View for MainView {
                             .role(ButtonRole::Cancel)
                             .on_click(logged("keep")),
                     )
-                    .bind(confirm),
+                    .bind_presented(confirm),
             )
             .alert(
                 Alert::new("Closing soon")
                     .button(AlertButton::new("Wait").on_click(logged("wait")))
-                    .bind(timed),
+                    .bind_presented(timed),
             )
-            .alert(Alert::new("Sync finished").bind(notice))
+            .alert(Alert::new("Sync finished").bind_presented(notice))
             .content(
                 VStack::new(list![
                     Button::new("Delete route").id("delete-route").on_click(show(confirm)),

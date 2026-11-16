@@ -55,7 +55,7 @@ impl View for MainView {
                         }),
                         TextEditor::new()
                             .bind(text)
-                            .on_change(move |cx| cx.update(changes, |changes| *changes += 1)),
+                            .on_change(move |cx, _| cx.update(changes, |changes| *changes += 1)),
                     ])
                     .spacing(8.0)
                     .fill_width()

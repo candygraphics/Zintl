@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use zintl_ui::store::Store;
+use zintl_ui::store::{Store, Trigger};
 
 use crate::{Context, Element, Event, EventKind, RenderNode};
 
@@ -21,7 +21,7 @@ enum Item {
         query: Store<String>,
         placeholder: Option<String>,
         id: Option<String>,
-        focus: Option<Store<u64>>,
+        focus: Option<Trigger>,
     },
     FlexibleSpace,
 }
@@ -91,12 +91,12 @@ impl ToolbarItem {
         self
     }
 
-    /// Moves keyboard focus to the search field whenever `requests` increases, as Find does.
+    /// Moves keyboard focus to the search field each time `trigger` fires, as Find does.
     ///
-    /// Requests do nothing while the toolbar is hidden.
-    pub fn focus_on(mut self, requests: Store<u64>) -> Self {
+    /// Fires do nothing while the toolbar is hidden.
+    pub fn focus_on(mut self, trigger: Trigger) -> Self {
         if let Item::Search { focus, .. } = &mut self.0 {
-            *focus = Some(requests);
+            *focus = Some(trigger);
         }
         self
     }
@@ -145,7 +145,7 @@ impl Toolbar {
                         value: cx.get(*query).clone(),
                         placeholder: placeholder.clone(),
                         id: id.clone(),
-                        focus: focus.map_or(0, |focus| *cx.get(focus)),
+                        focus: focus.map_or(0, |trigger| cx.revision(trigger.store())),
                     },
                     Item::FlexibleSpace => Native::FlexibleSpace,
                 })

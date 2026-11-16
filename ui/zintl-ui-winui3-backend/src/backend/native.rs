@@ -891,7 +891,10 @@ impl NativeNode {
                 control.set_text(TextProperty::Text, value)?;
             }
             ViewKind::ColorWell { color } => {
-                if !matches!(old, Some(ViewKind::ColorWell { color: old }) if old == color) {
+                // The shown color is compared, so a color the app rejected is shown again.
+                let unchanged =
+                    matches!(old, Some(ViewKind::ColorWell { color: old }) if old == color);
+                if !unchanged || control.color()? != Self::color(*color) {
                     control.set_color(Self::color(*color))?;
                 }
             }
