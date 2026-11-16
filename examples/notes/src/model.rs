@@ -6,12 +6,21 @@ use crate::storage::{FolderFile, LibraryFile, NoteFile};
 
 pub type NoteId = u64;
 
-/// Sidebar IDs of the folders the library manages itself.
-pub struct SmartFolder;
+/// Where the shown notes come from: a smart folder or one of the user's folders.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Place {
+    /// Every note outside Recently Deleted.
+    All,
+    /// The folder with this ID.
+    Folder(String),
+    /// Notes waiting to be removed.
+    Deleted,
+}
 
-impl SmartFolder {
-    pub const ALL: &str = "all";
-    pub const DELETED: &str = "deleted";
+impl Place {
+    pub fn folder(id: impl Into<String>) -> Self {
+        Self::Folder(id.into())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -106,7 +115,7 @@ impl Library {
             ),
         ];
         for (folder, body, paragraphs, pinned) in samples {
-            let id = library.create(folder);
+            let id = library.create(&Place::folder(folder));
             let mut body = AttributedText::from(body);
             for (index, paragraph) in paragraphs.iter().enumerate() {
                 body.set_paragraph(index, *paragraph);
@@ -180,21 +189,21 @@ impl Library {
     /// Notes outside Recently Deleted whose text contains `query`, ignoring case.
     pub fn search(&self, query: &str) -> Vec<&Note> {
         let query = query.to_lowercase();
-        self.notes_in(SmartFolder::ALL)
+        self.notes_in(&Place::All)
             .into_iter()
             .filter(|note| note.body.text().to_lowercase().contains(&query))
             .collect()
     }
 
     /// Notes shown for a sidebar selection: pinned first, then most recently edited.
-    pub fn notes_in(&self, folder: &str) -> Vec<&Note> {
+    pub fn notes_in(&self, place: &Place) -> Vec<&Note> {
         let mut notes: Vec<&Note> = self
             .notes
             .iter()
-            .filter(|note| match folder {
-                SmartFolder::ALL => !note.deleted,
-                SmartFolder::DELETED => note.deleted,
-                id => !note.deleted && note.folder == id,
+            .filter(|note| match place {
+                Place::All => !note.deleted,
+                Place::Deleted => note.deleted,
+                Place::Folder(id) => !note.deleted && note.folder == *id,
             })
             .collect();
         notes.sort_by(|a, b| b.pinned.cmp(&a.pinned).then(b.revision.cmp(&a.revision)));
@@ -202,14 +211,14 @@ impl Library {
     }
 
     /// Creates an empty note; smart folders put it in the first folder.
-    pub fn create(&mut self, folder: &str) -> NoteId {
-        let folder = match folder {
-            SmartFolder::ALL | SmartFolder::DELETED => self
+    pub fn create(&mut self, place: &Place) -> NoteId {
+        let folder = match place {
+            Place::All | Place::Deleted => self
                 .folders
                 .first()
                 .map(|folder| folder.id.clone())
                 .unwrap_or_default(),
-            id => id.to_owned(),
+            Place::Folder(id) => id.clone(),
         };
         self.next_id += 1;
         let note = Note {
@@ -305,7 +314,7 @@ mod tests {
     #[test]
     fn title_and_preview_use_non_empty_lines() {
         let mut library = Library::default();
-        let id = library.create("notes");
+        let id = library.create(&Place::folder("notes"));
         assert_eq!(library.note(id).unwrap().title(), "New Note");
         library.set_body(id, &"\n  Title  \n\nBody".into());
         let note = library.note(id).unwrap();
@@ -316,12 +325,16 @@ mod tests {
     #[test]
     fn notes_are_sorted_by_pin_then_recency() {
         let mut library = Library::default();
-        let a = library.create("notes");
-        let b = library.create("notes");
-        let c = library.create("notes");
+        let a = library.create(&Place::folder("notes"));
+        let b = library.create(&Place::folder("notes"));
+        let c = library.create(&Place::folder("notes"));
         library.set_body(a, &"edited".into());
         library.set_pinned(c, true);
-        let order: Vec<_> = library.notes_in("notes").iter().map(|n| n.id).collect();
+        let order: Vec<_> = library
+            .notes_in(&Place::folder("notes"))
+            .iter()
+            .map(|n| n.id)
+            .collect();
         assert_eq!(order, [c, a, b]);
     }
 
@@ -329,10 +342,10 @@ mod tests {
     #[test]
     fn unchanged_body_keeps_order() {
         let mut library = Library::default();
-        let a = library.create("notes");
-        let b = library.create("notes");
+        let a = library.create(&Place::folder("notes"));
+        let b = library.create(&Place::folder("notes"));
         library.set_body(a, &AttributedText::new());
-        assert_eq!(library.notes_in("notes")[0].id, b);
+        assert_eq!(library.notes_in(&Place::folder("notes"))[0].id, b);
     }
 
     // Search matches any note's text without regard to case and skips deleted notes.
@@ -353,21 +366,21 @@ mod tests {
         assert_ne!(library.create_folder("Ideas"), folder);
         library.rename_folder(&folder, "Plans");
         assert_eq!(library.folders[0].name, "Plans");
-        let note = library.create(&folder);
+        let note = library.create(&Place::folder(&folder));
         library.delete_folder(&folder);
-        assert_eq!(library.notes_in(SmartFolder::DELETED).len(), 1);
+        assert_eq!(library.notes_in(&Place::Deleted).len(), 1);
         library.move_note(note, "notes");
-        assert_eq!(library.notes_in("notes").len(), 1);
+        assert_eq!(library.notes_in(&Place::folder("notes")).len(), 1);
     }
 
     // Deleting moves a note to Recently Deleted; deleting it there removes it.
     #[test]
     fn delete_moves_then_removes() {
         let mut library = Library::default();
-        let id = library.create("notes");
+        let id = library.create(&Place::folder("notes"));
         library.delete(id);
-        assert!(library.notes_in(SmartFolder::ALL).is_empty());
-        assert_eq!(library.notes_in(SmartFolder::DELETED).len(), 1);
+        assert!(library.notes_in(&Place::All).is_empty());
+        assert_eq!(library.notes_in(&Place::Deleted).len(), 1);
         library.delete(id);
         assert!(library.note(id).is_none());
     }
@@ -376,7 +389,7 @@ mod tests {
     #[test]
     fn create_in_smart_folder_uses_first_folder() {
         let mut library = Library::sample();
-        let id = library.create(SmartFolder::ALL);
+        let id = library.create(&Place::All);
         assert_eq!(library.note(id).unwrap().folder, "notes");
     }
 }

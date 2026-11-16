@@ -1831,7 +1831,7 @@ fn list_describes_sections_and_writes_user_selection() {
     let picked = Rc::new(RefCell::new(Vec::new()));
     let recorded = picked.clone();
     let (mut app, selection) = WithStores::mount(
-        |cx| cx.store(Some("b".to_owned())),
+        |cx| cx.store(Some("b")),
         move |selection| {
             let recorded = recorded.clone();
             List::new([
@@ -1842,7 +1842,7 @@ fn list_describes_sections_and_writes_user_selection() {
                 ]),
             ])
             .bind(selection)
-            .on_select(move |_, id| recorded.borrow_mut().push(id.map(str::to_owned)))
+            .on_select(move |_, id| recorded.borrow_mut().push(id.copied()))
         },
     );
 
@@ -1867,10 +1867,10 @@ fn list_describes_sections_and_writes_user_selection() {
             id: Some("c".into())
         }
     ));
-    assert_eq!(app.get(selection).as_deref(), Some("c"));
+    assert_eq!(app.get(selection), Some("c"));
     assert!(app.dispatch(&[0], Event::ListSelectionChanged { id: None }));
     assert_eq!(app.get(selection), None);
-    assert_eq!(*picked.borrow(), [Some("c".to_owned()), None]);
+    assert_eq!(*picked.borrow(), [Some("c"), None]);
 }
 
 #[test]
@@ -2379,7 +2379,7 @@ fn table_height_fixes_its_layout_height() {
     // Verifies a table with a height stops growing and uses that height.
     let (app, _) = WithStores::mount(
         |_| (),
-        |()| Table::new([TableColumn::new("Name")], []).height(180.0),
+        |()| Table::<String>::new([TableColumn::new("Name")], []).height(180.0),
     );
     assert!(matches!(
         app.tree().value,
@@ -2441,7 +2441,7 @@ fn bound_fields_prefer_their_stores_over_values() {
 fn table_lays_out_cells_by_row_and_writes_the_selection() {
     // Verifies a table declares its columns and rows, pads short rows to one cell per column, and binds selection.
     let (mut app, selected) = WithStores::mount(
-        |cx| cx.store(None::<String>),
+        |cx| cx.store(None::<&str>),
         |selected| {
             Table::new(
                 [
@@ -2472,7 +2472,343 @@ fn table_lays_out_cells_by_row_and_writes_the_selection() {
             id: Some("b".into()),
         },
     );
-    assert_eq!(app.get(selected), Some("b".to_owned()));
+    assert_eq!(app.get(selected), Some("b"));
+}
+
+/// A row key of the app's own type, as lists, tables, and sidebars select by.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct FolderId(u32);
+
+impl ItemKey for FolderId {
+    fn item_id(&self) -> String {
+        format!("folder-{}", self.0)
+    }
+}
+
+/// Builds a list with one text row per folder.
+fn folder_list(folders: &[u32]) -> List<FolderId> {
+    List::new([ListSection::new(folders.iter().map(|&number| {
+        ListRow::new(FolderId(number), Text::new(format!("Folder {number}")))
+    }))])
+}
+
+/// Returns the row IDs and selection a rendered list describes.
+fn list_rows(node: &RenderedNode) -> (Vec<String>, Option<String>) {
+    match &node.value {
+        RenderNode::View {
+            kind: ViewKind::List {
+                sections, selected, ..
+            },
+            ..
+        } => (
+            sections
+                .iter()
+                .flat_map(|section| section.ids.clone())
+                .collect(),
+            selected.clone(),
+        ),
+        other => panic!("expected a list, got {other:?}"),
+    }
+}
+
+#[test]
+fn list_selects_rows_by_their_key() {
+    // Verifies a list sends each key's item ID to the backend and shows the bound key as selected.
+    let (app, _) = WithStores::mount(
+        |cx| cx.store(Some(FolderId(2))),
+        |selection| folder_list(&[1, 2]).bind(selection),
+    );
+
+    let (ids, selected) = list_rows(&app.tree());
+    assert_eq!(ids, ["folder-1", "folder-2"]);
+    assert_eq!(selected.as_deref(), Some("folder-2"));
+}
+
+#[test]
+fn list_shows_no_selection_for_a_key_no_row_has() {
+    // Verifies a bound key missing from the rows renders as no selection.
+    let (app, _) = WithStores::mount(
+        |cx| cx.store(Some(FolderId(9))),
+        |selection| folder_list(&[1, 2]).bind(selection),
+    );
+
+    assert_eq!(list_rows(&app.tree()).1, None);
+}
+
+#[test]
+fn list_reports_the_key_of_the_chosen_row() {
+    // Verifies a reported item ID reaches the Store and `on_select` as its key, and unknown IDs are ignored.
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let record = seen.clone();
+    let (mut app, selection) = WithStores::mount(
+        |cx| cx.store(None::<FolderId>),
+        move |selection| {
+            let record = record.clone();
+            folder_list(&[1, 2])
+                .bind(selection)
+                .on_select(move |_, key| record.borrow_mut().push(key.copied()))
+        },
+    );
+
+    app.dispatch(
+        &[0],
+        Event::ListSelectionChanged {
+            id: Some("folder-2".into()),
+        },
+    );
+    assert_eq!(app.get(selection), Some(FolderId(2)));
+    // A row removed before its event arrives leaves everything as it was.
+    app.dispatch(
+        &[0],
+        Event::ListSelectionChanged {
+            id: Some("folder-9".into()),
+        },
+    );
+    assert_eq!(app.get(selection), Some(FolderId(2)));
+    app.dispatch(&[0], Event::ListSelectionChanged { id: None });
+
+    assert_eq!(app.get(selection), None);
+    assert_eq!(*seen.borrow(), [Some(FolderId(2)), None]);
+}
+
+/// Numbers views in the order they first mount; the number lives in a Store, so a kept view keeps it.
+#[derive(Clone)]
+struct Numbered {
+    name: &'static str,
+    mounts: Rc<Cell<u32>>,
+    number: Store<u32>,
+}
+
+impl Numbered {
+    fn new(name: &'static str, mounts: &Rc<Cell<u32>>) -> Self {
+        Self {
+            name,
+            mounts: mounts.clone(),
+            number: Store::default(),
+        }
+    }
+
+    /// Returns the `name-number` IDs of the rendered instances, in order.
+    fn ids(nodes: &[RenderedNode]) -> Vec<String> {
+        nodes
+            .iter()
+            .map(|node| match &node.value {
+                RenderNode::View { id: Some(id), .. } => id.clone(),
+                other => panic!("expected a named view, got {other:?}"),
+            })
+            .collect()
+    }
+}
+
+impl View for Numbered {
+    type Output = RenderNode;
+
+    fn init(&mut self, cx: &mut Context<'_>) {
+        self.mounts.set(self.mounts.get() + 1);
+        self.number = cx.store(self.mounts.get());
+    }
+
+    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
+        Text::new(self.name).id(format!("{}-{}", self.name, cx.get(self.number)))
+    }
+}
+
+#[test]
+fn list_rows_keep_their_views_when_reordered() {
+    // Verifies rows are keyed by item ID, so moving a row moves its view instead of remounting it.
+    let mounts = Rc::new(Cell::new(0));
+    let rows = mounts.clone();
+    let (mut app, reversed) = WithStores::mount(
+        |cx| cx.store(false),
+        move |reversed| {
+            let mounts = rows.clone();
+            WithReversed(reversed, move |reversed: bool| {
+                let mut names = vec!["a", "b"];
+                if reversed {
+                    names.reverse();
+                }
+                List::new([ListSection::new(
+                    names
+                        .into_iter()
+                        .map(|name| ListRow::new(name, Numbered::new(name, &mounts))),
+                )])
+            })
+        },
+    );
+    assert_eq!(Numbered::ids(&app.tree().children), ["a-1", "b-2"]);
+
+    app.set(reversed, true);
+
+    // The numbers moved with their rows; remounted rows would show b-1 and a-2.
+    assert_eq!(Numbered::ids(&app.tree().children), ["b-2", "a-1"]);
+}
+
+/// Stores a table's selection and records the keys its callbacks receive.
+#[derive(Clone, Default)]
+struct TableCalls {
+    activated: Rc<RefCell<Vec<FolderId>>>,
+    deleted: Rc<RefCell<Vec<FolderId>>>,
+    checked: Rc<RefCell<Vec<Option<FolderId>>>>,
+}
+
+impl TableCalls {
+    /// Builds a table of folders 1 and 2 that allows selection while `allow` is set.
+    fn table(&self, selection: Store<Option<FolderId>>, allow: Store<bool>) -> Table<FolderId> {
+        let (activated, deleted, checked) = (
+            self.activated.clone(),
+            self.deleted.clone(),
+            self.checked.clone(),
+        );
+        Table::new(
+            [TableColumn::new("Name")],
+            [1, 2].map(|number| {
+                TableRow::new(
+                    FolderId(number),
+                    list![Text::new(format!("Folder {number}"))],
+                )
+            }),
+        )
+        .bind(selection)
+        .should_select(move |cx, key| {
+            checked.borrow_mut().push(key.copied());
+            *cx.get(allow)
+        })
+        .on_activate(move |_, key| activated.borrow_mut().push(*key))
+        .on_delete(move |_, key| deleted.borrow_mut().push(*key))
+    }
+}
+
+#[test]
+fn table_passes_row_keys_to_its_callbacks() {
+    // Verifies activation, deletion, and selection checks receive keys, and unknown row IDs run nothing.
+    let calls = TableCalls::default();
+    let table = calls.clone();
+    let (mut app, (selection, allow)) = WithStores::mount(
+        |cx| (cx.store(None::<FolderId>), cx.store(true)),
+        move |(selection, allow)| table.table(selection, allow),
+    );
+
+    app.dispatch(
+        &[0],
+        Event::RowActivated {
+            id: "folder-2".into(),
+        },
+    );
+    app.dispatch(
+        &[0],
+        Event::RowDeleteRequested {
+            id: "folder-1".into(),
+        },
+    );
+    app.dispatch(
+        &[0],
+        Event::RowActivated {
+            id: "folder-9".into(),
+        },
+    );
+    app.dispatch(
+        &[0],
+        Event::RowDeleteRequested {
+            id: "folder-9".into(),
+        },
+    );
+    app.dispatch(
+        &[0],
+        Event::ListSelectionChanged {
+            id: Some("folder-9".into()),
+        },
+    );
+    app.dispatch(
+        &[0],
+        Event::ListSelectionChanged {
+            id: Some("folder-2".into()),
+        },
+    );
+
+    assert_eq!(*calls.activated.borrow(), [FolderId(2)]);
+    assert_eq!(*calls.deleted.borrow(), [FolderId(1)]);
+    assert_eq!(*calls.checked.borrow(), [Some(FolderId(2))]);
+    assert_eq!(app.get(selection), Some(FolderId(2)));
+
+    // A rejected change leaves the Store on the current row.
+    app.set(allow, false);
+    app.dispatch(&[0], Event::ListSelectionChanged { id: None });
+    assert_eq!(*calls.checked.borrow(), [Some(FolderId(2)), None]);
+    assert_eq!(app.get(selection), Some(FolderId(2)));
+}
+
+#[test]
+fn table_shows_the_bound_key_as_selected() {
+    // Verifies a table shows the bound key's row as selected, and nothing for a key no row has.
+    let (mut app, (selection, _)) = WithStores::mount(
+        |cx| (cx.store(Some(FolderId(2))), cx.store(true)),
+        |(selection, allow)| TableCalls::default().table(selection, allow),
+    );
+    let selected = |app: &Harness| match app.tree().value {
+        RenderNode::View {
+            kind: ViewKind::Table { rows, selected, .. },
+            ..
+        } => (rows, selected),
+        other => panic!("expected a table, got {other:?}"),
+    };
+    assert_eq!(
+        selected(&app),
+        (
+            vec!["folder-1".to_owned(), "folder-2".to_owned()],
+            Some("folder-2".to_owned())
+        )
+    );
+
+    app.set(selection, Some(FolderId(9)));
+
+    assert_eq!(selected(&app).1, None);
+}
+
+#[test]
+fn sidebar_selects_items_by_their_key() {
+    // Verifies a sidebar shows its bound key, ignores unknown IDs, and reports chosen items as keys.
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let record = seen.clone();
+    let (mut app, selection) = WithStores::mount(
+        |cx| cx.store(Some(FolderId(9))),
+        move |selection| {
+            let record = record.clone();
+            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Folders").sidebar(
+                Sidebar::new([SidebarSection::new([
+                    SidebarItem::new(FolderId(1), "Ideas"),
+                    SidebarItem::new(FolderId(2), "Plans"),
+                ])])
+                .bind(selection)
+                .on_select(move |_, key| record.borrow_mut().push(*key)),
+            )
+        },
+    );
+    let selected = |app: &Harness| match app.tree().value {
+        RenderNode::Window {
+            sidebar: Some(sidebar),
+            ..
+        } => sidebar.selected_id,
+        other => panic!("expected a window with a sidebar, got {other:?}"),
+    };
+    // No item has the bound key.
+    assert_eq!(selected(&app), None);
+
+    app.dispatch(
+        &[0],
+        Event::SidebarSelectionChanged {
+            id: "folder-9".into(),
+        },
+    );
+    app.dispatch(
+        &[0],
+        Event::SidebarSelectionChanged {
+            id: "folder-2".into(),
+        },
+    );
+
+    assert_eq!(app.get(selection), Some(FolderId(2)));
+    assert_eq!(*seen.borrow(), [FolderId(2)]);
+    assert_eq!(selected(&app).as_deref(), Some("folder-2"));
 }
 
 /// Returns the accessibility description of a rendered view.

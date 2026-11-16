@@ -3,7 +3,7 @@ use zintl_ui_desktop::*;
 
 /// A searchable sidebar whose items carry badges and context menus.
 pub struct MainView {
-    selection: Store<Option<String>>,
+    selection: Store<Option<&'static str>>,
     query: Store<String>,
     log: Store<Vec<String>>,
 }
@@ -22,7 +22,7 @@ impl View for MainView {
     type Output = RenderNode;
 
     fn init(&mut self, cx: &mut Context<'_>) {
-        self.selection = cx.store(Some("inbox".into()));
+        self.selection = cx.store(Some("inbox"));
         self.query = cx.store(String::new());
         self.log = cx.store(Vec::new());
     }
@@ -50,13 +50,13 @@ impl View for MainView {
             .content(
                 VStack::new(list![
                     cx.watch(selection, |selection| {
-                        Text::new(format!("Selected: {}", selection.as_deref().unwrap_or("none")))
+                        Text::new(format!("Selected: {}", selection.unwrap_or("none")))
                             .id("selection-value")
                     }),
                     cx.watch(query, |query| Text::new(format!("Query: {query}")).id("query-value")),
                     cx.watch(log, |log| Text::new(format!("Log: {}", log.join(","))).id("log")),
                     Button::new("Show Sent").id("show-sent").on_click(move |cx| {
-                        cx.update(selection, |selection| *selection = Some("sent".into()));
+                        cx.update(selection, |selection| *selection = Some("sent"));
                     }),
                 ])
                 .spacing(10.0),

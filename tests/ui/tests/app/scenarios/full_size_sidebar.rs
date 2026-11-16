@@ -2,14 +2,14 @@ use zintl_ui_desktop::*;
 
 #[derive(Default)]
 pub struct MainView {
-    selection: Store<Option<String>>,
+    selection: Store<Option<&'static str>>,
 }
 
 impl View for MainView {
     type Output = RenderNode;
 
     fn init(&mut self, cx: &mut Context<'_>) {
-        self.selection = cx.store(Some("home".into()));
+        self.selection = cx.store(Some("home"));
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
@@ -31,7 +31,7 @@ impl View for MainView {
         .content(cx.watch(self.selection, |selection| {
             Text::new(format!(
                 "Selected: {}",
-                selection.as_deref().unwrap_or("none")
+                selection.unwrap_or("none")
             ))
             .id("selected-item")
         }))

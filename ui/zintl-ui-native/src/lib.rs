@@ -26,6 +26,7 @@ mod container;
 mod containers;
 mod controls;
 mod indicators;
+mod item_key;
 mod list;
 mod menu;
 mod presentation;
@@ -61,6 +62,7 @@ pub use controls::{
     SearchField, Slider,
 };
 pub use indicators::{ProgressIndicator, Separator};
+pub use item_key::ItemKey;
 pub use list::{List, ListRow, ListSection};
 pub use menu::{
     EnglishMenuLocalizer, JapaneseMenuLocalizer, MainMenu, Menu, MenuItem, MenuItemState,
@@ -518,7 +520,7 @@ mod tests {
     fn sidebar_binding_filters_unknown_native_ids() {
         // Verifies sidebar selection updates only for declared items.
         let mut harness = Harness::empty();
-        let selection = harness.store(None::<String>);
+        let selection = harness.store(None::<&str>);
         harness.mount(
             Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Navigation").sidebar(
                 Sidebar::new([SidebarSection::new([SidebarItem::new("home", "Home")])])
@@ -527,13 +529,13 @@ mod tests {
         );
 
         assert!(harness.dispatch(&[0], Event::SidebarSelectionChanged { id: "home".into() },));
-        assert_eq!(harness.get(selection), Some("home".into()));
+        assert_eq!(harness.get(selection), Some("home"));
         assert!(harness.dispatch(
             &[0],
             Event::SidebarSelectionChanged {
                 id: "missing".into(),
             },
         ));
-        assert_eq!(harness.get(selection), Some("home".into()));
+        assert_eq!(harness.get(selection), Some("home"));
     }
 }

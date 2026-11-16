@@ -7,14 +7,16 @@ use zintl_ui::store::Store;
 use zintl_ui_backend_core::{SortOrder, TextAlignment, ViewKind};
 use zintl_ui_layout::{Arrangement, Axis, CrossAxisAlignment, LayoutStyle, Size};
 
+use crate::item_key::ItemKeys;
 use crate::modifiers;
 use crate::{
-    Attach, Context, Element, Event, EventKind, Menu, NativeView, RenderNode, ViewModifiers,
+    Attach, Context, Element, Event, EventKind, ItemKey, Menu, NativeView, RenderNode,
+    ViewModifiers,
 };
 
-type SelectionAction = dyn for<'a> Fn(&mut Context<'a>, Option<&str>);
-type RowAction = dyn for<'a> Fn(&mut Context<'a>, &str);
-type SelectionCheck = dyn for<'a> Fn(&mut Context<'a>, Option<&str>) -> bool;
+type SelectionAction<K> = dyn for<'a> Fn(&mut Context<'a>, Option<&K>);
+type RowAction<K> = dyn for<'a> Fn(&mut Context<'a>, &K);
+type SelectionCheck<K> = dyn for<'a> Fn(&mut Context<'a>, Option<&K>) -> bool;
 
 /// A titled column of a [`Table`].
 #[derive(Clone, Debug, PartialEq)]
@@ -59,21 +61,21 @@ impl TableColumn {
     }
 }
 
-/// A row of a [`Table`] and the ID that selection reports for it.
+/// A row of a [`Table`] and the key that selection reports for it.
 #[derive(Clone)]
-pub struct TableRow {
-    id: String,
+pub struct TableRow<K = String> {
+    key: K,
     cells: ListFactory<RenderNode>,
     menu: Option<Menu>,
 }
 
-impl TableRow {
+impl<K: ItemKey> TableRow<K> {
     /// Creates a row with one cell per column, in column order.
     ///
     /// Each cell must render exactly one view, such as a `TextField` or a stack.
-    pub fn new(id: impl Into<String>, cells: ListFactory<RenderNode>) -> Self {
+    pub fn new(key: K, cells: ListFactory<RenderNode>) -> Self {
         Self {
-            id: id.into(),
+            key,
             cells,
             menu: None,
         }
@@ -88,19 +90,20 @@ impl TableRow {
 
 /// A native table with column headers, striped rows, and single selection.
 ///
-/// Row IDs must be unique. Rows are keyed by ID, so their cell views keep
-/// state when rows move. A selection set through the bound Store scrolls its
-/// row into view.
+/// Row keys must be unique. Rows are keyed by their [`ItemKey::item_id`], so
+/// their cell views keep state when rows move. A selection set through the
+/// bound Store scrolls its row into view; a key that no row has shows nothing
+/// selected.
 #[derive(Clone)]
-pub struct Table {
+pub struct Table<K: ItemKey = String> {
     columns: Vec<TableColumn>,
-    rows: Vec<TableRow>,
+    rows: Vec<TableRow<K>>,
     striped: bool,
-    selection: Option<Store<Option<String>>>,
-    action: Option<Rc<SelectionAction>>,
-    activate: Option<Rc<RowAction>>,
-    delete: Option<Rc<RowAction>>,
-    should_select: Option<Rc<SelectionCheck>>,
+    selection: Option<Store<Option<K>>>,
+    action: Option<Rc<SelectionAction<K>>>,
+    activate: Option<Rc<RowAction<K>>>,
+    delete: Option<Rc<RowAction<K>>>,
+    should_select: Option<Rc<SelectionCheck<K>>>,
     sort: Option<Store<Option<SortOrder>>>,
     fit_columns: bool,
     empty_content: Option<ElementFactory<RenderNode>>,
@@ -108,10 +111,10 @@ pub struct Table {
     modifiers: ViewModifiers,
 }
 
-impl Table {
+impl<K: ItemKey> Table<K> {
     pub fn new(
         columns: impl IntoIterator<Item = TableColumn>,
-        rows: impl IntoIterator<Item = TableRow>,
+        rows: impl IntoIterator<Item = TableRow<K>>,
     ) -> Self {
         Self {
             columns: columns.into_iter().collect(),
@@ -156,8 +159,8 @@ impl Table {
         self
     }
 
-    /// Reads and writes the selected row ID.
-    pub fn bind(mut self, selection: Store<Option<String>>) -> Self {
+    /// Reads and writes the selected row's key.
+    pub fn bind(mut self, selection: Store<Option<K>>) -> Self {
         self.selection = Some(selection);
         self
     }
@@ -165,7 +168,7 @@ impl Table {
     /// Runs after the user changes the selection, once the bound Store is updated.
     pub fn on_select(
         mut self,
-        action: impl for<'a> Fn(&mut Context<'a>, Option<&str>) + 'static,
+        action: impl for<'a> Fn(&mut Context<'a>, Option<&K>) + 'static,
     ) -> Self {
         self.action = Some(Rc::new(action));
         self
@@ -174,7 +177,7 @@ impl Table {
     /// Reads and writes the sort order the header shows.
     ///
     /// Clicking a column with a [`TableColumn::sort_key`] writes the Store;
-    /// the app sorts its rows by it, so rows stay keyed by ID.
+    /// the app sorts its rows by it, and rows stay keyed by their keys.
     pub fn bind_sort(mut self, order: Store<Option<SortOrder>>) -> Self {
         self.sort = Some(order);
         self
@@ -187,31 +190,28 @@ impl Table {
     /// can then ask, for example about unsaved edits, and change the Store later.
     pub fn should_select(
         mut self,
-        check: impl for<'a> Fn(&mut Context<'a>, Option<&str>) -> bool + 'static,
+        check: impl for<'a> Fn(&mut Context<'a>, Option<&K>) -> bool + 'static,
     ) -> Self {
         self.should_select = Some(Rc::new(check));
         self
     }
 
-    /// Runs with a row's ID when it is opened: double-clicked, or Return pressed while it is selected.
-    pub fn on_activate(
-        mut self,
-        action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static,
-    ) -> Self {
+    /// Runs with a row's key when it is opened: double-clicked, or Return pressed while it is selected.
+    pub fn on_activate(mut self, action: impl for<'a> Fn(&mut Context<'a>, &K) + 'static) -> Self {
         self.activate = Some(Rc::new(action));
         self
     }
 
-    /// Runs with the selected row's ID when Delete or Forward Delete is pressed in the table.
+    /// Runs with the selected row's key when Delete or Forward Delete is pressed in the table.
     ///
     /// The app decides what to do, for example ask before deleting.
-    pub fn on_delete(mut self, action: impl for<'a> Fn(&mut Context<'a>, &str) + 'static) -> Self {
+    pub fn on_delete(mut self, action: impl for<'a> Fn(&mut Context<'a>, &K) + 'static) -> Self {
         self.delete = Some(Rc::new(action));
         self
     }
 
     /// Returns the cells of `row`, padded with empty cells or cut to the column count.
-    fn cells(&self, row: &TableRow) -> impl Iterator<Item = ElementFactory<RenderNode>> {
+    fn cells(&self, row: &TableRow<K>) -> impl Iterator<Item = ElementFactory<RenderNode>> {
         // Each cell needs exactly one native view, so blanks are empty containers.
         let blank = || {
             ElementFactory::new(crate::Container::new(
@@ -233,7 +233,7 @@ impl Table {
     }
 }
 
-impl NativeView for Table {
+impl<K: ItemKey> NativeView for Table<K> {
     modifiers!();
 
     fn places_id(&self) -> bool {
@@ -263,14 +263,24 @@ impl NativeView for Table {
     }
 }
 
-impl Table {
+impl<K: ItemKey> Table<K> {
     /// Returns the native table laid out with `layout`.
     fn table_element(&self, cx: &mut Context<'_>, layout: LayoutStyle) -> Element<RenderNode> {
-        let cells = self.rows.iter().flat_map(|row| {
-            self.cells(row)
-                .enumerate()
-                .map(|(column, cell)| cell.key(format!("{}/{column}", row.id)).into_element())
-                .collect::<Vec<_>>()
+        let keys = ItemKeys::new(self.rows.iter().map(|row| &row.key));
+        let cells = self
+            .rows
+            .iter()
+            .zip(keys.ids())
+            .flat_map(|(row, id)| {
+                self.cells(row)
+                    .enumerate()
+                    .map(|(column, cell)| cell.key(format!("{id}/{column}")).into_element())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let selected = self.selection.and_then(|store| {
+            let key = cx.get(store).as_ref()?;
+            keys.id(key).map(str::to_owned)
         });
         let element = Element::node(RenderNode::View {
             kind: ViewKind::Table {
@@ -284,8 +294,8 @@ impl Table {
                         sort_key: column.sort_key.clone(),
                     })
                     .collect(),
-                rows: self.rows.iter().map(|row| row.id.clone()).collect(),
-                selected: self.selection.and_then(|store| cx.get(store).clone()),
+                rows: keys.ids().map(str::to_owned).collect(),
+                selected,
                 follows_selection: self.selection.is_some() || self.should_select.is_some(),
                 sort: self.sort.and_then(|store| cx.get(store).clone()),
                 fit_columns: self.fit_columns,
@@ -301,11 +311,16 @@ impl Table {
         })
         .with_children(cells);
         let element = match self.activate.clone() {
-            Some(activate) => element.on_event(EventKind::RowActivated, move |cx, event| {
-                if let Event::RowActivated { id } = event {
-                    activate(cx, &id);
-                }
-            }),
+            Some(activate) => {
+                let keys = keys.clone();
+                element.on_event(EventKind::RowActivated, move |cx, event| {
+                    if let Event::RowActivated { id } = event
+                        && let Some(key) = keys.key(&id)
+                    {
+                        activate(cx, key);
+                    }
+                })
+            }
             None => element,
         };
         let element = match self.sort {
@@ -317,11 +332,16 @@ impl Table {
             None => element,
         };
         let element = match self.delete.clone() {
-            Some(delete) => element.on_event(EventKind::RowDeleteRequested, move |cx, event| {
-                if let Event::RowDeleteRequested { id } = event {
-                    delete(cx, &id);
-                }
-            }),
+            Some(delete) => {
+                let keys = keys.clone();
+                element.on_event(EventKind::RowDeleteRequested, move |cx, event| {
+                    if let Event::RowDeleteRequested { id } = event
+                        && let Some(key) = keys.key(&id)
+                    {
+                        delete(cx, key);
+                    }
+                })
+            }
             None => element,
         };
         let store = self.selection;
@@ -331,23 +351,34 @@ impl Table {
             return element;
         }
         element.on_event(EventKind::ListSelectionChanged, move |cx, event| {
-            if let Event::ListSelectionChanged { id } = event {
-                // A rejected change leaves the Store as it is; the backend then shows it again.
-                if check
-                    .as_ref()
-                    .is_some_and(|check| !check(cx, id.as_deref()))
-                {
-                    return;
-                }
-                if let Some(store) = store {
-                    cx.update(store, |selection| *selection = id.clone());
-                }
-                if let Some(action) = &action {
-                    action(cx, id.as_deref());
-                }
+            let Event::ListSelectionChanged { id } = event else {
+                return;
+            };
+            // A row that is gone by the time the event arrives is ignored.
+            let Some(key) = keys.selection(id.as_deref()) else {
+                return;
+            };
+            // A rejected change leaves the Store as it is; the backend then shows it again.
+            if check.as_ref().is_some_and(|check| !check(cx, key.as_ref())) {
+                return;
+            }
+            if let Some(store) = store {
+                cx.update(store, |selection| *selection = key.clone());
+            }
+            if let Some(action) = &action {
+                action(cx, key.as_ref());
             }
         })
     }
 }
 
-native_view!(Table);
+impl<K: ItemKey> zintl_ui::view::View for Table<K> {
+    type Output = RenderNode;
+
+    fn render(
+        &self,
+        cx: &mut Context<'_>,
+    ) -> impl zintl_ui::element::IntoElement<Output = Self::Output> {
+        self.native_element(cx)
+    }
+}
