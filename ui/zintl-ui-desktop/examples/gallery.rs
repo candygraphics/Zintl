@@ -9,6 +9,14 @@ use zintl_ui_desktop::dialog::*;
 use zintl_ui_desktop::menu::*;
 use zintl_ui_desktop::*;
 
+/// The sizes the size picker selects by value.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ItemSize {
+    Small,
+    Medium,
+    Large,
+}
+
 #[derive(Default)]
 struct Gallery {
     page: Store<Option<String>>,
@@ -17,15 +25,15 @@ struct Gallery {
     notifications: Store<bool>,
     bold: Store<bool>,
     agree: Store<bool>,
-    size: Store<usize>,
-    layout: Store<usize>,
+    size: Store<ItemSize>,
+    layout: Store<&'static str>,
     priority: Store<usize>,
     fruit: Store<String>,
     volume: Store<f64>,
     quantity: Store<f64>,
     tint: Store<Color>,
     search: Store<String>,
-    tab: Store<usize>,
+    tab: Store<&'static str>,
     scroll_status: Store<ScrollStatus>,
     info: Store<bool>,
     confirm_delete: Store<bool>,
@@ -68,15 +76,19 @@ impl Gallery {
             // Each field is named by the text beside it.
             HStack::new(list![
                 Text::new("Size").id("size-label"),
-                Picker::new(["Small", "Medium", "Large"])
-                    .bind(self.size)
-                    .accessibility_labeled_by("size-label"),
+                Picker::new([
+                    (ItemSize::Small, "Small"),
+                    (ItemSize::Medium, "Medium"),
+                    (ItemSize::Large, "Large"),
+                ])
+                .bind(self.size)
+                .accessibility_labeled_by("size-label"),
             ]),
-            Picker::new(["List", "Grid", "Columns"])
+            Picker::new([("list", "List"), ("grid", "Grid"), ("columns", "Columns")])
                 .style(PickerStyle::Segmented)
                 .bind(self.layout)
                 .accessibility_label("Layout"),
-            Picker::new(["Low", "Normal", "High"])
+            Picker::indexed(["Low", "Normal", "High"])
                 .style(PickerStyle::Radio)
                 .bind(self.priority)
                 .accessibility_label("Priority"),
@@ -121,6 +133,7 @@ impl Gallery {
         VStack::new(list![
             TabView::new([
                 Tab::new(
+                    "general",
                     "General",
                     VStack::new(list![
                         Toggle::new("Show previews").bind(self.notifications),
@@ -128,6 +141,7 @@ impl Gallery {
                     ]),
                 ),
                 Tab::new(
+                    "advanced",
                     "Advanced",
                     VStack::new(list![Text::new("Advanced settings live here.")]),
                 ),
@@ -319,15 +333,15 @@ impl View for Gallery {
         self.notifications = cx.store(true);
         self.bold = cx.store(false);
         self.agree = cx.store(false);
-        self.size = cx.store(1);
-        self.layout = cx.store(0);
+        self.size = cx.store(ItemSize::Medium);
+        self.layout = cx.store("list");
         self.priority = cx.store(1);
         self.fruit = cx.store(String::new());
         self.volume = cx.store(40.0);
         self.quantity = cx.store(3.0);
         self.tint = cx.store(Color::rgb(0.0, 0.48, 1.0));
         self.search = cx.store(String::new());
-        self.tab = cx.store(0);
+        self.tab = cx.store("general");
         self.scroll_status = cx.store(ScrollStatus::default());
         self.info = cx.store(false);
         self.confirm_delete = cx.store(false);

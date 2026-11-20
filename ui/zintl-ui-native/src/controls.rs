@@ -272,6 +272,24 @@ impl NativeView for Slider {
     }
 }
 
+impl<T: Clone + 'static> ChangeRoute<T> {
+    /// Returns a route for option indexes that sends the value at each index.
+    ///
+    /// Indexes past the end are ignored.
+    pub(crate) fn by_index(self, values: impl IntoIterator<Item = T>) -> ChangeRoute<usize> {
+        if self.store.is_none() && self.action.is_none() {
+            return ChangeRoute::default();
+        }
+        let values: Rc<[T]> = values.into_iter().collect();
+        let action: Rc<Change<usize>> = Rc::new(move |cx: &mut Context<'_>, index: &usize| {
+            if let Some(value) = values.get(*index) {
+                self.send(cx, value.clone());
+            }
+        });
+        ChangeRoute::new(None, Some(action))
+    }
+}
+
 impl ChangeRoute<usize> {
     /// Routes selection indexes for choice controls.
     pub(crate) fn route_selection(self, element: Element<RenderNode>) -> Element<RenderNode> {
@@ -313,8 +331,9 @@ impl PopUpButton {
         }
     }
 
-    pub fn selection(mut self, index: usize) -> Self {
-        self.selected = Some(index);
+    /// Selects the item at `index`, or none.
+    pub fn selection(mut self, index: Option<usize>) -> Self {
+        self.selected = index;
         self
     }
 
@@ -374,8 +393,9 @@ impl SegmentedControl {
         }
     }
 
-    pub fn selection(mut self, index: usize) -> Self {
-        self.selected = Some(index);
+    /// Selects the item at `index`, or none.
+    pub fn selection(mut self, index: Option<usize>) -> Self {
+        self.selected = index;
         self
     }
 

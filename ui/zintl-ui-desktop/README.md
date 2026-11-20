@@ -77,14 +77,19 @@ Controls bind to Stores with `bind` and report changes with `on_change`.
 Without a Store, `value` (or `selection` for a `Picker` or `TabView`) shows a
 value the app owns; `bind` takes precedence. Each renders a native control.
 
+A `Picker` selects one of its values, given with their labels, such as an enum;
+`Picker::indexed` selects plain labels by index. A value that no option has
+shows nothing selected.
+
 ```rust,ignore
 VStack::new(list![
     Toggle::new("Notifications").bind(self.notifications),            // NSSwitch
     Toggle::new("Agree").style(ToggleStyle::Checkbox).bind(self.agree),
     Toggle::new("Bold").style(ToggleStyle::Button).bind(self.bold),   // push on/push off
-    Picker::new(["Small", "Medium"]).bind(self.size),                 // NSPopUpButton
-    Picker::new(["List", "Grid"]).style(PickerStyle::Segmented).bind(self.layout),
-    Picker::new(["Low", "High"]).style(PickerStyle::Radio).bind(self.priority),
+    Picker::new([(Size::Small, "Small"), (Size::Medium, "Medium")])  // NSPopUpButton
+        .bind(self.size),
+    Picker::new([("list", "List"), ("grid", "Grid")]).style(PickerStyle::Segmented).bind(self.layout),
+    Picker::indexed(["Low", "High"]).style(PickerStyle::Radio).bind(self.priority),
     ComboBox::new(["Apple", "Banana"]).placeholder("Fruit").bind(self.fruit),
     Slider::new(0.0..=100.0).ticks(11).bind(self.volume),
     NumberField::new().range(0.0..=99.0).step(1.0).bind(self.quantity),
@@ -97,8 +102,9 @@ Buttons take a `ButtonStyle` (push, borderless, toolbar, help, …), a
 `ButtonRole` (`Default` answers Return, `Cancel` answers Escape, `Destructive`
 warns), and SF Symbols through `system_image`.
 
-`ScrollView::new(content)` and `TabView::new([Tab::new("General", page)])`
-fill their parent's width and the remaining space. Stacks accept `padding` and
+`ScrollView::new(content)` and `TabView::new([Tab::new("general", "General", page)])`
+fill their parent's width and the remaining space. Each `Tab` carries the value
+that selects it. Stacks accept `padding` and
 `grow`.
 
 ## Text editing

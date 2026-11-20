@@ -74,7 +74,7 @@ pub struct Picker<V> {
 - 同じ値が複数ある場合は最初のものを選択扱いにする。デバッグビルドでは `debug_assert!` で重複を検出する(`V` は `Hash` を要求しないので O(n²) の比較。選択肢は少ない前提)。
 - イベントはバックエンドからインデックスで届くので、`base_element` 内で値へ変換する。範囲外のインデックスは無視する。
 - `on_change` は `&V` を受け取る(ステップ 3 の規則 3 は `Copy` 値を値渡しとするが、`V` は `Clone` しか要求しないため参照にする)。`Picker<usize>` も同じ形で、`|cx, index: &usize|` と書く。
-- 内部の `PopUpButton` / `SegmentedControl` はインデックスのまま(`pub(crate)`)。`Picker` が `ChangeRoute<V>` を受け取り、インデックス → 値に変換して `send` するクロージャを `ChangeRoute<usize>` として渡す。Radio 分岐も同じ変換を使う。
+- 内部の `PopUpButton` / `SegmentedControl` はインデックスのまま(`pub(crate)`)で、`selection` は `Option<usize>` を受け取る。`ChangeRoute<V>::by_index(values)` が、インデックスを値に変換して `send` する `ChangeRoute<usize>` を返す。`Picker` の 3 スタイルと `TabView` はどれもこれを使う。
 
 ### `TabView<V>`
 

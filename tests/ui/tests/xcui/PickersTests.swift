@@ -2,8 +2,8 @@ import XCTest
 
 @MainActor
 final class PickersTests: ZintlUITestCase {
-  /// Verifies choosing a pop-up menu item writes its index and reports it to on_change.
-  func testMenuPickerWritesTheChosenIndex() throws {
+  /// Verifies choosing a pop-up menu item writes its value and reports it to on_change.
+  func testMenuPickerWritesTheChosenValue() throws {
     try launch(scenario: "pickers")
 
     let picker = app.popUpButtons["menu-picker"]
@@ -11,11 +11,11 @@ final class PickersTests: ZintlUITestCase {
     picker.click()
     app.menuItems["Rapid"].click()
     assertLabel("menu-value", "Rapid")
-    assertLabel("changes", "Changes: 1")
+    assertLabel("changes", "Changes: Rapid")
     XCTAssertEqual(picker.value as? String, "Rapid")
   }
 
-  /// Verifies clicking a segment selects it and writes its index.
+  /// Verifies clicking a segment selects it and writes its value.
   func testSegmentedPickerWritesTheClickedSegment() throws {
     try launch(scenario: "pickers")
 
@@ -42,7 +42,7 @@ final class PickersTests: ZintlUITestCase {
     app.radioButtons.matching(NSPredicate(format: "title == %@", title)).firstMatch
   }
 
-  /// Verifies radio buttons keep exactly one option checked and write the checked index.
+  /// Verifies radio buttons keep exactly one option checked and write the checked value.
   func testRadioPickerChecksExactlyOneOption() throws {
     try launch(scenario: "pickers")
 
@@ -109,5 +109,28 @@ final class PickersTests: ZintlUITestCase {
       },
       "the radio group did not return to North"
     )
+  }
+
+  /// Verifies pickers whose value matches no option show no selection, and choosing one writes it.
+  func testPickersWithAnUnmatchedValueShowNoSelection() throws {
+    try launch(scenario: "pickers")
+
+    let menu = app.popUpButtons["unset-menu-picker"]
+    let segments = app.radioGroups["unset-segmented-picker"].radioButtons
+    XCTAssertTrue(menu.waitToExist(timeout: 2))
+    assertLabel("unset-value", "Unset: None")
+    XCTAssertEqual(menu.value as? String ?? "", "")
+    XCTAssertEqual(segments.allElementsBoundByIndex.map { $0.value as? Int }, [0, 0, 0])
+
+    menu.click()
+    app.menuItems["Rapid"].click()
+    assertLabel("unset-value", "Unset: Some(Rapid)")
+    XCTAssertTrue(waitUntil { segments["Rapid"].value as? Int == 1 })
+
+    // Writing a value no option has clears both pickers again.
+    app.buttons["clear-unset"].click()
+    assertLabel("unset-value", "Unset: None")
+    XCTAssertTrue(waitUntil { (menu.value as? String ?? "") == "" }, "the pop-up kept its item")
+    XCTAssertTrue(waitUntil { segments["Rapid"].value as? Int == 0 }, "the segment stayed selected")
   }
 }
