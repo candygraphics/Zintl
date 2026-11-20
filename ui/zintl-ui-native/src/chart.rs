@@ -9,7 +9,7 @@ use crate::graphics::Graphics2D;
 use crate::modifiers;
 use crate::{
     AccessibilityRole, Attach, Canvas2D, Canvas2DHandler, Color, Container, Context, Element,
-    Frame, Layout, ListFactory, NativeView, PaletteColor, RenderNode, Text, TextAlignment,
+    Frame, Layout, ListFactory, NativeView, PaletteColor, RenderNode, Text, TextAlignment, ViewId,
     ViewModifiers, list,
 };
 
@@ -41,8 +41,8 @@ impl ChartBar {
     }
 
     /// Identifies the bar's accessibility element, such as `expenses-food`.
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
+    pub fn id(mut self, id: impl Into<ViewId>) -> Self {
+        self.id = Some(id.into().into());
         self
     }
 }

@@ -8,7 +8,7 @@ use zintl_ui_layout::{Axis, LayoutStyle, Size};
 use crate::modifiers;
 use crate::{
     Change, ChangeRoute, Context, Element, Event, EventKind, NativeView, RenderNode, ScrollAxes,
-    ScrollStatus, ViewModifiers,
+    ScrollStatus, ViewId, ViewModifiers,
 };
 
 /// A native scroll view around its content.
@@ -17,7 +17,7 @@ pub struct ScrollView {
     content: ElementFactory<RenderNode>,
     axes: ScrollAxes,
     store: Option<Store<ScrollStatus>>,
-    target: Option<(Trigger<String>, ScrollAlignment)>,
+    target: Option<(Trigger<ViewId>, ScrollAlignment)>,
     layout: LayoutStyle,
     modifiers: ViewModifiers,
 }
@@ -52,7 +52,7 @@ impl ScrollView {
     /// time it fires, even with the same ID.
     ///
     /// Give the rows IDs with their `id` builders, such as the row of a selected item.
-    pub fn scroll_to(mut self, trigger: Trigger<String>, alignment: ScrollAlignment) -> Self {
+    pub fn scroll_to(mut self, trigger: Trigger<ViewId>, alignment: ScrollAlignment) -> Self {
         self.target = Some((trigger, alignment));
         self
     }
@@ -71,7 +71,7 @@ impl NativeView for ScrollView {
                 }),
                 reveal: self.target.and_then(|(trigger, alignment)| {
                     Some(ScrollTarget {
-                        id: cx.get(trigger.store()).clone()?,
+                        id: cx.get(trigger.store()).clone()?.into(),
                         alignment,
                         revision: cx.revision(trigger.store()),
                     })

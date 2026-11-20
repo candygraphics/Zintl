@@ -10,7 +10,7 @@ use zintl_ui_backend_core::WindowStyle;
 use crate::menu::MenuActions;
 use crate::{
     Alert, ColorPanel, Context, DocumentState, Element, EventKind, FileDialog, Rect, RenderNode,
-    Sidebar, TitleBar, Toolbar, UndoState,
+    Sidebar, TitleBar, Toolbar, UndoState, ViewId,
 };
 
 type Action = dyn for<'a> Fn(&mut Context<'a>);
@@ -123,8 +123,9 @@ impl Window {
         self
     }
 
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
+    /// Names the window for accessibility and UI tests.
+    pub fn id(mut self, id: impl Into<ViewId>) -> Self {
+        self.id = Some(id.into().into());
         self
     }
 

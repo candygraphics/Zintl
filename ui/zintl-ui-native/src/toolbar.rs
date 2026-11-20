@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use zintl_ui::store::{Store, Trigger};
 
-use crate::{Context, Element, Event, EventKind, RenderNode};
+use crate::{Context, Element, Event, EventKind, RenderNode, ViewId};
 
 type Action = dyn for<'a> Fn(&mut Context<'a>);
 
@@ -84,9 +84,9 @@ impl ToolbarItem {
     }
 
     /// Identifies the search field for UI tests, such as `toolbar-search`.
-    pub fn id(mut self, value: impl Into<String>) -> Self {
+    pub fn id(mut self, value: impl Into<ViewId>) -> Self {
         if let Item::Search { id, .. } = &mut self.0 {
-            *id = Some(value.into());
+            *id = Some(value.into().into());
         }
         self
     }

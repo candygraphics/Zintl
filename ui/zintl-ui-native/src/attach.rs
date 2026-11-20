@@ -1,7 +1,7 @@
 use zintl_ui_backend_core::{Accessibility, AccessibilityRole};
 use zintl_ui_layout::{LayoutDimension, LayoutStyle, Size};
 
-use crate::{Context, Element, Menu, Popover, RenderNode};
+use crate::{Context, Element, Menu, Popover, RenderNode, ViewId};
 
 /// A view that renders exactly one native element.
 ///
@@ -39,8 +39,10 @@ pub trait NativeView: Clone + 'static {
             ..
         } = &mut element
         {
-            if !self.places_id() && modifiers.id.is_some() {
-                id.clone_from(&modifiers.id);
+            if !self.places_id()
+                && let Some(value) = &modifiers.id
+            {
+                *id = Some(value.as_str().to_owned());
             }
             if let Some(value) = modifiers.enabled {
                 *enabled = value;
@@ -152,7 +154,7 @@ impl<V: NativeView> Control for V {}
 /// They return `Self`, so the view's own builder methods can follow.
 pub trait Attach: NativeView + Sized {
     /// Names the view for accessibility, UI tests, and scroll targets.
-    fn id(mut self, id: impl Into<String>) -> Self {
+    fn id(mut self, id: impl Into<ViewId>) -> Self {
         self.modifiers_mut().id = Some(id.into());
         self
     }
@@ -223,8 +225,8 @@ pub trait Attach: NativeView + Sized {
 
     /// Names the view with the text of the view whose ID is `id`, such as a
     /// `Text` beside a slider.
-    fn accessibility_labeled_by(mut self, id: impl Into<String>) -> Self {
-        self.modifiers_mut().accessibility.labeled_by = Some(id.into());
+    fn accessibility_labeled_by(mut self, id: impl Into<ViewId>) -> Self {
+        self.modifiers_mut().accessibility.labeled_by = Some(id.into().into());
         self
     }
 }
@@ -269,7 +271,7 @@ impl LayoutOverrides {
 /// The ID, enabled state, sizes, and presentations declared on a native view.
 #[derive(Clone, Default)]
 pub struct ViewModifiers {
-    id: Option<String>,
+    id: Option<ViewId>,
     enabled: Option<bool>,
     layout: LayoutOverrides,
     menu: Option<Menu>,
@@ -281,8 +283,8 @@ pub struct ViewModifiers {
 
 impl ViewModifiers {
     /// Returns the declared ID.
-    pub fn id(&self) -> Option<&str> {
-        self.id.as_deref()
+    pub fn id(&self) -> Option<&ViewId> {
+        self.id.as_ref()
     }
 
     /// Returns whether the view is enabled; views are enabled unless declared otherwise.
@@ -335,7 +337,7 @@ mod tests {
     use crate::testing::Harness;
     use crate::{
         Attach, Button, Container, Control, Layout, RenderNode, ScrollView, Slider, Table,
-        TableColumn, TableRow, Text, TextField,
+        TableColumn, TableRow, Text, TextField, ViewId,
     };
 
     /// A mounted view, read back as render nodes.
@@ -403,6 +405,28 @@ mod tests {
         Mounted::assert_modifiers_reach(Slider::new(0.0..=1.0));
         Mounted::assert_modifiers_reach(ScrollView::new(Mounted::empty()));
         Mounted::assert_modifiers_reach(Mounted::empty());
+    }
+
+    #[test]
+    fn id_accepts_literals_strings_constants_and_view_ids() {
+        // Verifies every way of naming a view reaches its node as the same string.
+        const SAVE: &str = "save";
+        let shared = ViewId::from(SAVE);
+        let ids = [
+            Mounted::new(Button::new("Save").id("save")).view(&[]).1,
+            Mounted::new(Button::new("Save").id(String::from("save")))
+                .view(&[])
+                .1,
+            Mounted::new(Button::new("Save").id(SAVE)).view(&[]).1,
+            Mounted::new(Button::new("Save").id(&shared)).view(&[]).1,
+            Mounted::new(Button::new("Save").id(format!("{shared}")))
+                .view(&[])
+                .1,
+        ];
+
+        assert!(ids.iter().all(|id| id.as_deref() == Some("save")));
+        assert_eq!(shared.as_str(), "save");
+        assert_eq!(String::from(shared), "save");
     }
 
     #[test]

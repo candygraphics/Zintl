@@ -16,7 +16,7 @@
 | 1 | [01-common-modifiers.md](01-common-modifiers.md) | レイアウト・`id`・`enabled` を全ビュー共通にする | なし | なし |
 | 2 | [02-wrapper-layer.md](02-wrapper-layer.md) | desktop → native の転送ラッパーをやめ、ビューを 1 クレートに集める | 1 | なし |
 | 3 | [03-values-and-callbacks.md](03-values-and-callbacks.md) | 制御値・バインド・`on_change`・トリガーの語彙を揃える | 2 | なし |
-| 4 | [04-selection-and-ids.md](04-selection-and-ids.md) | `Picker` / `TabView` を値ベースにし、ビュー ID に型を付ける | 3 | 任意 |
+| 4 | [04-selection-and-ids.md](04-selection-and-ids.md) | `Picker` / `TabView` / `List` などの選択を値ベースにし、ビュー ID に型を付ける | 3 | なし |
 | 5 | [05-public-surface.md](05-public-surface.md) | 公開面のモジュール化、検査 API の分離、ファイル分割 | 2 | なし |
 | 6 | [06-custom-views.md](06-custom-views.md) | 利用者定義ビューに共通モディファイアを開放、拡張方針、テーマ | 1 | 任意 |
 | 7 | [07-view-state.md](07-view-state.md) | 「外部バインドかローカル状態か」の共通型、`Store` の初期化 | なし | なし |

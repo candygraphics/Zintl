@@ -2,7 +2,7 @@ use zintl_ui_desktop::*;
 
 /// An overlay label, a striped grid, a folding section, and a list that jumps to a row.
 pub struct MainView {
-    target: Trigger<String>,
+    target: Trigger<ViewId>,
     expanded: Store<bool>,
 }
 
