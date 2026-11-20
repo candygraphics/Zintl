@@ -3,7 +3,7 @@
 mod model;
 mod storage;
 
-use model::{Folder, Library, Note, NoteId, SmartFolder};
+use model::{Folder, Library, Note, NoteId, Place};
 use storage::{Saver, Storage};
 use zintl_ui_desktop::accessibility::*;
 use zintl_ui_desktop::menu::*;
@@ -13,10 +13,10 @@ use zintl_ui_desktop::*;
 #[derive(Clone, Copy, Default)]
 struct State {
     library: Store<Library>,
-    folder: Store<Option<String>>,
+    /// The sidebar's selection.
+    folder: Store<Option<Place>>,
+    /// The note list's selection.
     selected: Store<Option<NoteId>>,
-    /// The list's selection, which mirrors `selected` as a row ID.
-    row: Store<Option<String>>,
     /// The editor's text, which mirrors the selected note's body.
     draft: Store<AttributedText>,
     saver: Store<Saver>,
@@ -38,10 +38,8 @@ impl State {
         result
     }
 
-    fn folder_id(&self, cx: &Context<'_>) -> String {
-        cx.get(self.folder)
-            .clone()
-            .unwrap_or_else(|| SmartFolder::ALL.to_owned())
+    fn place(&self, cx: &Context<'_>) -> Place {
+        cx.get(self.folder).clone().unwrap_or(Place::All)
     }
 
     /// Stores the edited draft in the selected note, which moves it to the top of its list.
@@ -59,24 +57,23 @@ impl State {
             .map(|note| note.body.clone())
             .unwrap_or_default();
         cx.update(self.selected, |selected| *selected = id);
-        cx.update(self.row, |row| *row = id.map(|id| id.to_string()));
         cx.update(self.draft, |draft| *draft = body);
     }
 
     /// Selects the first note of the folder chosen in the sidebar.
     fn select_folder(&self, cx: &mut Context<'_>) {
-        let folder = self.folder_id(cx);
+        let place = self.place(cx);
         let first = cx
             .get(self.library)
-            .notes_in(&folder)
+            .notes_in(&place)
             .first()
             .map(|note| note.id);
         self.select(cx, first);
     }
 
     fn new_note(&self, cx: &mut Context<'_>) {
-        let folder = self.folder_id(cx);
-        let id = self.change(cx, |library| library.create(&folder));
+        let place = self.place(cx);
+        let id = self.change(cx, |library| library.create(&place));
         cx.update(self.query, String::clear);
         self.select(cx, Some(id));
         cx.fire(self.focus, ());
@@ -124,7 +121,7 @@ impl State {
     /// Creates a folder, selects it, and asks for its name.
     fn new_folder(&self, cx: &mut Context<'_>) {
         let id = self.change(cx, |library| library.create_folder("New Folder"));
-        cx.update(self.folder, |folder| *folder = Some(id.clone()));
+        cx.update(self.folder, |folder| *folder = Some(Place::folder(&id)));
         self.select_folder(cx);
         self.start_rename(cx, id);
     }
@@ -155,10 +152,8 @@ impl State {
     /// Deletes a folder; its notes go to Recently Deleted.
     fn delete_folder(&self, cx: &mut Context<'_>, id: String) {
         self.change(cx, |library| library.delete_folder(&id));
-        if cx.get(self.folder).as_deref() == Some(id.as_str()) {
-            cx.update(self.folder, |folder| {
-                *folder = Some(SmartFolder::ALL.to_owned())
-            });
+        if *cx.get(self.folder) == Some(Place::folder(&id)) {
+            cx.update(self.folder, |folder| *folder = Some(Place::All));
             self.select_folder(cx);
         }
     }
@@ -171,6 +166,17 @@ impl State {
         });
         let message = if pinned { "Pinned" } else { "Unpinned" };
         cx.announce(message, AnnouncementPriority::Medium);
+    }
+}
+
+// Folder IDs are prefixed so no folder can take a smart folder's ID.
+impl ItemKey for Place {
+    fn item_id(&self) -> String {
+        match self {
+            Place::All => "all".to_owned(),
+            Place::Deleted => "deleted".to_owned(),
+            Place::Folder(id) => format!("folder:{id}"),
+        }
     }
 }
 
@@ -196,14 +202,13 @@ impl View for NotesApp {
         // Open with the first note selected, as Notes does.
         let (library, saver) = self.initial.take().expect("init runs once");
         let first = library
-            .notes_in(SmartFolder::ALL)
+            .notes_in(&Place::All)
             .first()
             .map(|note| (*note).clone());
         self.state = State {
             library: cx.store(library),
-            folder: cx.store(Some(SmartFolder::ALL.to_owned())),
+            folder: cx.store(Some(Place::All)),
             selected: cx.store(first.as_ref().map(|note| note.id)),
-            row: cx.store(first.as_ref().map(|note| note.id.to_string())),
             draft: cx.store(first.map(|note| note.body).unwrap_or_default()),
             saver: cx.store(saver),
             query: cx.store(String::new()),
@@ -218,7 +223,7 @@ impl View for NotesApp {
         let state = self.state;
         let folders = cx.get(state.library).folders.clone();
         let library = cx.get(state.library);
-        let count = |folder: &str| library.notes_in(folder).len().to_string();
+        let count = |place: &Place| library.notes_in(place).len().to_string();
 
         list![
             MainMenu::standard()
@@ -269,15 +274,17 @@ impl View for NotesApp {
                 ]))
                 .sidebar(
                     Sidebar::new([
-                        SidebarSection::new([SidebarItem::new(SmartFolder::ALL, "All Notes")
+                        SidebarSection::new([SidebarItem::new(Place::All, "All Notes")
                             .system_image("tray.full")
-                            .badge(count(SmartFolder::ALL))])
+                            .badge(count(&Place::All))])
                         .title("iCloud"),
                         SidebarSection::new(folders.into_iter().map(|folder| {
                             let (rename, delete) = (folder.id.clone(), folder.id.clone());
-                            SidebarItem::new(folder.id.clone(), folder.name)
+                            let place = Place::Folder(folder.id);
+                            let badge = count(&place);
+                            SidebarItem::new(place, folder.name)
                                 .system_image("folder")
-                                .badge(count(&folder.id))
+                                .badge(badge)
                                 .context_menu([
                                     MenuItem::new("Rename Folder…").on_select(move |cx| {
                                         state.start_rename(cx, rename.clone())
@@ -288,12 +295,11 @@ impl View for NotesApp {
                                 ])
                         }))
                         .title("Folders"),
-                        SidebarSection::new([SidebarItem::new(
-                            SmartFolder::DELETED,
-                            "Recently Deleted",
-                        )
-                        .system_image("trash")
-                        .badge(count(SmartFolder::DELETED))]),
+                        SidebarSection::new([
+                            SidebarItem::new(Place::Deleted, "Recently Deleted",)
+                                .system_image("trash")
+                                .badge(count(&Place::Deleted))
+                        ]),
                     ])
                     .bind(state.folder)
                     .on_select(move |cx, _| state.select_folder(cx)),
@@ -336,7 +342,7 @@ struct NoteList {
 }
 
 impl NoteList {
-    fn row(state: State, note: &Note, folders: &[Folder]) -> ListRow {
+    fn row(state: State, note: &Note, folders: &[Folder]) -> ListRow<NoteId> {
         let id = note.id;
         let destinations = folders
             .iter()
@@ -353,7 +359,7 @@ impl NoteList {
             "Pin Note"
         };
         ListRow::new(
-            note.id.to_string(),
+            note.id,
             VStack::new(list![
                 Text::new(note.title())
                     .font(Font::system(13.0).bold())
@@ -389,11 +395,11 @@ impl View for NoteList {
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let state = self.state;
-        let folder = state.folder_id(cx);
+        let place = state.place(cx);
         let folders = cx.get(state.library).folders.clone();
         let query = cx.get(state.query).clone();
         let notes = if query.is_empty() {
-            cx.get(state.library).notes_in(&folder)
+            cx.get(state.library).notes_in(&place)
         } else {
             cx.get(state.library).search(&query)
         };
@@ -442,10 +448,8 @@ impl View for NoteList {
             // The list is named by the count above it, such as "3 notes".
             List::new(sections)
                 .accessibility_labeled_by("note-count")
-                .bind(state.row)
-                .on_select(move |cx, id| {
-                    state.select(cx, id.and_then(|id| id.parse().ok()));
-                }),
+                .bind(state.selected)
+                .on_select(move |cx, id| state.select(cx, id.copied())),
         ])
         .spacing(0.0)
         .fill_width()

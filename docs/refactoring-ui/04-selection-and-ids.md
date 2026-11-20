@@ -146,6 +146,9 @@ impl<K: ItemKey> List<K> {
 - 現在値が行に無い場合は `selected: None` として描画します(`Picker` と揃える)。
 - `item_id()` の重複は `debug_assert!` で検出します(`HashSet<String>`)。
 - 文字列リテラルの ID は `K = &'static str` と推論されます。`Store<Option<String>>` と組み合わせる箇所は、Store を `Option<&'static str>` にするか、ID を `String` にします。
+- 対応表は `ItemKeys<K>`(`pub(crate)`)にまとめ、3 つのビューで共有します。
+- `Window` はジェネリックにしません。`Window::sidebar<K>(Sidebar<K>)` は、`Sidebar<K>` を型消去したトレイト(`pub(crate) WindowSidebar`)として保持します。
+- 行を 1 つも渡さない `Table::new(columns, [])` は `K` を推論できないので、`Table::<String>::new` のように型を書きます。
 
 ### `ViewId`
 

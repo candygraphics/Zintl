@@ -279,6 +279,7 @@ impl Saver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Place;
 
     /// Returns an empty folder unique to `name`.
     fn folder(name: &str) -> PathBuf {
@@ -302,7 +303,10 @@ mod tests {
         assert_eq!(loaded.folders, library.folders);
         let mut next = loaded.clone();
         let mut expected = library.clone();
-        assert_eq!(next.create("notes"), expected.create("notes"));
+        assert_eq!(
+            next.create(&Place::folder("notes")),
+            expected.create(&Place::folder("notes"))
+        );
     }
 
     // Loading without a file reports that nothing is saved yet.

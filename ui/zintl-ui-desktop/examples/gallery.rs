@@ -17,9 +17,24 @@ enum ItemSize {
     Large,
 }
 
+/// The pages the sidebar selects by key.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Page {
+    Controls,
+    Containers,
+    Buttons,
+    Dialogs,
+}
+
+impl ItemKey for Page {
+    fn item_id(&self) -> String {
+        format!("{self:?}").to_lowercase()
+    }
+}
+
 #[derive(Default)]
 struct Gallery {
-    page: Store<Option<String>>,
+    page: Store<Option<Page>>,
     query: Store<String>,
     status: Store<String>,
     notifications: Store<bool>,
@@ -44,19 +59,19 @@ struct Gallery {
 }
 
 impl Gallery {
-    const PAGES: [(&'static str, &'static str, &'static str); 4] = [
-        ("controls", "Controls", "slider.horizontal.3"),
-        ("containers", "Containers", "square.split.2x1"),
-        ("buttons", "Buttons & Menus", "cursorarrow.click"),
-        ("dialogs", "Dialogs & Windows", "macwindow.on.rectangle"),
+    const PAGES: [(Page, &'static str, &'static str); 4] = [
+        (Page::Controls, "Controls", "slider.horizontal.3"),
+        (Page::Containers, "Containers", "square.split.2x1"),
+        (Page::Buttons, "Buttons & Menus", "cursorarrow.click"),
+        (Page::Dialogs, "Dialogs & Windows", "macwindow.on.rectangle"),
     ];
 
-    fn sidebar(&self, query: &str) -> Sidebar {
+    fn sidebar(&self, query: &str) -> Sidebar<Page> {
         let query = query.to_lowercase();
         let items = Self::PAGES
             .iter()
             .filter(|(_, title, _)| title.to_lowercase().contains(&query))
-            .map(|(id, title, symbol)| SidebarItem::new(*id, *title).system_image(*symbol));
+            .map(|(page, title, symbol)| SidebarItem::new(*page, *title).system_image(*symbol));
         Sidebar::new([SidebarSection::new(items).title("Gallery")])
             .bind(self.page)
             .searchable(self.query)
@@ -327,7 +342,7 @@ impl View for Gallery {
     type Output = RenderNode;
 
     fn init(&mut self, cx: &mut Context<'_>) {
-        self.page = cx.store(Some("controls".into()));
+        self.page = cx.store(Some(Page::Controls));
         self.query = cx.store(String::new());
         self.status = cx.store("Ready".into());
         self.notifications = cx.store(true);
@@ -356,12 +371,11 @@ impl View for Gallery {
         let report = move |cx: &mut Context<'_>, message: String| {
             cx.update(status, |status| *status = message);
         };
-        let page = cx.get(self.page).clone().unwrap_or_default();
-        let content = match page.as_str() {
-            "containers" => self.containers(),
-            "buttons" => self.buttons(),
-            "dialogs" => self.dialogs(),
-            _ => self.controls(),
+        let content = match cx.get(self.page).unwrap_or(Page::Controls) {
+            Page::Controls => self.controls(),
+            Page::Containers => self.containers(),
+            Page::Buttons => self.buttons(),
+            Page::Dialogs => self.dialogs(),
         };
         let window = Window::new(Rect::new(120.0, 120.0, 820.0, 620.0), "Zintl Gallery")
             .sidebar(self.sidebar(cx.get(self.query)))

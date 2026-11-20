@@ -86,12 +86,11 @@ Found while writing phase 1 (see `TODO` comments in `src/main.rs`).
 ### B. Lists
 
 - **B1 `List` view (done).** `List`/`ListSection`/`ListRow`: an `NSTableView`
-  hosting arbitrary row views, single selection bound to `Store<Option<String>>`,
-  group-row headers, inset or plain style. Not yet: multiple selection, lazy
+  hosting arbitrary row views, single selection bound to a `Store<Option<K>>` of
+  any `ItemKey`, group-row headers, inset or plain style. Not yet: multiple selection, lazy
   row creation for large lists. Formerly: A native `NSTableView`/`NSOutlineView` with arbitrary row
   views, a selection binding (`Store<Option<Id>>` and multiple selection),
   sections with headers, keyboard navigation, and source-list or inset styles.
-  `Sidebar` covers only string items.
 - **B2 Row actions (context menus done).** `context_menu` on row views. Not yet:
   double-click, delete key, swipe actions. Formerly: Context menu with the clicked row's ID, double-click,
   delete key, swipe actions.

@@ -8,9 +8,10 @@ use zintl_ui::view::View;
 use zintl_ui_backend_core::WindowStyle;
 
 use crate::menu::MenuActions;
+use crate::sidebar::WindowSidebar;
 use crate::{
-    Alert, ColorPanel, Context, DocumentState, Element, EventKind, FileDialog, Rect, RenderNode,
-    Sidebar, TitleBar, Toolbar, UndoState, ViewId,
+    Alert, ColorPanel, Context, DocumentState, Element, EventKind, FileDialog, ItemKey, Rect,
+    RenderNode, Sidebar, TitleBar, Toolbar, UndoState, ViewId,
 };
 
 type Action = dyn for<'a> Fn(&mut Context<'a>);
@@ -69,7 +70,7 @@ impl WindowAttachment {
 
 #[derive(Clone)]
 pub struct Window {
-    sidebar: Option<Sidebar>,
+    sidebar: Option<Rc<dyn WindowSidebar>>,
     bounds: Rect,
     title: String,
     title_bar: TitleBar,
@@ -118,8 +119,8 @@ impl Window {
         }
     }
 
-    pub fn sidebar(mut self, sidebar: Sidebar) -> Self {
-        self.sidebar = Some(sidebar);
+    pub fn sidebar<K: ItemKey>(mut self, sidebar: Sidebar<K>) -> Self {
+        self.sidebar = Some(Rc::new(sidebar));
         self
     }
 

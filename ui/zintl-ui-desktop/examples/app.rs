@@ -3,7 +3,7 @@ use zintl_ui_desktop::*;
 #[derive(Default)]
 pub struct MainView {
     name: Store<String>,
-    selection: Store<Option<String>>,
+    selection: Store<Option<&'static str>>,
     count: Store<i32>,
 }
 
@@ -11,7 +11,7 @@ impl View for MainView {
     type Output = RenderNode;
 
     fn init(&mut self, cx: &mut Context<'_>) {
-        self.selection = cx.store(Some("home".into()));
+        self.selection = cx.store(Some("home"));
         self.name = cx.store(String::new());
         self.count = cx.store(0);
     }
@@ -37,10 +37,7 @@ impl View for MainView {
             .content(
                 VStack::new(list![
                     cx.watch(self.selection, |selection| {
-                        Text::new(format!(
-                            "Selected: {}",
-                            selection.as_deref().unwrap_or("none")
-                        ))
+                        Text::new(format!("Selected: {}", selection.unwrap_or("none")))
                     }),
                     TextField::new().placeholder("Your Name").bind(name),
                     cx.watch(name, |name| Text::new(format!("Stored value: {name:?}"))),
