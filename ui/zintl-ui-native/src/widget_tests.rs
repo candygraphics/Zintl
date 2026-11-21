@@ -2811,6 +2811,151 @@ fn sidebar_selects_items_by_their_key() {
     assert_eq!(selected(&app).as_deref(), Some("folder-2"));
 }
 
+/// A row key from another crate, which cannot implement `ItemKey` here.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct TransactionId(i64);
+
+/// Builds a table of transactions 1 and 2 named by `item_id(..)`.
+fn transaction_table(
+    selection: Store<Option<TransactionId>>,
+    seen: Rc<RefCell<Vec<Option<TransactionId>>>>,
+) -> Table<TransactionId, ItemIdFn<TransactionId>> {
+    Table::new(
+        [TableColumn::new("Payee")],
+        [1, 2].map(|number| {
+            TableRow::new(
+                TransactionId(number),
+                list![Text::new(format!("Payee {number}"))],
+            )
+        }),
+    )
+    .item_id(|id: &TransactionId| format!("tx-{}", id.0))
+    .bind(selection)
+    .on_select(move |_, id| seen.borrow_mut().push(id.copied()))
+}
+
+#[test]
+fn table_selects_foreign_keys_through_item_id() {
+    // Verifies `item_id(..)` names rows of a non-`ItemKey` type and selection round-trips as that type.
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let record = seen.clone();
+    let (mut app, selection) = WithStores::mount(
+        |cx| cx.store(Some(TransactionId(2))),
+        move |selection| transaction_table(selection, record.clone()),
+    );
+    let rows = |app: &Harness| match app.tree().value {
+        RenderNode::View {
+            kind: ViewKind::Table { rows, selected, .. },
+            ..
+        } => (rows, selected),
+        other => panic!("expected a table, got {other:?}"),
+    };
+    assert_eq!(
+        rows(&app),
+        (
+            vec!["tx-1".to_owned(), "tx-2".to_owned()],
+            Some("tx-2".to_owned())
+        )
+    );
+
+    app.dispatch(
+        &[0],
+        Event::ListSelectionChanged {
+            id: Some("tx-1".into()),
+        },
+    );
+
+    assert_eq!(app.get(selection), Some(TransactionId(1)));
+    assert_eq!(*seen.borrow(), [Some(TransactionId(1))]);
+    assert_eq!(rows(&app).1.as_deref(), Some("tx-1"));
+}
+
+#[test]
+#[should_panic(expected = "distinct item IDs")]
+#[cfg(debug_assertions)]
+fn table_catches_colliding_item_ids_in_debug_builds() {
+    // Verifies distinct keys that `item_id(..)` gives the same string trip the debug assertion.
+    Harness::new(
+        Table::new(
+            [TableColumn::new("Payee")],
+            [1, 2].map(|number| TableRow::new(TransactionId(number), list![Text::new("Payee")])),
+        )
+        .item_id(|_: &TransactionId| "tx".to_owned()),
+    );
+}
+
+#[test]
+fn list_selects_foreign_keys_through_item_id() {
+    // Verifies `item_id(..)` may follow other modifiers and still names a list's rows and selection.
+    let (mut app, selection) = WithStores::mount(
+        |cx| cx.store(Some(TransactionId(1))),
+        |selection| {
+            List::new([ListSection::new([1, 2].map(|number| {
+                ListRow::new(TransactionId(number), Text::new(format!("Payee {number}")))
+            }))])
+            .bind(selection)
+            .item_id(|id| format!("tx-{}", id.0))
+        },
+    );
+    assert_eq!(
+        list_rows(&app.tree()),
+        (
+            vec!["tx-1".to_owned(), "tx-2".to_owned()],
+            Some("tx-1".to_owned())
+        )
+    );
+
+    app.dispatch(
+        &[0],
+        Event::ListSelectionChanged {
+            id: Some("tx-2".into()),
+        },
+    );
+
+    assert_eq!(app.get(selection), Some(TransactionId(2)));
+}
+
+#[test]
+fn sidebar_names_foreign_keys_through_item_id() {
+    // Verifies a sidebar's item IDs, which are also accessibility identifiers, come from `item_id(..)`.
+    let (mut app, selection) = WithStores::mount(
+        |cx| cx.store(None::<TransactionId>),
+        |selection| {
+            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Accounts").sidebar(
+                Sidebar::new([SidebarSection::new([
+                    SidebarItem::new(TransactionId(1), "Checking"),
+                    SidebarItem::new(TransactionId(2), "Savings"),
+                ])])
+                .item_id(|id| format!("account-{}", id.0))
+                .bind(selection),
+            )
+        },
+    );
+    let sidebar = |app: &Harness| match app.tree().value {
+        RenderNode::Window {
+            sidebar: Some(sidebar),
+            ..
+        } => sidebar,
+        other => panic!("expected a window with a sidebar, got {other:?}"),
+    };
+    let ids = sidebar(&app).sections[0]
+        .items
+        .iter()
+        .map(|item| item.id.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(ids, ["account-1", "account-2"]);
+
+    app.dispatch(
+        &[0],
+        Event::SidebarSelectionChanged {
+            id: "account-2".into(),
+        },
+    );
+
+    assert_eq!(app.get(selection), Some(TransactionId(2)));
+    assert_eq!(sidebar(&app).selected_id.as_deref(), Some("account-2"));
+}
+
 /// Returns the accessibility description of a rendered view.
 fn accessibility_of(node: &RenderedNode) -> &zintl_ui_backend_core::Accessibility {
     match &node.value {

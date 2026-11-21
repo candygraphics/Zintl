@@ -62,7 +62,7 @@ pub use controls::{
     SearchField, Slider,
 };
 pub use indicators::{ProgressIndicator, Separator};
-pub use item_key::ItemKey;
+pub use item_key::{ByItemKey, ItemIdFn, ItemIdSource, ItemKey};
 pub use list::{List, ListRow, ListSection};
 pub use menu::{
     EnglishMenuLocalizer, JapaneseMenuLocalizer, MainMenu, Menu, MenuItem, MenuItemState,

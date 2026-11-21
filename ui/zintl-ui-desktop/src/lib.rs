@@ -12,22 +12,22 @@ pub use zintl_ui::view::View;
 pub use zintl_ui_layout::{Axis, CrossAxisAlignment, MainAxisDistribution, Size};
 pub use zintl_ui_native::graphics::{AttributedText, Font, FontWeight};
 pub use zintl_ui_native::{
-    Attach, BarChart, Button, ButtonRole, ButtonStyle, CalendarDate, ChartBar, Color, ColorWell,
-    ComboBox, Context, Control, DatePicker, DatePickerStyle, DisclosureGroup, Grid, GridCell,
-    HStack, IntegerField, ItemKey, Layout, List, ListFactory, ListRow, ListSection, ListStyle,
-    NumberField, OptionalDatePicker, PaletteColor, Picker, PickerStyle, ProgressIndicator, Rect,
-    RenderNode, ScrollAlignment, ScrollAxes, ScrollStatus, ScrollView, SearchField, Separator,
-    Sidebar, SidebarItem, SidebarSection, Slider, SortOrder, Spacer, SplitView, SystemColor, Tab,
-    TabView, Table, TableColumn, TableRow, Text, TextAlignment, TextColor, TextEditor, TextField,
-    TitleBar, Toggle, ToggleStyle, Toolbar, ToolbarItem, UndoHandler, VStack, ViewId, Window,
-    ZStack, graphics, list,
+    Attach, BarChart, Button, ButtonRole, ButtonStyle, ByItemKey, CalendarDate, ChartBar, Color,
+    ColorWell, ComboBox, Context, Control, DatePicker, DatePickerStyle, DisclosureGroup, Grid,
+    GridCell, HStack, IntegerField, ItemIdFn, ItemIdSource, ItemKey, Layout, List, ListFactory,
+    ListRow, ListSection, ListStyle, NumberField, OptionalDatePicker, PaletteColor, Picker,
+    PickerStyle, ProgressIndicator, Rect, RenderNode, ScrollAlignment, ScrollAxes, ScrollStatus,
+    ScrollView, SearchField, Separator, Sidebar, SidebarItem, SidebarSection, Slider, SortOrder,
+    Spacer, SplitView, SystemColor, Tab, TabView, Table, TableColumn, TableRow, Text,
+    TextAlignment, TextColor, TextEditor, TextField, TitleBar, Toggle, ToggleStyle, Toolbar,
+    ToolbarItem, UndoHandler, VStack, ViewId, Window, ZStack, graphics, list,
 };
 
 /// Menus, their items, and keyboard shortcuts.
 pub mod menu {
     pub use zintl_ui_native::{
         EnglishMenuLocalizer, JapaneseMenuLocalizer, MainMenu, Menu, MenuItem, MenuLocalizer,
-        Modifier, Shortcut, ShortcutKey, StandardAction, StandardMenu, StandardText,
+        Modifier, NamedKey, Shortcut, ShortcutKey, StandardAction, StandardMenu, StandardText,
     };
 }
 
@@ -105,10 +105,20 @@ mod tests {
             accessibility::{AccessibilityRole, AnnouncementPriority},
             canvas::{Canvas2D, Canvas2DHandler, CanvasEvent, Frame, PointerEvent},
             dialog::{Alert, ColorPanel, FileDialog, Popover},
-            menu::{MainMenu, Menu, MenuItem, Shortcut, StandardMenu},
+            menu::{MainMenu, Menu, MenuItem, NamedKey, Shortcut, StandardMenu},
             render::{Element, Event, NativeView, ViewKind, ViewModifiers, modifiers},
             testing::RenderedNode,
             thread::{Signal, StoreSender},
         };
+    }
+
+    #[test]
+    fn menu_module_names_shortcut_keys() {
+        // Verifies a named-key shortcut needs only the menu module, not canvas.
+        use crate::menu::{MenuItem, NamedKey, Shortcut, ShortcutKey};
+
+        let shortcut = Shortcut::command(NamedKey::Backspace);
+        assert_eq!(shortcut.key, ShortcutKey::from(NamedKey::Backspace));
+        MenuItem::new("Delete…").shortcut(shortcut);
     }
 }

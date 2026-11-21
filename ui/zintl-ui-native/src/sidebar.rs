@@ -1,28 +1,31 @@
 use std::rc::Rc;
 
-use crate::item_key::ItemKeys;
+use crate::item_key::{ByItemKey, ItemIdFn, ItemIdSource, ItemKeys};
 use crate::menu::MenuActions;
 use crate::{
-    Context, Element, EnglishMenuLocalizer, Event, EventKind, ItemKey, Menu, MenuItemState,
-    RenderNode, Store,
+    Context, Element, EnglishMenuLocalizer, Event, EventKind, Menu, MenuItemState, RenderNode,
+    Store,
 };
 
 type SelectionAction<K> = dyn for<'a> Fn(&mut Context<'a>, &K);
 
 /// The window's source list, whose items are selected by key.
 ///
-/// Item keys must be unique across the sidebar. A selected key that no item
-/// has shows nothing selected.
+/// Item keys must be unique across the sidebar. Items are named by their item
+/// ID, from [`ItemKey`](crate::ItemKey) or [`Sidebar::item_id`], which is also
+/// their accessibility identifier. A selected key that no item has shows
+/// nothing selected.
 #[derive(Clone)]
-pub struct Sidebar<K: ItemKey = String> {
+pub struct Sidebar<K: 'static = String, I = ByItemKey> {
     sections: Vec<SidebarSection<K>>,
     selection: Option<Store<Option<K>>>,
     action: Option<Rc<SelectionAction<K>>>,
     search: Option<Store<String>>,
     search_placeholder: Option<String>,
+    item_id: I,
 }
 
-impl<K: ItemKey> std::fmt::Debug for Sidebar<K> {
+impl<K: 'static, I> std::fmt::Debug for Sidebar<K, I> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("Sidebar")
@@ -40,7 +43,7 @@ pub struct SidebarSection<K = String> {
     items: Vec<SidebarItem<K>>,
 }
 
-impl<K: ItemKey> SidebarSection<K> {
+impl<K> SidebarSection<K> {
     pub fn new(items: impl IntoIterator<Item = SidebarItem<K>>) -> Self {
         Self {
             title: None,
@@ -63,7 +66,7 @@ pub struct SidebarItem<K = String> {
     menu: Option<Menu>,
 }
 
-impl<K: ItemKey> SidebarItem<K> {
+impl<K> SidebarItem<K> {
     pub fn new(key: K, title: impl Into<String>) -> Self {
         Self {
             key,
@@ -91,7 +94,7 @@ impl<K: ItemKey> SidebarItem<K> {
     }
 }
 
-impl<K: ItemKey> Sidebar<K> {
+impl<K: 'static> Sidebar<K> {
     pub fn new(sections: impl IntoIterator<Item = SidebarSection<K>>) -> Self {
         Self {
             sections: sections.into_iter().collect(),
@@ -99,6 +102,24 @@ impl<K: ItemKey> Sidebar<K> {
             action: None,
             search: None,
             search_placeholder: None,
+            item_id: ByItemKey,
+        }
+    }
+}
+
+impl<K: 'static, I> Sidebar<K, I> {
+    /// Names items by `item_id` instead of their key's `ItemKey` implementation.
+    ///
+    /// Use it for keys that cannot implement `ItemKey`, such as ID types from
+    /// another crate. Different keys must return different strings.
+    pub fn item_id(self, item_id: impl Fn(&K) -> String + 'static) -> Sidebar<K, ItemIdFn<K>> {
+        Sidebar {
+            sections: self.sections,
+            selection: self.selection,
+            action: self.action,
+            search: self.search,
+            search_placeholder: self.search_placeholder,
+            item_id: ItemIdFn::new(item_id),
         }
     }
 
@@ -126,13 +147,16 @@ impl<K: ItemKey> Sidebar<K> {
         self.search_placeholder = Some(placeholder.into());
         self
     }
+}
 
+impl<K: Clone + PartialEq + 'static, I: ItemIdSource<K>> Sidebar<K, I> {
     fn keys(&self) -> ItemKeys<K> {
         ItemKeys::new(
             self.sections
                 .iter()
                 .flat_map(|section| &section.items)
                 .map(|item| &item.key),
+            &self.item_id,
         )
     }
 }
@@ -152,7 +176,7 @@ pub(crate) trait WindowSidebar {
     fn route(&self, element: Element<RenderNode>) -> Element<RenderNode>;
 }
 
-impl<K: ItemKey> WindowSidebar for Sidebar<K> {
+impl<K: Clone + PartialEq + 'static, I: ItemIdSource<K>> WindowSidebar for Sidebar<K, I> {
     fn state(
         &self,
         cx: &mut Context<'_>,

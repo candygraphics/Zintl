@@ -10,7 +10,7 @@ use zintl_ui_backend_core::WindowStyle;
 use crate::menu::MenuActions;
 use crate::sidebar::WindowSidebar;
 use crate::{
-    Alert, ColorPanel, Context, DocumentState, Element, EventKind, FileDialog, ItemKey, Rect,
+    Alert, ColorPanel, Context, DocumentState, Element, EventKind, FileDialog, ItemIdSource, Rect,
     RenderNode, Sidebar, TitleBar, Toolbar, UndoState, ViewId,
 };
 
@@ -119,7 +119,11 @@ impl Window {
         }
     }
 
-    pub fn sidebar<K: ItemKey>(mut self, sidebar: Sidebar<K>) -> Self {
+    pub fn sidebar<K, I>(mut self, sidebar: Sidebar<K, I>) -> Self
+    where
+        K: Clone + PartialEq + 'static,
+        I: ItemIdSource<K>,
+    {
         self.sidebar = Some(Rc::new(sidebar));
         self
     }
