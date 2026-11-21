@@ -11,19 +11,13 @@
 
 ## ステップ一覧
 
-| # | 文書 | 内容 | 依存 | バックエンド変更 |
-|---|---|---|---|---|
-| 1 | [01-common-modifiers.md](01-common-modifiers.md) | レイアウト・`id`・`enabled` を全ビュー共通にする | なし | なし |
-| 2 | [02-wrapper-layer.md](02-wrapper-layer.md) | desktop → native の転送ラッパーをやめ、ビューを 1 クレートに集める | 1 | なし |
-| 3 | [03-values-and-callbacks.md](03-values-and-callbacks.md) | 制御値・バインド・`on_change`・トリガーの語彙を揃える | 2 | なし |
-| 4 | [04-selection-and-ids.md](04-selection-and-ids.md) | `Picker` / `TabView` / `List` などの選択を値ベースにし、ビュー ID に型を付ける | 3 | なし |
-| 5 | [05-public-surface.md](05-public-surface.md) | 公開面のモジュール化、検査 API の分離、ファイル分割 | 2 | なし |
-| 6 | [06-custom-views.md](06-custom-views.md) | 利用者定義ビューに共通モディファイアを開放、拡張方針、テーマ | 1 | 任意 |
-| 7 | [07-view-state.md](07-view-state.md) | 「外部バインドかローカル状態か」の共通型、`Store` の初期化 | なし | なし |
-| 8 | [08-small-fixes.md](08-small-fixes.md) | コンストラクタと命名の細かい不揃い | 1, 2 | `Window` のみ |
+ステップ 1〜5(共通モディファイア、ラッパー層の廃止、値とコールバック、選択と ID、公開面)は完了済みです。
 
-推奨順は 1 → 2 → 5 → 3 → 4 → 6 → 7 → 8 です。
-1 で共通トレイトができると、2 で消す転送メソッドが大きく減ります。5 は 2 の直後に行うとファイル移動が一度で済みます。
+| # | 文書 | 内容 | バックエンド変更 |
+|---|---|---|---|
+| 6 | [06-custom-views.md](06-custom-views.md) | 利用者定義ビューに共通モディファイアを開放、拡張方針、テーマ | 任意 |
+| 7 | [07-view-state.md](07-view-state.md) | 「外部バインドかローカル状態か」の共通型、`Store` の初期化 | なし |
+| 8 | [08-small-fixes.md](08-small-fixes.md) | コンストラクタと命名の細かい不揃い | `Window` のみ |
 
 ## 現状の層構造
 
@@ -32,8 +26,8 @@ zintl-ui                 View / Store / Element / Composer(描画先に依存し
 zintl-ui-layout          LayoutStyle と taffy によるレイアウト
 zintl-ui-graphics        Canvas 用の 2D 描画型
 zintl-ui-backend-core    RenderNode / ViewKind / Event / Context / HeadlessBackend
-zintl-ui-native          RenderNode を組み立てる宣言的ビュー(AppKit 寄りの語彙)
-zintl-ui-desktop         native の改名ラッパー + 合成ビュー + App
+zintl-ui-native          すべての宣言的ビュー(RenderNode を組み立てる、AppKit 寄りの語彙)
+zintl-ui-desktop         App ランナーと、native のビューを領域別モジュールで再公開する入口
 zintl-ui-appkit-backend  AppKit バックエンド
 zintl-ui-winui3-backend  WinUI 3 バックエンド
 zintl-ui-test            zintl-ui 中核用のテストバックエンド
