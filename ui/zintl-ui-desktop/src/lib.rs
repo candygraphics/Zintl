@@ -27,7 +27,7 @@ pub use zintl_ui_native::{
 pub mod menu {
     pub use zintl_ui_native::{
         EnglishMenuLocalizer, JapaneseMenuLocalizer, MainMenu, Menu, MenuItem, MenuLocalizer,
-        Modifier, Shortcut, ShortcutKey, StandardAction, StandardMenu, StandardText,
+        Modifier, NamedKey, Shortcut, ShortcutKey, StandardAction, StandardMenu, StandardText,
     };
 }
 
@@ -105,10 +105,20 @@ mod tests {
             accessibility::{AccessibilityRole, AnnouncementPriority},
             canvas::{Canvas2D, Canvas2DHandler, CanvasEvent, Frame, PointerEvent},
             dialog::{Alert, ColorPanel, FileDialog, Popover},
-            menu::{MainMenu, Menu, MenuItem, Shortcut, StandardMenu},
+            menu::{MainMenu, Menu, MenuItem, NamedKey, Shortcut, StandardMenu},
             render::{Element, Event, NativeView, ViewKind, ViewModifiers, modifiers},
             testing::RenderedNode,
             thread::{Signal, StoreSender},
         };
+    }
+
+    #[test]
+    fn menu_module_names_shortcut_keys() {
+        // Verifies a named-key shortcut needs only the menu module, not canvas.
+        use crate::menu::{MenuItem, NamedKey, Shortcut, ShortcutKey};
+
+        let shortcut = Shortcut::command(NamedKey::Backspace);
+        assert_eq!(shortcut.key, ShortcutKey::from(NamedKey::Backspace));
+        MenuItem::new("Delete…").shortcut(shortcut);
     }
 }
