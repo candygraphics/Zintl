@@ -7,9 +7,9 @@ use zintl_ui::store::Store;
 use zintl_ui_backend_core::{ListStyle, ViewKind};
 use zintl_ui_layout::{LayoutStyle, Size};
 
-use crate::item_key::ItemKeys;
+use crate::item_key::{ByItemKey, ItemIdFn, ItemIdSource, ItemKeys};
 use crate::modifiers;
-use crate::{Context, Element, Event, EventKind, ItemKey, NativeView, RenderNode, ViewModifiers};
+use crate::{Context, Element, Event, EventKind, NativeView, RenderNode, ViewModifiers};
 
 type SelectionAction<K> = dyn for<'a> Fn(&mut Context<'a>, Option<&K>);
 
@@ -20,7 +20,7 @@ pub struct ListRow<K = String> {
     content: ElementFactory<RenderNode>,
 }
 
-impl<K: ItemKey> ListRow<K> {
+impl<K> ListRow<K> {
     pub fn new<V>(key: K, content: V) -> Self
     where
         V: Clone + IntoElement<Output = RenderNode> + 'static,
@@ -39,7 +39,7 @@ pub struct ListSection<K = String> {
     rows: Vec<ListRow<K>>,
 }
 
-impl<K: ItemKey> ListSection<K> {
+impl<K> ListSection<K> {
     pub fn new(rows: impl IntoIterator<Item = ListRow<K>>) -> Self {
         Self {
             title: None,
@@ -55,28 +55,48 @@ impl<K: ItemKey> ListSection<K> {
 
 /// A native list with single selection, sections, and keyboard navigation.
 ///
-/// Row keys must be unique across the list. Rows are keyed by their
-/// [`ItemKey::item_id`], so their views keep state when rows move. A selected
-/// key that no row has shows nothing selected.
+/// Row keys must be unique across the list. Rows are keyed by their item ID,
+/// from [`ItemKey`](crate::ItemKey) or [`List::item_id`], so their views keep
+/// state when rows move. A selected key that no row has shows nothing selected.
 #[derive(Clone)]
-pub struct List<K: ItemKey = String> {
+pub struct List<K: 'static = String, I = ByItemKey> {
     sections: Vec<ListSection<K>>,
     style: ListStyle,
     selection: Option<Store<Option<K>>>,
     action: Option<Rc<SelectionAction<K>>>,
+    item_id: I,
     layout: LayoutStyle,
     modifiers: ViewModifiers,
 }
 
-impl<K: ItemKey> List<K> {
+impl<K: 'static> List<K> {
     pub fn new(sections: impl IntoIterator<Item = ListSection<K>>) -> Self {
         Self {
             sections: sections.into_iter().collect(),
             style: ListStyle::default(),
             selection: None,
             action: None,
+            item_id: ByItemKey,
             layout: LayoutStyle::fill(Size::new(0.0, 0.0)),
             modifiers: ViewModifiers::default(),
+        }
+    }
+}
+
+impl<K: 'static, I> List<K, I> {
+    /// Names rows by `item_id` instead of their key's `ItemKey` implementation.
+    ///
+    /// Use it for keys that cannot implement `ItemKey`, such as ID types from
+    /// another crate. Different keys must return different strings.
+    pub fn item_id(self, item_id: impl Fn(&K) -> String + 'static) -> List<K, ItemIdFn<K>> {
+        List {
+            sections: self.sections,
+            style: self.style,
+            selection: self.selection,
+            action: self.action,
+            item_id: ItemIdFn::new(item_id),
+            layout: self.layout,
+            modifiers: self.modifiers,
         }
     }
 
@@ -99,7 +119,9 @@ impl<K: ItemKey> List<K> {
         self.action = Some(Rc::new(action));
         self
     }
+}
 
+impl<K: Clone + PartialEq + 'static, I: ItemIdSource<K>> List<K, I> {
     /// Reports selection changes for rows in `keys`, ignoring rows that are gone.
     fn route(&self, element: Element<RenderNode>, keys: ItemKeys<K>) -> Element<RenderNode> {
         let store = self.selection;
@@ -124,12 +146,12 @@ impl<K: ItemKey> List<K> {
     }
 }
 
-impl<K: ItemKey> NativeView for List<K> {
+impl<K: Clone + PartialEq + 'static, I: ItemIdSource<K>> NativeView for List<K, I> {
     modifiers!();
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
         let rows = self.sections.iter().flat_map(|section| &section.rows);
-        let keys = ItemKeys::new(rows.clone().map(|row| &row.key));
+        let keys = ItemKeys::new(rows.clone().map(|row| &row.key), &self.item_id);
         let sections = {
             let mut ids = keys.ids();
             self.sections
@@ -170,7 +192,7 @@ impl<K: ItemKey> NativeView for List<K> {
     }
 }
 
-impl<K: ItemKey> zintl_ui::view::View for List<K> {
+impl<K: Clone + PartialEq + 'static, I: ItemIdSource<K>> zintl_ui::view::View for List<K, I> {
     type Output = RenderNode;
 
     fn render(

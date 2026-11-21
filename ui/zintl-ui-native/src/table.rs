@@ -7,11 +7,10 @@ use zintl_ui::store::Store;
 use zintl_ui_backend_core::{SortOrder, TextAlignment, ViewKind};
 use zintl_ui_layout::{Arrangement, Axis, CrossAxisAlignment, LayoutStyle, Size};
 
-use crate::item_key::ItemKeys;
+use crate::item_key::{ByItemKey, ItemIdFn, ItemIdSource, ItemKeys};
 use crate::modifiers;
 use crate::{
-    Attach, Context, Element, Event, EventKind, ItemKey, Menu, NativeView, RenderNode,
-    ViewModifiers,
+    Attach, Context, Element, Event, EventKind, Menu, NativeView, RenderNode, ViewModifiers,
 };
 
 type SelectionAction<K> = dyn for<'a> Fn(&mut Context<'a>, Option<&K>);
@@ -69,7 +68,7 @@ pub struct TableRow<K = String> {
     menu: Option<Menu>,
 }
 
-impl<K: ItemKey> TableRow<K> {
+impl<K> TableRow<K> {
     /// Creates a row with one cell per column, in column order.
     ///
     /// Each cell must render exactly one view, such as a `TextField` or a stack.
@@ -90,12 +89,13 @@ impl<K: ItemKey> TableRow<K> {
 
 /// A native table with column headers, striped rows, and single selection.
 ///
-/// Row keys must be unique. Rows are keyed by their [`ItemKey::item_id`], so
-/// their cell views keep state when rows move. A selection set through the
+/// Row keys must be unique. Rows are keyed by their item ID, from
+/// [`ItemKey`](crate::ItemKey) or [`Table::item_id`], so their cell views keep
+/// state when rows move. A selection set through the
 /// bound Store scrolls its row into view; a key that no row has shows nothing
 /// selected.
 #[derive(Clone)]
-pub struct Table<K: ItemKey = String> {
+pub struct Table<K: 'static = String, I = ByItemKey> {
     columns: Vec<TableColumn>,
     rows: Vec<TableRow<K>>,
     striped: bool,
@@ -107,11 +107,12 @@ pub struct Table<K: ItemKey = String> {
     sort: Option<Store<Option<SortOrder>>>,
     fit_columns: bool,
     empty_content: Option<ElementFactory<RenderNode>>,
+    item_id: I,
     layout: LayoutStyle,
     modifiers: ViewModifiers,
 }
 
-impl<K: ItemKey> Table<K> {
+impl<K: 'static> Table<K> {
     pub fn new(
         columns: impl IntoIterator<Item = TableColumn>,
         rows: impl IntoIterator<Item = TableRow<K>>,
@@ -128,8 +129,34 @@ impl<K: ItemKey> Table<K> {
             sort: None,
             fit_columns: false,
             empty_content: None,
+            item_id: ByItemKey,
             layout: LayoutStyle::fill(Size::new(0.0, 0.0)),
             modifiers: ViewModifiers::default(),
+        }
+    }
+}
+
+impl<K: 'static, I> Table<K, I> {
+    /// Names rows by `item_id` instead of their key's `ItemKey` implementation.
+    ///
+    /// Use it for keys that cannot implement `ItemKey`, such as ID types from
+    /// another crate. Different keys must return different strings.
+    pub fn item_id(self, item_id: impl Fn(&K) -> String + 'static) -> Table<K, ItemIdFn<K>> {
+        Table {
+            columns: self.columns,
+            rows: self.rows,
+            striped: self.striped,
+            selection: self.selection,
+            action: self.action,
+            activate: self.activate,
+            delete: self.delete,
+            should_select: self.should_select,
+            sort: self.sort,
+            fit_columns: self.fit_columns,
+            empty_content: self.empty_content,
+            item_id: ItemIdFn::new(item_id),
+            layout: self.layout,
+            modifiers: self.modifiers,
         }
     }
 
@@ -233,7 +260,7 @@ impl<K: ItemKey> Table<K> {
     }
 }
 
-impl<K: ItemKey> NativeView for Table<K> {
+impl<K: Clone + PartialEq + 'static, I: ItemIdSource<K>> NativeView for Table<K, I> {
     modifiers!();
 
     fn places_id(&self) -> bool {
@@ -263,10 +290,10 @@ impl<K: ItemKey> NativeView for Table<K> {
     }
 }
 
-impl<K: ItemKey> Table<K> {
+impl<K: Clone + PartialEq + 'static, I: ItemIdSource<K>> Table<K, I> {
     /// Returns the native table laid out with `layout`.
     fn table_element(&self, cx: &mut Context<'_>, layout: LayoutStyle) -> Element<RenderNode> {
-        let keys = ItemKeys::new(self.rows.iter().map(|row| &row.key));
+        let keys = ItemKeys::new(self.rows.iter().map(|row| &row.key), &self.item_id);
         let cells = self
             .rows
             .iter()
@@ -372,7 +399,7 @@ impl<K: ItemKey> Table<K> {
     }
 }
 
-impl<K: ItemKey> zintl_ui::view::View for Table<K> {
+impl<K: Clone + PartialEq + 'static, I: ItemIdSource<K>> zintl_ui::view::View for Table<K, I> {
     type Output = RenderNode;
 
     fn render(

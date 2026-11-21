@@ -101,7 +101,7 @@ impl<V: Clone + PartialEq + 'static> TabView<V> {
   - このとき Store には書き込みません。描画中に状態を変えないという原則を優先します。
 - 重複値とイベント変換の扱いは `Picker<V>` と同じです。
 
-### `ItemKey` と `List<K>` / `Table<K>` / `Sidebar<K>`
+### `ItemKey` と `List<K, I>` / `Table<K, I>` / `Sidebar<K, I>`
 
 ```rust
 /// 行や項目を描画をまたいで識別する値。
@@ -115,20 +115,43 @@ impl ItemKey for String { .. }
 impl ItemKey for &'static str { .. }
 impl ItemKey for u64 { .. } // ほかの整数型も同様
 
+/// ビューのキーをバックエンドの文字列に変える方法。
+pub trait ItemIdSource<K>: Clone + 'static {
+    fn item_id(&self, key: &K) -> String;
+}
+pub struct ByItemKey;                              // 既定。K: ItemKey の実装を使う
+pub struct ItemIdFn<K>(Rc<dyn Fn(&K) -> String>);  // item_id(..) で渡す関数
+
 pub struct ListRow<K = String> { .. }
-impl<K: ItemKey> ListRow<K> {
+impl<K> ListRow<K> {
     pub fn new<V>(key: K, content: V) -> Self
     where V: Clone + IntoElement<Output = RenderNode> + 'static;
 }
 
-pub struct List<K: ItemKey = String> { .. }
-impl<K: ItemKey> List<K> {
+pub struct List<K: 'static = String, I = ByItemKey> { .. }
+impl<K: 'static> List<K> {
+    pub fn new(sections: impl IntoIterator<Item = ListSection<K>>) -> Self;
+}
+impl<K: 'static, I> List<K, I> {
+    pub fn item_id(self, item_id: impl Fn(&K) -> String + 'static) -> List<K, ItemIdFn<K>>;
     pub fn bind(self, selection: Store<Option<K>>) -> Self;
     pub fn on_select(self, action: impl for<'a> Fn(&mut Context<'a>, Option<&K>) + 'static) -> Self;
 }
+// 描画は K: Clone + PartialEq + 'static, I: ItemIdSource<K> のときに限る。
 ```
 
-`Table<K>` / `TableRow<K>`、`Sidebar<K>` / `SidebarSection<K>` / `SidebarItem<K>` も同じ形にします。
+`Table<K, I>` / `TableRow<K>`、`Sidebar<K, I>` / `SidebarSection<K>` / `SidebarItem<K>` も同じ形にします。
+
+別の crate の ID 型(GUI に依存しないドメイン crate の newtype など)には orphan rule で `ItemKey` を実装できません。その場合はビューの `item_id(..)` で文字列を決めます。
+
+```rust
+Table::new(columns, rows)              // rows: Vec<TableRow<TransactionId>>
+    .item_id(|id: &TransactionId| id.0.to_string())
+    .bind(selection)                   // Store<Option<TransactionId>>
+    .on_select(move |cx, id| select(cx, id.copied()));
+```
+
+`item_id(..)` を付け忘れると、`ItemKey` の `diagnostic::on_unimplemented` で `item_id(..)` を案内するコンパイルエラーになります。
 
 | 型 | メソッド | 引数 |
 |---|---|---|
@@ -144,10 +167,10 @@ impl<K: ItemKey> List<K> {
 - バックエンドには従来どおり `item_id()` の文字列を渡します。行の要素キー(`KeyedElement::key`)にも同じ文字列を使い、行が動いてもビューの状態を保ちます。
 - `base_element` で `(String, K)` の対応表を作り、イベントのクロージャに `Rc` で持たせます。届いた文字列が表に無い場合(描画後に行が消えた場合)はイベントを無視します。
 - 現在値が行に無い場合は `selected: None` として描画します(`Picker` と揃える)。
-- `item_id()` の重複は `debug_assert!` で検出します(`HashSet<String>`)。
+- `item_id()`(または `item_id(..)` の関数)の結果の重複は `debug_assert!` で検出します(`HashSet<String>`)。
 - 文字列リテラルの ID は `K = &'static str` と推論されます。`Store<Option<String>>` と組み合わせる箇所は、Store を `Option<&'static str>` にするか、ID を `String` にします。
 - 対応表は `ItemKeys<K>`(`pub(crate)`)にまとめ、3 つのビューで共有します。
-- `Window` はジェネリックにしません。`Window::sidebar<K>(Sidebar<K>)` は、`Sidebar<K>` を型消去したトレイト(`pub(crate) WindowSidebar`)として保持します。
+- `Window` はジェネリックにしません。`Window::sidebar<K, I>(Sidebar<K, I>)` は、`Sidebar<K, I>` を型消去したトレイト(`pub(crate) WindowSidebar`)として保持します。
 - 行を 1 つも渡さない `Table::new(columns, [])` は `K` を推論できないので、`Table::<String>::new` のように型を書きます。
 
 ### `ViewId`
