@@ -261,7 +261,8 @@ impl View for NotesApp {
                         MenuItem::standard(StandardAction::Underline),
                     ],
                 )),
-            Window::new(Rect::new(120.0, 120.0, 960.0, 600.0), "Notes")
+            Window::new("Notes")
+                .size(Size::new(960.0, 600.0))
                 .autosave("notes.main")
                 .toolbar(Toolbar::new([
                     ToolbarItem::button("delete", "Delete", "trash")
@@ -309,7 +310,9 @@ impl View for NotesApp {
                         .position(260.0)
                         .range(200.0..=420.0),
                 ),
-            Window::panel(Rect::new(400.0, 300.0, 320.0, 120.0), "Rename Folder")
+            Window::panel("Rename Folder")
+                .size(Size::new(320.0, 120.0))
+                .position(Point::new(400.0, 300.0))
                 .bind_open(state.rename_open)
                 .content(
                     VStack::new(list![

@@ -33,13 +33,13 @@ impl View for MainView {
             } else {
                 content
             };
-            Window::new(Rect::new(x, y, 300.0, 200.0), format!("Zintl {id}"))
+            Window::new(format!("Zintl {id}")).size(Size::new(300.0, 200.0)).position(Point::new(x, y))
                 .id(id)
                 .title_bar(title_bar)
                 .content(content)
         };
         list![
-            Window::new(Rect::new(100.0, 100.0, 480.0, 320.0), "Zintl Windows UI Test")
+            Window::new("Zintl Windows UI Test").size(Size::new(480.0, 320.0))
                 .id("main-window")
                 .content(
                     VStack::new(list![
@@ -57,7 +57,7 @@ impl View for MainView {
                     .spacing(10.0),
                 ),
             // The panel overlaps the main window's right side.
-            Window::panel(Rect::new(420.0, 160.0, 240.0, 180.0), "Inspector")
+            Window::panel("Inspector").size(Size::new(240.0, 180.0)).position(Point::new(420.0, 160.0))
                 .id("inspector")
                 .bind_open(inspector)
                 .on_close(move |cx| cx.update(closes, |closes| *closes += 1))

@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use zintl_ui_desktop::dialog::*;
-use zintl_ui_desktop::graphics::*;
 use zintl_ui_desktop::*;
 
 /// Save and open dialogs that start in a directory the test provides.
@@ -67,7 +66,7 @@ impl View for MainView {
             save = save.directory(directory.clone());
             open = open.directory(directory.clone());
         }
-        Window::new(Rect::new(100.0, 100.0, 560.0, 300.0), "Zintl File Dialog UI Test")
+        Window::new("Zintl File Dialog UI Test").size(Size::new(560.0, 300.0))
             .id("main-window")
             .file_dialog(save)
             .file_dialog(open)

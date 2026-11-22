@@ -32,10 +32,7 @@ impl View for MainView {
             ElementFactory::new(Text::new("Hidden").id("hidden"))
         };
         let offset = cx.get(self.scroll).y;
-        Window::new(
-            Rect::new(100.0, 100.0, 480.0, 400.0),
-            "Zintl Scroll Status UI Test",
-        )
+        Window::new("Zintl Scroll Status UI Test").size(Size::new(480.0, 400.0))
         .id("main-window")
         .content(
             VStack::new(list![

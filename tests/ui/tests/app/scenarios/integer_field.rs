@@ -29,7 +29,7 @@ impl View for MainView {
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let (quantity, copied, count) = (self.quantity, self.copied, self.count);
-        Window::new(Rect::new(100.0, 100.0, 420.0, 380.0), "Zintl Integer Field UI Test")
+        Window::new("Zintl Integer Field UI Test").size(Size::new(420.0, 380.0))
             .id("main-window")
             .content(
                 VStack::new(list![

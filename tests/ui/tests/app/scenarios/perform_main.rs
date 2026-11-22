@@ -33,10 +33,7 @@ impl View for MainView {
         let observed = self.performed.clone();
         let status = self.status;
 
-        Window::new(
-            Rect::new(100.0, 100.0, 480.0, 240.0),
-            "Zintl Perform Main UI Test",
-        )
+        Window::new("Zintl Perform Main UI Test").size(Size::new(480.0, 240.0))
         .id("main-window")
         .content(
             VStack::new(list![

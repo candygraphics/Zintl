@@ -7,7 +7,7 @@ impl View for MainView {
     type Output = RenderNode;
 
     fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
-        Window::new(Rect::new(100.0, 100.0, 420.0, 300.0), "Zintl Help UI Test")
+        Window::new("Zintl Help UI Test").size(Size::new(420.0, 300.0))
             .id("main-window")
             .content(
                 VStack::new(list![

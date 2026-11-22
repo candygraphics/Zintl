@@ -22,7 +22,7 @@ impl View for MainView {
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let progress = self.progress;
-        Window::new(Rect::new(100.0, 100.0, 480.0, 260.0), "Zintl Indicators UI Test")
+        Window::new("Zintl Indicators UI Test").size(Size::new(480.0, 260.0))
             .id("main-window")
             .content(
                 VStack::new(list![

@@ -9,7 +9,7 @@ impl View for MainView {
     fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let long = "The limited express leaves Tokyo at nine and calls at Shinagawa, \
                     Yokohama, Odawara, Atami, Mishima, and Shizuoka before Nagoya.";
-        Window::new(Rect::new(100.0, 100.0, 360.0, 480.0), "Zintl Text Styles UI Test")
+        Window::new("Zintl Text Styles UI Test").size(Size::new(360.0, 480.0))
             .id("main-window")
             .content(
                 VStack::new(list![

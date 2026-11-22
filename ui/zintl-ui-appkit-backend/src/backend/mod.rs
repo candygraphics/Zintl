@@ -32,8 +32,8 @@ use native::NativeNode;
 use crate::convert::{Native, Shared};
 
 use super::{
-    Accessibility, Color, CommandSet, Context, MainTask, NodeId, Rect, RenderNode, Sidebar,
-    TextAlignment, TitleBar, Toolbar, ViewKind, WindowStyle,
+    Accessibility, Color, CommandSet, Context, MainTask, NodeId, Point, RenderNode, Sidebar,
+    TextAlignment, TitleBar, Toolbar, ViewKind, WindowPlacement, WindowPosition, WindowStyle,
 };
 use zintl_ui_backend_core::layout::{HostLayout, LayoutSnapshot};
 use zintl_ui_backend_core::tree::{ErrorSlot, MainTasks, NodeTree};
@@ -100,7 +100,10 @@ struct WindowState {
     native: ActorId,
     layout: Rc<RefCell<HostLayout<NativeNode>>>,
     style: WindowStyle,
-    applied_bounds: Option<Rect>,
+    /// The content size last applied; `None` until the window is placed once.
+    applied_size: Option<Size>,
+    /// The declared position last applied, so an unchanged one does not move the window back.
+    applied_position: Option<Point>,
     applied_title_bar: Option<TitleBar>,
     /// `None` until the sidebar declaration has been applied once.
     applied_sidebar: Option<Option<Sidebar>>,
@@ -387,7 +390,8 @@ impl AppKitBackend {
         rebuild_structure: bool,
     ) -> Result<(), AppError> {
         let RenderNode::Window {
-            bounds,
+            size,
+            position,
             title,
             title_bar,
             id,
@@ -435,7 +439,8 @@ impl AppKitBackend {
                 native,
                 layout,
                 style,
-                applied_bounds: None,
+                applied_size: None,
+                applied_position: None,
                 applied_title_bar: None,
                 applied_sidebar: None,
                 applied_toolbar: None,
@@ -454,8 +459,12 @@ impl AppKitBackend {
         let native_id = state.native;
         let event_route = self.event_route(window_id).map(route_token);
         let apply_title_bar = state.applied_title_bar != Some(title_bar);
-        let apply_bounds =
-            apply_title_bar || window_bounds_need_update(state.applied_bounds, bounds);
+        let placement = WindowPlacement::changes(
+            new_window,
+            apply_title_bar,
+            (state.applied_size, state.applied_position),
+            (size, position),
+        );
         let apply_sidebar = state.applied_sidebar.as_ref() != Some(&sidebar);
         // The sidebar decides whether the toolbar includes its toggle, so both reapply together.
         let apply_toolbar = apply_sidebar || state.applied_toolbar.as_ref() != Some(&toolbar);
@@ -476,8 +485,15 @@ impl AppKitBackend {
             if apply_title_bar {
                 window.set_title_bar(title_bar.native())?;
             }
-            if apply_bounds {
-                window.set_bounds(bounds.native())?;
+            if let Some(size) = placement.size {
+                window.set_content_size(f64::from(size.width), f64::from(size.height))?;
+            }
+            match placement.position {
+                Some(WindowPosition::At(position)) => {
+                    window.set_position(position.x, position.y)?
+                }
+                Some(WindowPosition::Center) => window.center()?,
+                None => {}
             }
             window.set_title(&title)?;
             window.set_identifier(id.as_deref())?;
@@ -490,7 +506,7 @@ impl AppKitBackend {
             if apply_toolbar {
                 window.set_toolbar(toolbar.as_ref().map(Native::native).as_ref())?;
             }
-            // A saved frame replaces the declared bounds on a new window.
+            // A saved frame replaces the declared size and position on a new window.
             if new_window && let Some(name) = &autosave {
                 window.set_frame_autosave_name(name)?;
             }
@@ -516,7 +532,8 @@ impl AppKitBackend {
             .window
             .as_mut()
             .expect("a synchronized window has native state");
-        state.applied_bounds = Some(bounds);
+        state.applied_size = Some(size);
+        state.applied_position = position;
         state.applied_title_bar = Some(title_bar);
         state.applied_sidebar = Some(sidebar);
         state.applied_toolbar = Some(toolbar);
@@ -1223,10 +1240,6 @@ impl RenderBackend<RenderNode> for AppKitBackend {
 
 fn route_token(route: EventRouteId) -> EventRouteToken {
     EventRouteToken::new(route.into_raw())
-}
-
-fn window_bounds_need_update(applied: Option<Rect>, declared: Rect) -> bool {
-    applied != Some(declared)
 }
 
 /// Compares colors after a round trip through AppKit's color conversion.

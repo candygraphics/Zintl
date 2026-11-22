@@ -4,7 +4,6 @@ use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use zintl_ui::element::ElementFactory;
 use zintl_ui::view::View;
 use zintl_ui_backend_core::{
     AlertButton as AlertButtonDescription, AlertButtonRole, CommandItem, CommandRole,
@@ -214,15 +213,11 @@ fn icon_only_buttons_leave_their_size_to_the_backend() {
         _ => None,
     };
     assert_eq!(
-        minimum(Button::new("").system_image("chevron.left")),
+        minimum(Button::icon("chevron.left", "Previous")),
         Some(Size::default())
     );
     assert_eq!(
-        minimum(
-            Button::new("")
-                .system_image("chevron.left")
-                .minimum_size(Size::new(44.0, 30.0))
-        ),
+        minimum(Button::icon("chevron.left", "Previous").minimum_size(Size::new(44.0, 30.0))),
         Some(Size::new(44.0, 30.0))
     );
     assert_eq!(minimum(Button::new("Save")), Some(Size::new(80.0, 32.0)));
@@ -1056,9 +1051,8 @@ fn button_roles_and_styles_configure_nsbutton() {
     ));
     assert!(matches!(
         render(
-            Button::new("")
+            Button::icon("gearshape", "Settings")
                 .style(ButtonStyle::Borderless)
-                .system_image("gearshape")
         ),
         RenderNode::View { kind: ViewKind::Button(zintl_ui_backend_core::Button { bezel: None, system_image: Some(name), .. }), .. } if name == "gearshape"
     ));
@@ -1168,7 +1162,7 @@ fn alert_buttons_run_their_action_and_dismiss() {
     let (mut app, shown) = WithStores::mount(
         |cx| cx.store(true),
         move |shown| {
-            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Alerts").alert(
+            Window::new("Alerts").size(Size::new(400.0, 300.0)).alert(
                 Alert::new("Delete?")
                     .button(
                         AlertButton::new("Delete")
@@ -1216,13 +1210,15 @@ fn file_dialog_reports_paths_or_cancellation() {
         |cx| cx.store(true),
         move |shown| {
             let received = received.clone();
-            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Files").file_dialog(
-                FileDialog::save()
-                    .file_name("notes.txt")
-                    .bind_presented(shown)
-                    .on_select(move |_, paths| received.borrow_mut().extend_from_slice(paths))
-                    .on_cancel(cancel.action()),
-            )
+            Window::new("Files")
+                .size(Size::new(400.0, 300.0))
+                .file_dialog(
+                    FileDialog::save()
+                        .file_name("notes.txt")
+                        .bind_presented(shown)
+                        .on_select(move |_, paths| received.borrow_mut().extend_from_slice(paths))
+                        .on_cancel(cancel.action()),
+                )
         },
     );
     assert!(matches!(
@@ -1252,7 +1248,8 @@ fn color_panel_writes_color_and_presentation_stores() {
     let (mut app, (color, shown)) = WithStores::mount(
         |cx| (cx.store(Color::BLACK), cx.store(true)),
         |(color, shown)| {
-            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Colors")
+            Window::new("Colors")
+                .size(Size::new(400.0, 300.0))
                 .color_panel(ColorPanel::new().bind(color).bind_presented(shown))
         },
     );
@@ -1274,7 +1271,11 @@ fn bound_window_closes_and_reopens_from_its_store() {
     // Verifies closing a bound panel removes it and setting the Store declares it again.
     let (mut app, open) = WithStores::mount(
         |cx| cx.store(true),
-        |open| Window::panel(Rect::new(0.0, 0.0, 200.0, 200.0), "Inspector").bind_open(open),
+        |open| {
+            Window::panel("Inspector")
+                .size(Size::new(200.0, 200.0))
+                .bind_open(open)
+        },
     );
     assert!(matches!(
         app.tree().value,
@@ -1308,7 +1309,7 @@ fn main_menu_orders_standard_and_custom_menus() {
                         "Tools",
                         [MenuItem::new("Run").on_select(run.action())]
                     )),
-                Window::new(Rect::new(0.0, 0.0, 200.0, 200.0), "Demo"),
+                Window::new("Demo").size(Size::new(200.0, 200.0)),
             ]
         },
     );
@@ -1345,7 +1346,7 @@ fn menu_localizers_translate_standard_text() {
             .app_name("Demo")
             .localizer(JapaneseMenuLocalizer)
             .settings(|_| {}),
-        Window::new(Rect::new(0.0, 0.0, 200.0, 200.0), "Demo"),
+        Window::new("Demo").size(Size::new(200.0, 200.0)),
     ])
     .roots();
     let RenderNode::MainMenu(commands) = &roots[0].value else {
@@ -1379,7 +1380,7 @@ fn standard_edit_menu_ends_with_a_find_submenu() {
     // Verifies the Edit menu offers text finder actions with macOS shortcuts and translated titles.
     let roots = Harness::new(list![
         MainMenu::standard().localizer(JapaneseMenuLocalizer),
-        Window::new(Rect::new(0.0, 0.0, 200.0, 200.0), "Demo"),
+        Window::new("Demo").size(Size::new(200.0, 200.0)),
     ])
     .roots();
     let RenderNode::MainMenu(commands) = &roots[0].value else {
@@ -1423,7 +1424,7 @@ fn sidebar_search_updates_its_query_store() {
     let (mut app, query) = WithStores::mount(
         |cx| cx.store(String::new()),
         |query| {
-            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Search").sidebar(
+            Window::new("Search").size(Size::new(400.0, 300.0)).sidebar(
                 Sidebar::new([SidebarSection::new([SidebarItem::new("home", "Home")])])
                     .searchable(query)
                     .search_placeholder("Search"),
@@ -1770,6 +1771,25 @@ fn wgpu_canvas_keeps_its_handler_and_routes_events() {
     assert_eq!(node(&app), mounted);
 }
 
+/// Returns a primary-button pointer event at `x` along a horizontal split view.
+fn divider_pointer(phase: PointerPhase, x: f64) -> CanvasEvent {
+    CanvasEvent::Pointer(PointerEvent {
+        phase,
+        button: Some(PointerButton::Primary),
+        location: graphics::Point::new(x, 10.0),
+        modifiers: Modifiers::default(),
+        click_count: 1,
+    })
+}
+
+/// Returns the first pane's declared width.
+fn first_pane_width(app: &Harness) -> LayoutDimension {
+    match &app.tree().children[0].value {
+        RenderNode::View { layout, .. } => layout.width,
+        other => panic!("expected the first pane, got {other:?}"),
+    }
+}
+
 #[test]
 fn split_view_divider_drag_resizes_the_first_pane_within_its_range() {
     // Verifies dragging the divider moves it by the pointer's distance from the grab point and clamps it.
@@ -1781,33 +1801,99 @@ fn split_view_divider_drag_resizes_the_first_pane_within_its_range() {
                 .bind(width)
         },
     );
-    let pointer = |phase, x| {
-        Event::Canvas(CanvasEvent::Pointer(PointerEvent {
-            phase,
-            button: Some(PointerButton::Primary),
-            location: graphics::Point::new(x, 10.0),
-            modifiers: Modifiers::default(),
-            click_count: 1,
-        }))
-    };
-    let first_width = |app: &Harness| match &app.tree().children[0].value {
-        RenderNode::View { layout, .. } => layout.width,
-        other => panic!("expected the first pane, got {other:?}"),
-    };
 
-    // The divider is the second child of the root stack.
-    app.dispatch(&[0, 1], pointer(PointerPhase::Down, 3.0));
-    app.dispatch(&[0, 1], pointer(PointerPhase::Moved, 23.0));
+    // The divider is the second child of the root stack, and it consumes the drag.
+    assert!(app.canvas_event(&[0, 1], divider_pointer(PointerPhase::Down, 3.0)));
+    assert!(app.canvas_event(&[0, 1], divider_pointer(PointerPhase::Moved, 23.0)));
     assert_eq!(app.get(width), 220.0);
-    assert_eq!(first_width(&app), LayoutDimension::Points(220.0));
+    assert_eq!(first_pane_width(&app), LayoutDimension::Points(220.0));
 
-    app.dispatch(&[0, 1], pointer(PointerPhase::Moved, 503.0));
+    app.canvas_event(&[0, 1], divider_pointer(PointerPhase::Moved, 503.0));
     assert_eq!(app.get(width), 300.0);
 
     // Moves after the button is released do not resize.
-    app.dispatch(&[0, 1], pointer(PointerPhase::Up, 503.0));
-    app.dispatch(&[0, 1], pointer(PointerPhase::Moved, 0.0));
+    app.canvas_event(&[0, 1], divider_pointer(PointerPhase::Up, 503.0));
+    app.canvas_event(&[0, 1], divider_pointer(PointerPhase::Moved, 0.0));
     assert_eq!(app.get(width), 300.0);
+}
+
+#[test]
+fn split_view_follows_a_drag_while_its_parent_reads_the_width() {
+    // Verifies two moves move the divider twice when each move re-renders the parent that reads the bound width.
+    let (mut app, width) = WithStores::mount(|cx| cx.store(200.0_f32), |width| WatchWidth(width));
+    let divider = |app: &Harness| match &app.tree().children[1].value {
+        RenderNode::View {
+            kind: ViewKind::Canvas2D { canvas, .. },
+            ..
+        } => canvas.clone(),
+        other => panic!("expected the divider, got {other:?}"),
+    };
+    let mounted = divider(&app);
+
+    app.canvas_event(&[0, 1], divider_pointer(PointerPhase::Down, 3.0));
+    app.canvas_event(&[0, 1], divider_pointer(PointerPhase::Moved, 23.0));
+    // The divider moved with the pointer, so another 20 points lands at the same canvas location.
+    app.canvas_event(&[0, 1], divider_pointer(PointerPhase::Moved, 23.0));
+
+    assert_eq!(app.get(width), 240.0);
+    // The re-renders reconcile into the mounted divider instead of replacing it.
+    assert_eq!(divider(&app), mounted);
+}
+
+/// Reads the bound width while rendering, so every width change re-renders it.
+struct WatchWidth(Store<f32>);
+
+impl View for WatchWidth {
+    type Output = RenderNode;
+
+    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
+        let _ = cx.get(self.0);
+        SplitView::horizontal(Text::new("List"), Text::new("Detail")).bind(self.0)
+    }
+}
+
+#[test]
+fn split_view_clamps_its_position_to_a_range_declared_later() {
+    // Verifies the range clamps the starting size even when it is declared after the position.
+    let app = Harness::new(
+        SplitView::horizontal(Text::new("List"), Text::new("Detail"))
+            .position(500.0)
+            .range(100.0..=300.0),
+    );
+
+    assert_eq!(first_pane_width(&app), LayoutDimension::Points(300.0));
+}
+
+#[test]
+fn split_view_drag_survives_a_rebuild_of_its_parent() {
+    // Verifies a drag in progress keeps its grab point when the parent renders a new split view.
+    let (mut app, (width, version)) = WithStores::mount(
+        |cx| (cx.store(200.0_f32), cx.store(0_u32)),
+        |(width, version)| {
+            let render = move |_: &u32| {
+                SplitView::horizontal(Text::new("List"), Text::new("Detail")).bind(width)
+            };
+            WatchVersion(version, Rc::new(render))
+        },
+    );
+
+    app.canvas_event(&[0, 1], divider_pointer(PointerPhase::Down, 3.0));
+    app.update(version, |version| *version += 1);
+    app.canvas_event(&[0, 1], divider_pointer(PointerPhase::Moved, 13.0));
+
+    assert_eq!(app.get(width), 210.0);
+}
+
+/// Renders a new view each time a version Store changes.
+#[derive(Clone)]
+struct WatchVersion<E>(Store<u32>, Rc<dyn Fn(&u32) -> E>);
+
+impl<E: IntoElement<Output = RenderNode> + 'static> View for WatchVersion<E> {
+    type Output = RenderNode;
+
+    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
+        (self.1)(cx.get(self.0))
+    }
 }
 
 #[test]
@@ -1947,11 +2033,11 @@ fn toolbar_search_carries_its_id_and_focus_requests() {
     let (mut app, (focus, _)) = WithStores::mount(
         |cx| (cx.trigger(), cx.store(String::new())),
         |(focus, query)| {
-            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Toolbar").toolbar(Toolbar::new([
-                ToolbarItem::search(query)
+            Window::new("Toolbar")
+                .size(Size::new(400.0, 300.0))
+                .toolbar(Toolbar::new([ToolbarItem::search(query)
                     .id("toolbar-search")
-                    .focus_on(focus),
-            ]))
+                    .focus_on(focus)]))
         },
     );
     let search = |app: &Harness| match &app.tree().value {
@@ -1980,11 +2066,13 @@ fn toolbar_describes_items_and_routes_clicks_and_search() {
     let (mut app, query) = WithStores::mount(
         |cx| cx.store(String::new()),
         move |query| {
-            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Toolbar").toolbar(Toolbar::new([
-                ToolbarItem::button("new", "New", "plus").on_click(click.action()),
-                ToolbarItem::flexible_space(),
-                ToolbarItem::search(query).placeholder("Search"),
-            ]))
+            Window::new("Toolbar")
+                .size(Size::new(400.0, 300.0))
+                .toolbar(Toolbar::new([
+                    ToolbarItem::button("new", "New", "plus").on_click(click.action()),
+                    ToolbarItem::flexible_space(),
+                    ToolbarItem::search(query).placeholder("Search"),
+                ]))
         },
     );
 
@@ -2020,11 +2108,15 @@ fn sidebar_items_show_badges_and_route_their_menus() {
     let (mut app, ()) = WithStores::mount(
         |_| (),
         move |()| {
-            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Folders").sidebar(Sidebar::new([
-                SidebarSection::new([SidebarItem::new("ideas", "Ideas")
-                    .badge("3")
-                    .context_menu([MenuItem::new("Rename").on_select(rename.action())])]),
-            ]))
+            Window::new("Folders")
+                .size(Size::new(400.0, 300.0))
+                .sidebar(Sidebar::new([SidebarSection::new([SidebarItem::new(
+                    "ideas", "Ideas",
+                )
+                .badge("3")
+                .context_menu([
+                    MenuItem::new("Rename").on_select(rename.action())
+                ])])]))
         },
     );
 
@@ -2080,7 +2172,8 @@ impl View for DocumentWindow {
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let (allow, requests, steps) = (self.allow, self.requests, self.steps);
         let count = *cx.get(steps);
-        Window::new(Rect::new(0.0, 0.0, 300.0, 200.0), "Document")
+        Window::new("Document")
+            .size(Size::new(300.0, 200.0))
             .edited(count != 0)
             .on_close_request(move |cx| {
                 cx.update(requests, |requests| *requests += 1);
@@ -2269,11 +2362,14 @@ fn zstack_and_grid_declare_their_arrangements() {
         }
     ));
 
-    let cells = (0..6)
-        .map(|index| ElementFactory::new(Text::new(index.to_string())))
-        .collect::<Vec<_>>();
-    // Six cells in two columns make three rows; only the middle one is shaded.
-    let grid = Harness::new(Grid::new(2, cells).striped(true)).tree();
+    let rows = (0..3).map(|row| {
+        GridRow::new(list![
+            Text::new(format!("{row}a")),
+            Text::new(format!("{row}b"))
+        ])
+    });
+    // Three rows of two cells; only the middle one is shaded.
+    let grid = Harness::new(Grid::new(rows).striped(true)).tree();
     assert!(matches!(
         grid.value,
         RenderNode::View {
@@ -2299,6 +2395,60 @@ fn zstack_and_grid_declare_their_arrangements() {
             ..
         }
     ));
+}
+
+#[test]
+fn grid_rows_stripe_the_right_rows_around_a_spanning_heading() {
+    // Verifies stripes land on the second and fourth rows around a spanning heading, and short rows are filled so the next row starts in the first column.
+    let grid = Harness::new(
+        Grid::new([
+            GridRow::new(list![Text::new("a"), Text::new("b")]),
+            GridRow::new(list![Text::new("Heading")]).span(0, 3),
+            GridRow::new(list![Text::new("c"), Text::new("d"), Text::new("e")]),
+            GridRow::new(list![Text::new("f")]),
+        ])
+        .striped(true),
+    )
+    .tree();
+    let stripe_rows = grid
+        .children
+        .iter()
+        .filter_map(|child| match &child.value {
+            RenderNode::View {
+                layout:
+                    LayoutStyle {
+                        grid_cell: Some(cell),
+                        ..
+                    },
+                ..
+            } => Some(cell.row),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let flowing = grid
+        .children
+        .iter()
+        .filter_map(|child| match &child.value {
+            RenderNode::View { layout, .. } if layout.grid_cell.is_none() => {
+                Some(layout.column_span)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert!(matches!(
+        grid.value,
+        RenderNode::View {
+            layout: LayoutStyle {
+                arrangement: zintl_ui_layout::Arrangement::Grid { columns: 3 },
+                ..
+            },
+            ..
+        }
+    ));
+    assert_eq!(stripe_rows, [1, 3]);
+    // Each row fills all three columns, so every row starts in the first column.
+    assert_eq!(flowing, [1, 1, 1, 3, 1, 1, 1, 1, 1, 1]);
 }
 
 #[test]
@@ -2773,14 +2923,16 @@ fn sidebar_selects_items_by_their_key() {
         |cx| cx.store(Some(FolderId(9))),
         move |selection| {
             let record = record.clone();
-            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Folders").sidebar(
-                Sidebar::new([SidebarSection::new([
-                    SidebarItem::new(FolderId(1), "Ideas"),
-                    SidebarItem::new(FolderId(2), "Plans"),
-                ])])
-                .bind(selection)
-                .on_select(move |_, key| record.borrow_mut().push(*key)),
-            )
+            Window::new("Folders")
+                .size(Size::new(400.0, 300.0))
+                .sidebar(
+                    Sidebar::new([SidebarSection::new([
+                        SidebarItem::new(FolderId(1), "Ideas"),
+                        SidebarItem::new(FolderId(2), "Plans"),
+                    ])])
+                    .bind(selection)
+                    .on_select(move |_, key| record.borrow_mut().push(*key)),
+                )
         },
     );
     let selected = |app: &Harness| match app.tree().value {
@@ -2921,14 +3073,16 @@ fn sidebar_names_foreign_keys_through_item_id() {
     let (mut app, selection) = WithStores::mount(
         |cx| cx.store(None::<TransactionId>),
         |selection| {
-            Window::new(Rect::new(0.0, 0.0, 400.0, 300.0), "Accounts").sidebar(
-                Sidebar::new([SidebarSection::new([
-                    SidebarItem::new(TransactionId(1), "Checking"),
-                    SidebarItem::new(TransactionId(2), "Savings"),
-                ])])
-                .item_id(|id| format!("account-{}", id.0))
-                .bind(selection),
-            )
+            Window::new("Accounts")
+                .size(Size::new(400.0, 300.0))
+                .sidebar(
+                    Sidebar::new([SidebarSection::new([
+                        SidebarItem::new(TransactionId(1), "Checking"),
+                        SidebarItem::new(TransactionId(2), "Savings"),
+                    ])])
+                    .item_id(|id| format!("account-{}", id.0))
+                    .bind(selection),
+                )
         },
     );
     let sidebar = |app: &Harness| match app.tree().value {
@@ -2969,11 +3123,10 @@ fn accessibility_modifiers_reach_any_view() {
     // Verifies every accessibility modifier lands on controls and containers alike.
     let app = Harness::new(
         VStack::new(list![
-            Button::new("")
-                .system_image("plus")
-                .accessibility_label("Add train")
-                .accessibility_hint("Adds a train to the timetable"),
-            Text::new("Speed").id("speed-label").accessibility_hidden(),
+            Button::icon("plus", "Add train").accessibility_hint("Adds a train to the timetable"),
+            Text::new("Speed")
+                .id("speed-label")
+                .accessibility_hidden(true),
             Slider::new(0.0..=100.0)
                 .accessibility_labeled_by("speed-label")
                 .accessibility_value("Fast"),
@@ -3220,4 +3373,110 @@ fn focus_trigger_counts_fires_and_starts_at_zero() {
     // An equal value fires again.
     app.fire(focus, ());
     assert_eq!(requests(&app), 2);
+}
+
+#[test]
+fn slider_ticks_and_snapping_are_independent() {
+    // Verifies tick marks and snapping are separate settings whose call order does not matter.
+    let slider = |slider: Slider| match Harness::new(slider).tree().value {
+        RenderNode::View {
+            kind:
+                ViewKind::Slider {
+                    tick_marks,
+                    snaps_to_ticks,
+                    ..
+                },
+            ..
+        } => (tick_marks, snaps_to_ticks),
+        other => panic!("expected a slider, got {other:?}"),
+    };
+
+    assert_eq!(
+        slider(Slider::new(0.0..=1.0).ticks(5).snaps_to_ticks(true)),
+        (5, true)
+    );
+    assert_eq!(
+        slider(Slider::new(0.0..=1.0).snaps_to_ticks(true).ticks(5)),
+        (5, true)
+    );
+    assert_eq!(slider(Slider::new(0.0..=1.0).ticks(5)), (5, false));
+}
+
+#[test]
+fn icon_and_help_buttons_have_no_title_and_measure_their_size() {
+    // Verifies icon buttons carry their label for accessibility, which a later label replaces, and help buttons use the help bezel.
+    let button = |button: Button| match Harness::new(button).tree().value {
+        RenderNode::View {
+            kind: ViewKind::Button(button),
+            layout,
+            accessibility,
+            ..
+        } => (button, layout.minimum_size, accessibility.label),
+        other => panic!("expected a button, got {other:?}"),
+    };
+    let (icon, icon_minimum, icon_label) = button(Button::icon("gearshape", "Settings"));
+    let (_, _, replaced) =
+        button(Button::icon("gearshape", "Settings").accessibility_label("Preferences"));
+    let (help, help_minimum, _) = button(Button::help());
+
+    assert_eq!(icon.title, "");
+    assert_eq!(icon.system_image.as_deref(), Some("gearshape"));
+    assert_eq!(icon_minimum, Some(Size::default()));
+    assert_eq!(icon_label.as_deref(), Some("Settings"));
+    assert_eq!(replaced.as_deref(), Some("Preferences"));
+    assert_eq!(help.title, "");
+    assert_eq!(help.bezel, Some(BezelStyle::Help));
+    assert_eq!(help_minimum, Some(Size::default()));
+}
+
+#[test]
+fn table_column_width_is_a_layout_length() {
+    // Verifies a column width reaches the node as an f32 layout length.
+    let node = Harness::new(Table::new(
+        [TableColumn::new("Name").width(120.0)],
+        Vec::<TableRow>::new(),
+    ))
+    .tree()
+    .value;
+    let RenderNode::View {
+        kind: ViewKind::Table { columns, .. },
+        ..
+    } = node
+    else {
+        panic!("expected a table, got {node:?}");
+    };
+
+    assert_eq!(columns[0].width, Some(120.0_f32));
+}
+
+#[test]
+fn menu_picker_reserves_more_width_for_wide_characters() {
+    // Verifies a pop-up picker estimates full-width items wider than ASCII items of the same length.
+    let minimum = |picker: Picker<usize>| match Harness::new(picker).tree().value {
+        RenderNode::View { layout, .. } => layout.minimum_size.map_or(0.0, |size| size.width),
+        other => panic!("expected a pop-up button, got {other:?}"),
+    };
+
+    assert!(minimum(Picker::indexed(["設定項目名前"])) > minimum(Picker::indexed(["abcdef"])));
+}
+
+#[test]
+fn palette_resolves_separator_and_alternating_row() {
+    // Verifies the new palette colors resolve to their fields, and the light defaults keep the colors drawn before.
+    let palette = Palette {
+        separator: Color::rgb(1.0, 0.0, 0.0),
+        alternating_row: Color::rgb(0.0, 1.0, 0.0),
+        ..Palette::LIGHT
+    };
+
+    assert_eq!(palette.resolve(PaletteColor::Separator), palette.separator);
+    assert_eq!(
+        palette.resolve(PaletteColor::AlternatingRow),
+        palette.alternating_row
+    );
+    assert_eq!(Palette::LIGHT.separator, Color::rgba(0.5, 0.5, 0.5, 0.35));
+    assert_eq!(
+        Palette::LIGHT.alternating_row,
+        Color::rgba(0.5, 0.5, 0.5, 0.1)
+    );
 }

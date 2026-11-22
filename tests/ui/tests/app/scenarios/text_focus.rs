@@ -46,7 +46,7 @@ impl View for MainView {
         } else {
             ElementFactory::new(Text::new("No added field").id("no-added-field"))
         };
-        Window::new(Rect::new(100.0, 100.0, 420.0, 360.0), "Zintl Text Focus UI Test")
+        Window::new("Zintl Text Focus UI Test").size(Size::new(420.0, 360.0))
             .id("main-window")
             .content(
                 VStack::new(list![

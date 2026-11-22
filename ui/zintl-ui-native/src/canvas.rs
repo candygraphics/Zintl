@@ -86,11 +86,6 @@ macro_rules! canvas_view {
                 self
             }
 
-
-
-
-
-
             /// As a window's content, extends under its title bar instead of starting below it.
             ///
             /// Use [`Frame::safe_area`](crate::Frame::safe_area) to keep drawing clear of it.

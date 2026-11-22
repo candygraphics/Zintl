@@ -66,14 +66,17 @@ impl<A: StackAxis> Stack<A> {
         self
     }
 
-    /// Places the first and last children at both ends.
-    pub fn space_between(mut self) -> Self {
-        self.layout.main_axis_distribution = MainAxisDistribution::SpaceBetween;
+    /// Distributes the space the children leave along the main axis, such as
+    /// [`MainAxisDistribution::SpaceBetween`] to place the first and last
+    /// children at both ends.
+    pub fn distribution(mut self, distribution: MainAxisDistribution) -> Self {
+        self.layout.main_axis_distribution = distribution;
         self
     }
 
-    /// Gives every child the same share of the main axis.
-    pub fn equal_width_children(mut self) -> Self {
+    /// Gives every child the same share of the main axis: the same width in
+    /// an `HStack` and the same height in a `VStack`.
+    pub fn equal_children(mut self) -> Self {
         self.layout.child_sizing = ChildSizing::Equal;
         self
     }

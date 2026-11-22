@@ -7,11 +7,17 @@ use zintl_ui_layout::{LayoutDimension, LayoutStyle, Size};
 
 use crate::modifiers;
 use crate::{
-    Change, ChangeRoute, Context, Element, Event, EventKind, NativeView, RenderNode, ViewModifiers,
+    Change, ChangeRoute, Context, Element, Event, EventKind, NativeView, RenderNode, TextEstimate,
+    ViewModifiers,
 };
 
 type CommitAction = dyn for<'a> Fn(&mut Context<'a>, &str);
 
+/// An editable text field, or with [`crate::Text`] a static label.
+///
+/// It edits one line of plain text, or a few lines with
+/// [`TextField::multiline`]. For document text that scrolls and keeps
+/// formatting, use [`TextEditor`].
 #[derive(Clone)]
 pub struct TextField {
     value: String,
@@ -71,11 +77,16 @@ impl TextField {
     /// and truncate. Labels with a declared width and no limit wrap to it, and
     /// the backend measures their height. Other labels need their text's width.
     fn resize_label(&mut self) {
-        const STANDARD_SIZE: f64 = 13.0;
-        let font_size = self.style.font.as_ref().map_or(STANDARD_SIZE, Font::size) as f32;
+        let font_size = self
+            .style
+            .font
+            .as_ref()
+            .map_or(TextEstimate::SYSTEM_FONT_SIZE, |font| font.size() as f32);
         let lines = self.style.line_limit.unwrap_or(1).max(1) as f32;
-        let height = (font_size * 1.25 * lines + 4.0).ceil().max(20.0);
-        let width = self.value.chars().count() as f32 * font_size * 0.54;
+        let height = (TextEstimate::line_height(font_size) * lines + 4.0)
+            .ceil()
+            .max(20.0);
+        let width = TextEstimate::width(&self.value, font_size);
         let wraps = self.style.line_limit.is_none() && self.layout.width != LayoutDimension::Auto;
         let (minimum, content) = match self.style.line_limit {
             Some(_) => (Size::new(0.0, height), Some(Size::new(width, height))),
@@ -144,8 +155,13 @@ impl TextField {
         self
     }
 
-    pub fn multiline(mut self) -> Self {
-        self.multiline = true;
+    /// Wraps the text onto several lines with `true`.
+    ///
+    /// Use it for a few lines of plain text, such as a note on a form. The
+    /// field grows with its text and does not scroll; for document text
+    /// that scrolls and keeps formatting, use [`TextEditor`].
+    pub fn multiline(mut self, multiline: bool) -> Self {
+        self.multiline = multiline;
         self
     }
 
@@ -221,7 +237,9 @@ impl NativeView for TextField {
 /// A scrolling rich text editor that fills its parent, like a document body.
 ///
 /// It edits styled runs and paragraph styles; `StandardAction::Bold` and the
-/// paragraph style actions apply to it.
+/// paragraph style actions apply to it. For a few lines of plain text that
+/// do not scroll, use [`TextField::multiline`]. Plain text converts with
+/// `AttributedText::from(&str)` and [`AttributedText::text`].
 #[derive(Clone)]
 pub struct TextEditor {
     binding: Option<Store<AttributedText>>,

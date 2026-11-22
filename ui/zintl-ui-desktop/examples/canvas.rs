@@ -206,7 +206,7 @@ impl View for CanvasExample {
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let settings = self.settings;
         let strokes = self.strokes;
-        Window::new(Rect::new(120.0, 120.0, 720.0, 520.0), "Canvas").content(
+        Window::new("Canvas").size(Size::new(720.0, 520.0)).content(
             VStack::new(list![
                 cx.watch(settings, move |current| {
                     HStack::new(list![

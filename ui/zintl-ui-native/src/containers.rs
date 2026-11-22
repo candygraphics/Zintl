@@ -123,6 +123,8 @@ impl<V> Tab<V> {
 ///
 /// The shown page comes from `bind`, then `selection`. Without either, or
 /// with a value no tab has, the first page shows.
+///
+/// It keeps no state of its own, so `bind` it for tab clicks to change the page.
 #[derive(Clone)]
 pub struct TabView<V: Clone + PartialEq + 'static = usize> {
     items: Vec<Tab<V>>,

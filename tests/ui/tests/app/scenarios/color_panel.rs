@@ -38,7 +38,7 @@ impl View for MainView {
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let (color, panel_color, panel_shown, changes) =
             (self.color, self.panel_color, self.panel_shown, self.changes);
-        Window::new(Rect::new(100.0, 100.0, 420.0, 300.0), "Zintl Color Panel UI Test")
+        Window::new("Zintl Color Panel UI Test").size(Size::new(420.0, 300.0))
             .id("main-window")
             .color_panel(ColorPanel::new().bind(panel_color).bind_presented(panel_shown))
             .content(

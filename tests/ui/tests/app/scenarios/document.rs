@@ -37,10 +37,7 @@ impl View for MainView {
         let (allow_close, requests) = (self.allow_close, self.requests);
         let edits = *cx.get(done);
         let redos = *cx.get(undone);
-        Window::new(
-            Rect::new(100.0, 100.0, 480.0, 320.0),
-            "Zintl Document UI Test",
-        )
+        Window::new("Zintl Document UI Test").size(Size::new(480.0, 320.0))
         .id("main-window")
         .edited(edits > 0)
         .on_close_request(move |cx| {

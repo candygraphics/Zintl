@@ -26,7 +26,7 @@ impl View for MainView {
         let logged = move |title: &'static str| {
             MenuItem::new(title).on_select(move |cx| cx.update(log, |log| log.push(title.into())))
         };
-        Window::new(Rect::new(100.0, 100.0, 420.0, 300.0), "Zintl Context Menu UI Test")
+        Window::new("Zintl Context Menu UI Test").size(Size::new(420.0, 300.0))
             .id("main-window")
             .content(
                 VStack::new(list![

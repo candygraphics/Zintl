@@ -32,7 +32,7 @@ impl View for MainView {
         let rejected = |cx: &mut Context<'_>, store: Store<usize>, id: &'static str| {
             cx.watch(store, move |count| Text::new(format!("Rejected: {count}")).id(id))
         };
-        Window::new(Rect::new(100.0, 100.0, 420.0, 420.0), "Zintl Fixed Values UI Test")
+        Window::new("Zintl Fixed Values UI Test").size(Size::new(420.0, 420.0))
             .id("main-window")
             .content(
                 VStack::new(list![

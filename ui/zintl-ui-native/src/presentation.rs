@@ -280,8 +280,9 @@ impl FileDialog {
         self
     }
 
-    pub fn multiple(mut self) -> Self {
-        self.config.allows_multiple = true;
+    /// Lets the user choose several items with `true`.
+    pub fn multiple(mut self, multiple: bool) -> Self {
+        self.config.allows_multiple = multiple;
         self
     }
 

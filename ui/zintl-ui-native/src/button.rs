@@ -6,7 +6,7 @@ use zintl_ui_layout::{LayoutStyle, Size};
 use crate::modifiers;
 use crate::{
     Attach, BezelStyle, ButtonRole, ButtonType, ChangeRoute, Context, Element, Event, EventKind,
-    Menu, NativeView, RenderNode, ViewModifiers,
+    Menu, NativeView, RenderNode, TextEstimate, ViewModifiers,
 };
 
 type Action = dyn for<'a> Fn(&mut Context<'a>);
@@ -25,8 +25,6 @@ pub enum ButtonStyle {
     /// A compact button for accessory bars.
     Accessory,
     Circular,
-    /// The round question mark button.
-    Help,
     /// A disclosure triangle in a push button.
     Disclosure,
 }
@@ -46,6 +44,8 @@ pub struct Button {
     shows_menu: bool,
     keeps_state: bool,
     title_color: Option<Color>,
+    /// Created without a title, so the backend measures its size.
+    untitled: bool,
 }
 
 impl Button {
@@ -64,13 +64,39 @@ impl Button {
             shows_menu: false,
             keeps_state: false,
             title_color: None,
+            untitled: false,
+        }
+    }
+
+    /// Creates a button that shows only the SF Symbol `system_image`;
+    /// assistive apps such as VoiceOver read `label` as its name.
+    ///
+    /// It takes the symbol's size instead of the standard push button size,
+    /// unless a minimum size is declared. [`Attach::accessibility_label`]
+    /// replaces `label`.
+    pub fn icon(system_image: impl Into<String>, label: impl Into<String>) -> Self {
+        Self::untitled()
+            .system_image(system_image)
+            .accessibility_label(label)
+    }
+
+    /// Creates the round question mark button that opens help.
+    pub fn help() -> Self {
+        Self::untitled().bezel_style(Some(BezelStyle::Help))
+    }
+
+    /// Creates a button without a title, which the backend measures.
+    pub(crate) fn untitled() -> Self {
+        Self {
+            untitled: true,
+            ..Self::new("")
         }
     }
 
     /// Creates a checkbox whose title is drawn beside the box.
     pub(crate) fn checkbox(title: impl Into<String>) -> Self {
         let title = title.into();
-        let width = title.chars().count() as f32 * 7.0 + 24.0;
+        let width = TextEstimate::width(&title, TextEstimate::SYSTEM_FONT_SIZE) + 24.0;
         let mut button = Self::new(title).button_type(ButtonType::Checkbox);
         button.layout.minimum_size = Some(Size::new(width, 20.0));
         button
@@ -79,7 +105,7 @@ impl Button {
     /// Creates a radio button; group radios by binding them to one selection.
     pub(crate) fn radio(title: impl Into<String>) -> Self {
         let title = title.into();
-        let width = title.chars().count() as f32 * 7.0 + 24.0;
+        let width = TextEstimate::width(&title, TextEstimate::SYSTEM_FONT_SIZE) + 24.0;
         let mut button = Self::new(title).button_type(ButtonType::Radio);
         button.layout.minimum_size = Some(Size::new(width, 20.0));
         button
@@ -105,7 +131,6 @@ impl Button {
             ButtonStyle::Toolbar => Some(BezelStyle::Toolbar),
             ButtonStyle::Accessory => Some(BezelStyle::AccessoryBarAction),
             ButtonStyle::Circular => Some(BezelStyle::Circular),
-            ButtonStyle::Help => Some(BezelStyle::Help),
             ButtonStyle::Disclosure => Some(BezelStyle::PushDisclosure),
         })
     }
@@ -122,10 +147,7 @@ impl Button {
         self
     }
 
-    /// Shows an SF Symbol; an empty title shows the symbol alone.
-    ///
-    /// A button with only a symbol takes the symbol's size instead of the
-    /// standard push button size, unless a minimum size is declared.
+    /// Shows an SF Symbol beside the title; [`Button::icon`] shows it alone.
     pub fn system_image(mut self, name: impl Into<String>) -> Self {
         self.system_image = Some(name.into());
         self
@@ -170,13 +192,10 @@ impl Button {
 }
 
 impl Button {
-    /// Returns the layout; icon-only buttons leave their size to the backend's measuring.
+    /// Returns the layout; untitled buttons leave their size to the backend's measuring.
     fn layout(&self) -> LayoutStyle {
         let mut layout = self.layout;
-        if self.title.is_empty()
-            && self.system_image.is_some()
-            && self.modifiers.layout().minimum_size.is_none()
-        {
+        if self.untitled && self.modifiers.layout().minimum_size.is_none() {
             layout.minimum_size = Some(Size::default());
         }
         layout

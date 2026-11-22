@@ -30,7 +30,7 @@ impl View for MainView {
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let (free, snapping, changes) = (self.free, self.snapping, self.changes);
-        Window::new(Rect::new(100.0, 100.0, 420.0, 340.0), "Zintl Sliders UI Test")
+        Window::new("Zintl Sliders UI Test").size(Size::new(420.0, 340.0))
             .id("main-window")
             .content(
                 VStack::new(list![
@@ -45,7 +45,7 @@ impl View for MainView {
                     HStack::new(list![
                         Text::new("Snapping"),
                         Slider::new(0.0..=100.0)
-                            .snapping_ticks(5)
+                            .ticks(5).snaps_to_ticks(true)
                             .bind(snapping)
                             .id("snapping-slider")
                             .minimum_size(Size::new(200.0, 24.0)),

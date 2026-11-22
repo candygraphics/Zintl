@@ -24,7 +24,7 @@ impl View for MainView {
     fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         list![
             MainMenu::standard().app_name("Zintl Find"),
-            Window::new(Rect::new(100.0, 100.0, 480.0, 320.0), "Zintl Find Menu UI Test")
+            Window::new("Zintl Find Menu UI Test").size(Size::new(480.0, 320.0))
                 .id("main-window")
                 .content(
                     VStack::new(list![TextEditor::new().bind(self.text)])

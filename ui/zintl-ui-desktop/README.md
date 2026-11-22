@@ -9,7 +9,7 @@ Attach navigation to a window with `Window::sidebar`:
 self.selection = cx.store(Some("home"));
 
 // Build this window in View::render.
-Window::new(Rect::new(100.0, 100.0, 640.0, 400.0), "Navigation")
+Window::new("Navigation").size(Size::new(640.0, 400.0))
     .sidebar(
         Sidebar::new([SidebarSection::new([
             SidebarItem::new("home", "Home").system_image("house"),
@@ -92,26 +92,47 @@ VStack::new(list![
     Picker::new([("list", "List"), ("grid", "Grid")]).style(PickerStyle::Segmented).bind(self.layout),
     Picker::indexed(["Low", "High"]).style(PickerStyle::Radio).bind(self.priority),
     ComboBox::new(["Apple", "Banana"]).placeholder("Fruit").bind(self.fruit),
-    Slider::new(0.0..=100.0).ticks(11).bind(self.volume),
+    Slider::new(0.0..=100.0).ticks(11).snaps_to_ticks(true).bind(self.volume),
     NumberField::new().range(0.0..=99.0).step(1.0).bind(self.quantity),
     ColorWell::new().bind(self.tint),
     SearchField::new().placeholder("Search").bind(self.query),
 ])
 ```
 
-Buttons take a `ButtonStyle` (push, borderless, toolbar, help, …), a
+Buttons take a `ButtonStyle` (push, borderless, toolbar, …), a
 `ButtonRole` (`Default` answers Return, `Cancel` answers Escape, `Destructive`
-warns), and SF Symbols through `system_image`.
+warns), and SF Symbols through `system_image`. `Button::icon("gearshape", "Settings")`
+shows a symbol alone and takes its size; VoiceOver reads the second argument as
+its name. `Button::help()` is the round question mark button.
+
+Builder methods that turn a state or feature on take a `bool`, such as
+`enabled(false)`, `multiline(true)`, or `accessibility_hidden(true)`, so a
+condition does not need an `if` around the builder. Layout instructions take
+none: `fill_width()`, `fill_height()`, `grow()`, `ignores_safe_area()`.
 
 `ScrollView::new(content)` and `TabView::new([Tab::new("general", "General", page)])`
 fill their parent's width and the remaining space. Each `Tab` carries the value
-that selects it. Stacks accept `padding` and
-`grow`.
+that selects it. Stacks accept `padding`, `grow`, `equal_children()`, and a
+`MainAxisDistribution` such as `distribution(MainAxisDistribution::SpaceBetween)`.
+
+`Grid` takes one `GridRow` per row and has as many columns as its widest row.
+`GridRow::span` makes a cell cover several columns, and `striped` shades every
+other row:
+
+```rust,ignore
+Grid::new([
+    GridRow::new(list![Text::new("Name"), TextField::new()]),
+    GridRow::new(list![Text::new("Advanced")]).span(0, 2), // covers both columns
+    GridRow::new(list![Text::new("Port"), IntegerField::new()]),
+])
+.striped(true)
+```
 
 ## Text editing
 
 `TextEditor` is a scrolling rich text editor (`NSTextView` on macOS) that fills
-its parent, with undo and a find bar. `TextField` and `TextEditor` take
+its parent, with undo and a find bar. Use it for document text; for a few lines
+of plain text that do not scroll, use `TextField::new().multiline(true)`. `TextField` and `TextEditor` take
 `on_change`, which runs after each edit once the bound Store is updated.
 
 ```rust,ignore
@@ -196,8 +217,10 @@ SplitView::horizontal(NoteList::new(), Editor::new())
     .bind(self.list_width) // optional; keeps the width in a Store
 ```
 
-The divider is a `Canvas2D`, so dragging it re-renders the split view. It does
-not change the pointer to a resize cursor yet.
+The divider is a `Canvas2D` that shows a resize cursor and draws in the
+platform's separator color. It keeps the drag in progress itself, so the drag
+continues when a parent re-renders the split view. Split views take the shared
+modifiers, such as `id` and `accessibility_label`.
 
 ## Context menus and popovers
 
@@ -220,8 +243,22 @@ Button::new("Info")
 ## Windows, sheets, and panels
 
 Return several windows from the root view, for example with `list!`.
-`Window::panel` creates a floating utility panel. `bind_open` shows a window
-while its Store is `true`; closing it writes `false`. The app quits when its
+`Window::panel` creates a floating utility panel.
+
+`size` sets the content area below the title bar; windows default to 640 × 480
+and panels to 320 × 400. A new window opens centered unless `position` places
+its top-left corner, in screen points from the top left of the main screen.
+A frame saved with `autosave` takes precedence over both. Changing `size`
+later keeps the top-left corner; a window the user moved or resized stays put
+until its declaration changes.
+
+```rust,ignore
+Window::new("Editor")
+    .size(Size::new(800.0, 600.0))
+    .autosave("editor")
+```
+
+`bind_open` shows a window while its Store is `true`; closing it writes `false`. The app quits when its
 last normal window closes; panels do not keep it running.
 
 Alerts and file dialogs are window-modal sheets, and `ColorPanel` connects the
@@ -230,17 +267,17 @@ shared color panel. Each is shown while its bound Store is `true` and writes
 requested while another is open appears after it ends.
 
 ```rust,ignore
-Window::new(bounds, "Editor")
+Window::new("Editor")
     .alert(
         Alert::new("Delete the item?")
             .button(AlertButton::new("Delete").role(ButtonRole::Destructive).on_click(delete))
             .button(AlertButton::new("Cancel").role(ButtonRole::Cancel))
             .bind_presented(self.confirm),
     )
-    .file_dialog(FileDialog::open().multiple().bind_presented(self.open).on_select(|cx, paths| { /* … */ }))
+    .file_dialog(FileDialog::open().multiple(true).bind_presented(self.open).on_select(|cx, paths| { /* … */ }))
     .color_panel(ColorPanel::new().bind(self.tint).bind_presented(self.colors));
 
-Window::panel(bounds, "Inspector").bind_open(self.inspector)
+Window::panel("Inspector").bind_open(self.inspector)
 ```
 
 Only one `ColorPanel` should be presented at a time because AppKit shares it.
@@ -272,7 +309,7 @@ list![
         .settings(|cx| { /* … */ })
         .extend(StandardMenu::File, [MenuItem::new("New Note").shortcut(Shortcut::command("n"))])
         .menu(Menu::new("Format", [MenuItem::new("Bold").on_select(|cx| { /* … */ })])),
-    Window::new(bounds, "Notes"),
+    Window::new("Notes"),
 ]
 ```
 
@@ -300,7 +337,7 @@ items sit over the content. Changing only enabled states or search text
 updates the items in place.
 
 ```rust,ignore
-Window::new(bounds, "Notes")
+Window::new("Notes")
     .autosave("notes.main") // remembers the frame between launches
     .toolbar(Toolbar::new([
         ToolbarItem::button("new", "New Note", "square.and.pencil").on_click(new_note),
@@ -399,7 +436,7 @@ Content starts below the title bar by default. A top-level view that calls
 `Frame::safe_area` to keep text and controls clear of the title bar.
 
 ```rust,ignore
-Window::new(bounds, "Orbits")
+Window::new("Orbits")
     .title_bar(TitleBar::Hidden) // or TitleBar::Overlay to keep the title
     .content(Canvas2D::new(Orbits::new()).fill_width().grow().ignores_safe_area())
 ```
@@ -407,7 +444,7 @@ Window::new(bounds, "Orbits")
 Clicks in the title bar area move the window and do not reach the views under
 it. A canvas claims points there with `Canvas2DHandler::title_bar_hit`, for
 example for tabs it draws; other views opt in as a whole with
-`title_bar_interactive()` (from `Attach`). A hovering canvas sees `Exited`
+`title_bar_interactive(true)` (from `Attach`). A hovering canvas sees `Exited`
 while the pointer is in the title bar area outside the points it claims.
 
 ```rust,ignore
@@ -419,6 +456,46 @@ fn title_bar_hit(&self, point: Point) -> bool {
 On Windows the canvas is not drawn yet; see `TODO.md`. See
 `examples/canvas.rs` for a sketch pad and `examples/fullscreen_canvas.rs` for a
 window-filling animation.
+
+## Custom views
+
+Compose views into your own by implementing `View`. To give such a view the
+shared modifiers (`id`, sizes, `context_menu`, `accessibility_*`), implement
+`render::NativeView` instead, when its root is one native view such as a stack:
+
+```rust,ignore
+use zintl_ui_desktop::render::{Element, NativeView, ViewModifiers, modifiers, native_view};
+
+#[derive(Clone)]
+pub struct Card {
+    title: String,
+    modifiers: ViewModifiers,
+}
+
+impl NativeView for Card {
+    modifiers!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        VStack::new(list![Text::new(self.title.clone())]).padding(12.0).native_element(cx)
+    }
+}
+
+native_view!(Card); // implements View
+```
+
+Modifiers on `Card` win over those its root stack declares; popovers of both
+are kept. A view with its own `View::init` implements `View` by hand and is
+mounted only as a child, never through another view's `native_element`.
+
+State that a view keeps unless the app binds a Store goes in a `Local<T>`:
+call `bind` from the builder, `init` from `View::init`, and read `store()`.
+
+Apps cannot add native control kinds. Build views by composing existing ones,
+or draw them with `Canvas2D` and report to the app with
+`CanvasEventContext::emit` and `on_action`. Canvases read platform colors from
+`Frame::palette`, including `separator` and `alternating_row`, and
+`render::TextEstimate` estimates text sizes without the backend. See
+`examples/custom_view.rs`.
 
 ## Crate responsibilities
 

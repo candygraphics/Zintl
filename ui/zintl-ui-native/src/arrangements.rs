@@ -9,10 +9,11 @@ use crate::modifiers;
 use crate::{
     AccessibilityRole, Attach, BezelStyle, Button, ButtonType, Canvas2D, Canvas2DHandler,
     ChangeRoute, Color, Container, Context, Element, Frame, HStack, Layout, ListFactory,
-    NativeView, RenderNode, Store, Text, VStack, ViewModifiers, list,
+    NativeView, PaletteColor, RenderNode, Store, Text, VStack, ViewModifiers, list,
 };
+use zintl_ui::store::Local;
 
-native_view!(ZStack, Grid, GridCell);
+native_view!(ZStack, Grid);
 
 /// Stacks its children on top of each other, later children in front.
 ///
@@ -45,45 +46,44 @@ impl NativeView for ZStack {
     modifiers!();
 }
 
-/// Fills its frame with one color, behind a grid row.
+/// Fills its frame with the alternating row color, behind a grid row.
 #[derive(Clone)]
 struct Stripe;
 
 impl Canvas2DHandler for Stripe {
     fn draw(&mut self, g: &mut Graphics2D<'_>, frame: &Frame) {
         g.clear(Color::TRANSPARENT);
-        g.fill_rect(frame.bounds, Color::rgba(0.5, 0.5, 0.5, 0.1));
+        g.fill_rect(
+            frame.bounds,
+            frame.palette.resolve(PaletteColor::AlternatingRow),
+        );
     }
 }
 
-/// Lays out children row by row in aligned columns, like a table without headers.
+/// Lays out rows of cells in aligned columns, like a table without headers.
 ///
-/// Each child is one cell; each column is as wide as its widest cell.
+/// Each column is as wide as its widest cell, and the grid has as many
+/// columns as its widest row covers. Rows with fewer cells leave the last
+/// columns empty.
 #[derive(Clone)]
 pub struct Grid {
-    columns: u16,
-    children: ListFactory<RenderNode>,
+    rows: Vec<GridRow>,
     striped: bool,
     layout: LayoutStyle,
     modifiers: ViewModifiers,
 }
 
 impl Grid {
-    pub fn new(columns: u16, children: ListFactory<RenderNode>) -> Self {
-        let mut layout = LayoutStyle::stack(Axis::Vertical, 4.0);
-        layout.arrangement = Arrangement::Grid {
-            columns: columns.max(1),
-        };
+    pub fn new(rows: impl IntoIterator<Item = GridRow>) -> Self {
         Self {
-            columns: columns.max(1),
-            children,
+            rows: rows.into_iter().collect(),
             striped: false,
-            layout,
+            layout: LayoutStyle::stack(Axis::Vertical, 4.0),
             modifiers: ViewModifiers::default(),
         }
     }
 
-    /// Shades every other row.
+    /// Shades every other row, starting with the second.
     pub fn striped(mut self, striped: bool) -> Self {
         self.striped = striped;
         self
@@ -94,73 +94,123 @@ impl Grid {
         self.layout.gap = spacing;
         self
     }
+
+    /// Returns a stripe that covers `row`.
+    fn stripe(row: usize) -> ElementFactory<RenderNode> {
+        let mut layout = LayoutStyle::stack(Axis::Horizontal, 0.0);
+        layout.grid_cell = Some(zintl_ui_layout::GridCell {
+            row: row as u16,
+            column: 0,
+            column_span: 0,
+        });
+        ElementFactory::new(Container::new(layout, list![Canvas2D::new(Stripe).grow()]))
+    }
 }
 
 impl NativeView for Grid {
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let rows = self.children.len().div_ceil(self.columns as usize);
+        let columns = self
+            .rows
+            .iter()
+            .map(GridRow::width)
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        let mut layout = self.layout;
+        layout.arrangement = Arrangement::Grid { columns };
         // Stripes come first so the cells draw over them.
         let mut children: ListFactory<RenderNode> = Vec::new();
         if self.striped {
-            for row in (1..rows).step_by(2) {
-                let mut layout = LayoutStyle::stack(Axis::Horizontal, 0.0);
-                layout.grid_cell = Some(zintl_ui_layout::GridCell {
-                    row: row as u16,
-                    column: 0,
-                    column_span: 0,
-                });
-                children.push(ElementFactory::new(crate::Container::new(
-                    layout,
-                    list![Canvas2D::new(Stripe).grow()],
-                )));
-            }
+            children.extend((1..self.rows.len()).step_by(2).map(Self::stripe));
         }
-        children.extend(self.children.iter().cloned());
-        Container::new(self.layout, children).native_element(cx)
+        for row in &self.rows {
+            row.push_cells(columns, &mut children);
+        }
+        Container::new(layout, children).native_element(cx)
     }
 
     modifiers!();
 }
 
-/// A [`Grid`] child that covers several columns, such as a heading between groups of rows.
-///
-/// A span that does not fit the rest of its row starts the next row. Striped
-/// grids count one cell per child, so their stripes do not account for spans.
+/// One row of a [`Grid`].
 #[derive(Clone)]
-pub struct GridCell {
-    content: ElementFactory<RenderNode>,
-    column_span: u16,
-    modifiers: ViewModifiers,
+pub struct GridRow {
+    cells: ListFactory<RenderNode>,
+    /// The columns each cell covers, in cell order.
+    spans: Vec<u16>,
 }
 
-impl GridCell {
-    pub fn new<V>(content: V) -> Self
-    where
-        V: Clone + IntoElement<Output = RenderNode> + 'static,
-    {
-        Self {
-            content: ElementFactory::new(content),
-            column_span: 1,
-            modifiers: ViewModifiers::default(),
-        }
+impl GridRow {
+    /// Creates a row whose cells each cover one column.
+    pub fn new(cells: ListFactory<RenderNode>) -> Self {
+        let spans = vec![1; cells.len()];
+        Self { cells, spans }
     }
 
-    /// Covers `columns` columns, at most the grid's column count.
-    pub fn column_span(mut self, columns: u16) -> Self {
-        self.column_span = columns.max(1);
+    /// Makes the cell at `index` cover `columns` columns, such as a heading
+    /// between groups of rows.
+    ///
+    /// An `index` past the last cell is ignored, which debug builds report.
+    pub fn span(mut self, index: usize, columns: u16) -> Self {
+        debug_assert!(
+            index < self.spans.len(),
+            "a grid row has no cell at index {index}"
+        );
+        if let Some(span) = self.spans.get_mut(index) {
+            *span = columns.max(1);
+        }
         self
     }
+
+    /// Returns the columns the row's cells cover.
+    fn width(&self) -> u16 {
+        self.spans.iter().sum()
+    }
+
+    /// Adds the row's cells to `children`, filling the columns it leaves empty
+    /// so the next row starts in the first column.
+    fn push_cells(&self, columns: u16, children: &mut ListFactory<RenderNode>) {
+        for (cell, span) in self.cells.iter().zip(&self.spans) {
+            children.push(if *span > 1 {
+                ElementFactory::new(GridCell::new(cell.clone(), *span))
+            } else {
+                cell.clone()
+            });
+        }
+        for _ in self.width()..columns {
+            children.push(ElementFactory::new(Container::new(
+                LayoutStyle::leaf(Size::default()),
+                Vec::new(),
+            )));
+        }
+    }
 }
 
-impl NativeView for GridCell {
-    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+/// Wraps a [`GridRow`] cell that covers several columns.
+#[derive(Clone)]
+struct GridCell {
+    content: ElementFactory<RenderNode>,
+    column_span: u16,
+}
+
+impl View for GridCell {
+    type Output = RenderNode;
+
+    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         // The content stretches across the columns the cell covers.
         let mut layout = LayoutStyle::stack(Axis::Vertical, 0.0);
         layout.column_span = self.column_span;
         Container::new(layout, vec![self.content.clone()]).native_element(cx)
     }
+}
 
-    modifiers!();
+impl GridCell {
+    fn new(content: ElementFactory<RenderNode>, column_span: u16) -> Self {
+        Self {
+            content,
+            column_span,
+        }
+    }
 }
 
 /// A titled section whose content shows only while it is expanded.
@@ -168,8 +218,7 @@ impl NativeView for GridCell {
 pub struct DisclosureGroup {
     title: String,
     content: ElementFactory<RenderNode>,
-    binding: Option<Store<bool>>,
-    expanded: Store<bool>,
+    expanded: Local<bool>,
     modifiers: ViewModifiers,
 }
 
@@ -181,15 +230,14 @@ impl DisclosureGroup {
         Self {
             title: title.into(),
             content: ElementFactory::new(content),
-            binding: None,
-            expanded: Store::default(),
+            expanded: Local::new(false),
             modifiers: ViewModifiers::default(),
         }
     }
 
     /// Reads and writes whether the group is expanded; it starts collapsed otherwise.
     pub fn bind(mut self, expanded: Store<bool>) -> Self {
-        self.binding = Some(expanded);
+        self.expanded.bind(expanded);
         self
     }
 }
@@ -198,7 +246,7 @@ impl View for DisclosureGroup {
     type Output = RenderNode;
 
     fn init(&mut self, cx: &mut Context<'_>) {
-        self.expanded = self.binding.unwrap_or_else(|| cx.store(false));
+        self.expanded.init(cx);
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
@@ -213,10 +261,10 @@ impl NativeView for DisclosureGroup {
     }
 
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
-        let expanded = self.expanded;
+        let expanded = self.expanded.store();
         let open = *cx.get(expanded);
         // The triangle carries the title for VoiceOver, so the visible title is not read twice.
-        let mut toggle = Button::new("")
+        let mut toggle = Button::untitled()
             .bezel_style(Some(BezelStyle::Disclosure))
             .button_type(ButtonType::PushOnPushOff)
             .minimum_size(Size::new(13.0, 13.0))
@@ -225,7 +273,7 @@ impl NativeView for DisclosureGroup {
         if let Some(id) = self.modifiers.id() {
             toggle = toggle.id(id);
         }
-        let title = Text::new(self.title.clone()).accessibility_hidden();
+        let title = Text::new(self.title.clone()).accessibility_hidden(true);
         let header = HStack::new(list![toggle, title]).spacing(4.0);
         let mut rows = list![header];
         if open {

@@ -1,18 +1,18 @@
 //! Two panes separated by a draggable divider.
 
-use std::cell::Cell;
 use std::ops::RangeInclusive;
-use std::rc::Rc;
 
 use zintl_ui::element::{ElementFactory, IntoElement};
-use zintl_ui::store::Store;
+use zintl_ui::store::{Local, Store};
 use zintl_ui::view::View;
 use zintl_ui_layout::{Axis, CrossAxisAlignment, Size};
 
 use crate::graphics::{self, Graphics2D};
+use crate::modifiers;
 use crate::{
-    Canvas2D, Canvas2DHandler, CanvasEvent, CanvasEventContext, Color, Context, Cursor, Frame,
-    HStack, Layout, PointerButton, PointerPhase, RenderNode, VStack, list,
+    Canvas2D, Canvas2DHandler, CanvasEvent, CanvasEventContext, Color, Context, Cursor, Element,
+    Frame, HStack, Layout, NativeView, PaletteColor, PointerButton, PointerPhase, Redraw,
+    RenderNode, VStack, ViewModifiers, list,
 };
 
 /// Two panes with a divider that the user drags to resize the first one.
@@ -23,12 +23,9 @@ pub struct SplitView {
     axis: Axis,
     first: ElementFactory<RenderNode>,
     second: ElementFactory<RenderNode>,
-    initial: f32,
     range: RangeInclusive<f32>,
-    binding: Option<Store<f32>>,
-    position: Store<f32>,
-    /// Where the pointer pressed the divider, along the axis; set while dragging.
-    grab: Rc<Cell<Option<f64>>>,
+    position: Local<f32>,
+    modifiers: ViewModifiers,
 }
 
 impl SplitView {
@@ -62,17 +59,15 @@ impl SplitView {
             axis,
             first: ElementFactory::new(first),
             second: ElementFactory::new(second),
-            initial: 240.0,
             range: 0.0..=f32::INFINITY,
-            binding: None,
-            position: Store::default(),
-            grab: Rc::new(Cell::new(None)),
+            position: Local::new(240.0),
+            modifiers: ViewModifiers::default(),
         }
     }
 
     /// Sets the first pane's starting size along the axis.
     pub fn position(mut self, size: f32) -> Self {
-        self.initial = size;
+        self.position.set_initial(size);
         self
     }
 
@@ -84,7 +79,7 @@ impl SplitView {
 
     /// Reads and writes the first pane's size through `store`, for example to keep it.
     pub fn bind(mut self, store: Store<f32>) -> Self {
-        self.binding = Some(store);
+        self.position.bind(store);
         self
     }
 
@@ -96,32 +91,9 @@ impl SplitView {
         VStack::new(vec![content.clone()]).minimum_size(Size::new(0.0, 0.0))
     }
 
-    /// Moves the divider to follow a drag.
-    ///
-    /// The divider follows the pointer, so the pointer stays at the grab point
-    /// and each move reports its distance from there.
-    fn drag(&self, cx: &mut Context<'_>, event: &CanvasEvent) {
-        let CanvasEvent::Pointer(pointer) = event else {
-            return;
-        };
-        let along = match self.axis {
-            Axis::Horizontal => pointer.location.x,
-            Axis::Vertical => pointer.location.y,
-        };
-        match (pointer.phase, pointer.button) {
-            (PointerPhase::Down, Some(PointerButton::Primary)) => self.grab.set(Some(along)),
-            (PointerPhase::Moved, Some(PointerButton::Primary)) => {
-                if let Some(grab) = self.grab.get() {
-                    let delta = (along - grab) as f32;
-                    let (min, max) = (*self.range.start(), *self.range.end());
-                    cx.update(self.position, |size| {
-                        *size = (*size + delta).clamp(min, max).max(0.0);
-                    });
-                }
-            }
-            (PointerPhase::Up, _) => self.grab.set(None),
-            _ => {}
-        }
+    /// Returns `size` limited to the range and never negative.
+    fn clamp(&self, size: f32) -> f32 {
+        size.clamp(*self.range.start(), *self.range.end()).max(0.0)
     }
 }
 
@@ -129,15 +101,30 @@ impl View for SplitView {
     type Output = RenderNode;
 
     fn init(&mut self, cx: &mut Context<'_>) {
-        let initial = self.initial.clamp(*self.range.start(), *self.range.end());
-        self.position = self.binding.unwrap_or_else(|| cx.store(initial));
+        let initial = self.clamp(*self.position.initial());
+        self.position.set_initial(initial);
+        self.position.init(cx);
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
-        let size = *cx.get(self.position);
-        let split = self.clone();
-        let divider = Canvas2D::new(Divider { axis: self.axis })
-            .on_event(move |cx, event| split.drag(cx, event));
+        self.native_element(cx)
+    }
+}
+
+impl NativeView for SplitView {
+    modifiers!();
+
+    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        let position = self.position.store();
+        let size = *cx.get(position);
+        let range = self.range.clone();
+        let divider =
+            Canvas2D::new(Divider::new(self.axis)).on_action(move |cx, drag: &DividerDrag| {
+                let (min, max) = (*range.start(), *range.end());
+                cx.update(position, |size| {
+                    *size = (*size + drag.delta as f32).clamp(min, max).max(0.0);
+                });
+            });
         match self.axis {
             Axis::Horizontal => HStack::new(list![
                 Self::pane(&self.first).width(size),
@@ -149,7 +136,7 @@ impl View for SplitView {
             .alignment(CrossAxisAlignment::Stretch)
             .fill_width()
             .grow()
-            .into_element(),
+            .native_element(cx),
             Axis::Vertical => VStack::new(list![
                 Self::pane(&self.first).height(size),
                 divider.minimum_size(Size::new(0.0, Self::DIVIDER)),
@@ -158,15 +145,33 @@ impl View for SplitView {
             .spacing(0.0)
             .fill_width()
             .grow()
-            .into_element(),
+            .native_element(cx),
         }
     }
 }
 
-/// Draws the divider line and keeps drags from reaching views behind it.
+/// How far the divider was dragged along its split view's axis.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct DividerDrag {
+    /// The distance in canvas points; the split view converts it to a layout length.
+    delta: f64,
+}
+
+/// Draws the divider line, follows drags, and keeps them from reaching views behind it.
 #[derive(Clone)]
 struct Divider {
     axis: Axis,
+    /// Where the pointer pressed the divider, along the axis; set while dragging.
+    ///
+    /// The mounted handler keeps it across renders, so a drag survives the
+    /// split view being rebuilt.
+    grab: Option<f64>,
+}
+
+impl Divider {
+    fn new(axis: Axis) -> Self {
+        Self { axis, grab: None }
+    }
 }
 
 impl Canvas2DHandler for Divider {
@@ -180,25 +185,50 @@ impl Canvas2DHandler for Divider {
             }
         };
         g.clear(Color::TRANSPARENT);
-        g.fill_rect(line, Color::rgba(0.5, 0.5, 0.5, 0.35));
+        g.fill_rect(line, frame.palette.resolve(PaletteColor::Separator));
     }
 
-    // Consuming the drag keeps the window from moving when the divider sits
-    // under a transparent title bar.
+    // The divider follows the pointer, so the pointer stays at the grab point
+    // and each move reports its distance from there. Consuming the drag keeps
+    // the window from moving when the divider sits under a transparent title bar.
     fn event(&mut self, event: &CanvasEvent, cx: &mut CanvasEventContext) -> bool {
-        if let CanvasEvent::Pointer(pointer) = event
-            && pointer.phase == PointerPhase::Entered
-        {
-            cx.set_cursor(match self.axis {
+        let CanvasEvent::Pointer(pointer) = event else {
+            return false;
+        };
+        let along = match self.axis {
+            Axis::Horizontal => pointer.location.x,
+            Axis::Vertical => pointer.location.y,
+        };
+        match (pointer.phase, pointer.button) {
+            (PointerPhase::Entered, _) => cx.set_cursor(match self.axis {
                 Axis::Horizontal => Cursor::ResizeLeftRight,
                 Axis::Vertical => Cursor::ResizeUpDown,
-            });
+            }),
+            (PointerPhase::Down, Some(PointerButton::Primary)) => self.grab = Some(along),
+            (PointerPhase::Moved, Some(PointerButton::Primary)) => {
+                if let Some(grab) = self.grab {
+                    cx.emit(DividerDrag {
+                        delta: along - grab,
+                    });
+                }
+            }
+            (PointerPhase::Up, _) => self.grab = None,
+            _ => {}
         }
         matches!(
-            event,
-            CanvasEvent::Pointer(pointer)
-                if matches!(pointer.phase, PointerPhase::Down | PointerPhase::Moved | PointerPhase::Up)
-                    && pointer.button.is_some()
-        )
+            pointer.phase,
+            PointerPhase::Down | PointerPhase::Moved | PointerPhase::Up
+        ) && pointer.button.is_some()
+    }
+
+    fn reconcile(&mut self, next: Self) -> Redraw {
+        // Keep the grab point of a drag in progress.
+        let redraw = if self.axis == next.axis {
+            Redraw::No
+        } else {
+            Redraw::Yes
+        };
+        self.axis = next.axis;
+        redraw
     }
 }

@@ -6,10 +6,7 @@ impl View for MainView {
     type Output = RenderNode;
 
     fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
-        Window::new(
-            Rect::new(100.0, 100.0, 640.0, 400.0),
-            "Zintl Full Width Stack UI Test",
-        )
+        Window::new("Zintl Full Width Stack UI Test").size(Size::new(640.0, 400.0))
         .id("main-window")
         .content(
             VStack::new(list![
@@ -21,7 +18,7 @@ impl View for MainView {
                 ])
                 .spacing(24.0)
                 .fill_width()
-                .space_between(),
+                .distribution(MainAxisDistribution::SpaceBetween),
                 HStack::new(list![
                     TextField::new().id("equal-leading").placeholder("Leading"),
                     TextField::new()
@@ -30,7 +27,7 @@ impl View for MainView {
                 ])
                 .spacing(24.0)
                 .fill_width()
-                .equal_width_children(),
+                .equal_children(),
             ])
             .spacing(24.0)
             .fill_width(),

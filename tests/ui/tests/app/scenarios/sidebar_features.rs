@@ -32,7 +32,7 @@ impl View for MainView {
         let logged = move |entry: &'static str| {
             MenuItem::new(entry.to_owned()).on_select(move |cx| cx.update(log, |log| log.push(entry.into())))
         };
-        Window::new(Rect::new(100.0, 100.0, 640.0, 420.0), "Zintl Sidebar UI Test")
+        Window::new("Zintl Sidebar UI Test").size(Size::new(640.0, 420.0))
             .id("main-window")
             .sidebar(
                 Sidebar::new([SidebarSection::new([

@@ -41,7 +41,7 @@ impl View for MainView {
         ])
         .spacing(4.0)
         .fill_width();
-        Window::new(Rect::new(100.0, 100.0, 640.0, 420.0), "Zintl Split View UI Test")
+        Window::new("Zintl Split View UI Test").size(Size::new(640.0, 420.0))
             .id("main-window")
             .content(
                 VStack::new(list![

@@ -69,6 +69,11 @@ pub struct Palette {
     pub green: Color,
     pub blue: Color,
     pub gray: Color,
+    /// Lines between panes and around groups (`NSColor.separatorColor`).
+    pub separator: Color,
+    /// The background of every other row in a striped grid; translucent, so
+    /// it lies over any background.
+    pub alternating_row: Color,
 }
 
 impl Palette {
@@ -81,6 +86,8 @@ impl Palette {
         green: Color::rgb(0.157, 0.804, 0.255),
         blue: Color::rgb(0.0, 0.478, 1.0),
         gray: Color::rgb(0.557, 0.557, 0.576),
+        separator: Color::rgba(0.5, 0.5, 0.5, 0.35),
+        alternating_row: Color::rgba(0.5, 0.5, 0.5, 0.1),
     };
 
     /// Returns the platform color for `color`.
@@ -99,6 +106,8 @@ impl Palette {
     pub fn resolve(&self, color: PaletteColor) -> Color {
         match color {
             PaletteColor::Accent => self.accent,
+            PaletteColor::Separator => self.separator,
+            PaletteColor::AlternatingRow => self.alternating_row,
             PaletteColor::System(color) => self.system(color),
             PaletteColor::Custom(color) => color,
         }
@@ -117,6 +126,10 @@ pub enum PaletteColor {
     /// The user's accent color.
     #[default]
     Accent,
+    /// [`Palette::separator`], for dividers and rules.
+    Separator,
+    /// [`Palette::alternating_row`], for striped rows.
+    AlternatingRow,
     /// A platform color that adapts to dark mode and Increase Contrast.
     System(SystemColor),
     /// A fixed sRGB color.

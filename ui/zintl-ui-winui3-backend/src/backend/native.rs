@@ -990,11 +990,7 @@ impl NativeNode {
         if columns.is_empty() {
             return vec![width];
         }
-        let fixed: f32 = columns
-            .iter()
-            .filter_map(|column| column.width)
-            .map(|width| width as f32)
-            .sum();
+        let fixed: f32 = columns.iter().filter_map(|column| column.width).sum();
         let flexible = columns
             .iter()
             .filter(|column| column.width.is_none())
@@ -1006,7 +1002,7 @@ impl NativeNode {
         };
         columns
             .iter()
-            .map(|column| column.width.map_or(share, |width| width as f32))
+            .map(|column| column.width.unwrap_or(share))
             .collect()
     }
 

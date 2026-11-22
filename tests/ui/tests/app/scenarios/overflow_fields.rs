@@ -37,10 +37,7 @@ impl View for MainView {
                 }))
             })
             .collect::<Vec<_>>();
-        Window::new(
-            Rect::new(100.0, 100.0, 520.0, 110.0),
-            "Zintl Overflow Fields UI Test",
-        )
+        Window::new("Zintl Overflow Fields UI Test").size(Size::new(520.0, 110.0))
         .id("main-window")
         .content(
             SplitView::horizontal(

@@ -68,7 +68,7 @@ impl View for MainView {
         };
         // The options all hold a service, so `None` matches none of them.
         let unset_options = || Service::options().map(|(service, label)| (Some(service), label));
-        Window::new(Rect::new(100.0, 100.0, 420.0, 680.0), "Zintl Pickers UI Test")
+        Window::new("Zintl Pickers UI Test").size(Size::new(420.0, 680.0))
             .id("main-window")
             .content(
                 VStack::new(list![

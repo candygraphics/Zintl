@@ -48,10 +48,17 @@ pub enum LayoutDimension {
     Percent(f32),
 }
 
+/// Where a stack puts the space its children leave along its main axis.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MainAxisDistribution {
+    /// Packs children at the start; the space follows them.
     #[default]
     Start,
+    /// Packs children in the middle.
+    Center,
+    /// Packs children at the end.
+    End,
+    /// Places the first and last children at both ends and spreads the rest.
     SpaceBetween,
 }
 
@@ -566,6 +573,8 @@ fn to_taffy_style(style: LayoutStyle) -> TaffyStyle {
         justify_self: style.stretches.then_some(AlignItems::STRETCH),
         justify_content: match style.main_axis_distribution {
             MainAxisDistribution::Start => None,
+            MainAxisDistribution::Center => Some(JustifyContent::CENTER),
+            MainAxisDistribution::End => Some(JustifyContent::END),
             MainAxisDistribution::SpaceBetween => Some(JustifyContent::SPACE_BETWEEN),
         },
         gap: TaffySize {
@@ -639,6 +648,27 @@ mod tests {
         assert_eq!(tree.layout(first).unwrap().x, 0.0);
         assert_eq!(tree.layout(second).unwrap().x, 240.0);
         assert_eq!(tree.layout(second).unwrap().width, 160.0);
+    }
+
+    #[test]
+    fn center_and_end_distributions_move_packed_children() {
+        // Verifies centered and end distributions place the children's block in the middle and at the end.
+        let place = |distribution| {
+            let mut tree = LayoutTree::new();
+            let child = tree
+                .create_node(LayoutStyle::leaf(Size::new(100.0, 20.0)), &[])
+                .unwrap();
+            let mut root_style = LayoutStyle::stack(Axis::Horizontal, 0.0);
+            root_style.width = LayoutDimension::Points(400.0);
+            root_style.main_axis_distribution = distribution;
+            let root = tree.create_node(root_style, &[child]).unwrap();
+            tree.compute(root, Size::new(400.0, 100.0)).unwrap();
+            tree.layout(child).unwrap().x
+        };
+
+        assert_eq!(place(MainAxisDistribution::Start), 0.0);
+        assert_eq!(place(MainAxisDistribution::Center), 150.0);
+        assert_eq!(place(MainAxisDistribution::End), 300.0);
     }
 
     #[test]

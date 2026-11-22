@@ -37,10 +37,7 @@ impl View for MainView {
                 .selected(current == number)
                 .on_click(move |cx| cx.update(selected, |selected| *selected = number))
         };
-        Window::new(
-            Rect::new(100.0, 100.0, 480.0, 320.0),
-            "Zintl Controls UI Test",
-        )
+        Window::new("Zintl Controls UI Test").size(Size::new(480.0, 320.0))
         .id("main-window")
         .content(
             VStack::new(list![

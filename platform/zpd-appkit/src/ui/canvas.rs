@@ -69,6 +69,10 @@ pub struct CanvasPalette {
     pub green: super::Color,
     pub blue: super::Color,
     pub gray: super::Color,
+    /// `NSColor.separatorColor`.
+    pub separator: super::Color,
+    /// `NSColor.quaternaryLabelColor`, a translucent fill for striped rows.
+    pub alternating_row: super::Color,
 }
 
 impl CanvasPalette {
@@ -98,6 +102,8 @@ impl CanvasPalette {
                 green: color(zpd_objc::sel!("systemGreenColor")),
                 blue: color(zpd_objc::sel!("systemBlueColor")),
                 gray: color(zpd_objc::sel!("systemGrayColor")),
+                separator: color(zpd_objc::sel!("separatorColor")),
+                alternating_row: color(zpd_objc::sel!("quaternaryLabelColor")),
             };
             zpd_objc::msg_send!(appearance_class, zpd_objc::sel!("setCurrentAppearance:"), ((previous): Id) => ());
             palette

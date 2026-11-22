@@ -1,12 +1,14 @@
 //! A headless harness for inspecting views in tests.
 
+use std::rc::Rc;
+
 use zintl_ui::composer::Composer;
 use zintl_ui::element::IntoElement;
 use zintl_ui::renderer::RenderBackend;
 use zintl_ui::store::{Store, Trigger};
-use zintl_ui_backend_core::HeadlessBackend;
+use zintl_ui_backend_core::{CanvasHost, HeadlessBackend};
 
-use crate::{Context, Event, NodeId, RenderNode};
+use crate::{CanvasEvent, CanvasId, Context, Cursor, Event, NodeId, RenderNode, ViewKind};
 
 /// A render node with the nodes below it.
 #[derive(Clone, Debug, PartialEq)]
@@ -91,23 +93,63 @@ impl Harness {
         self.dispatch_node(node, event)
     }
 
+    /// Delivers `event` to the canvas at `path` as a backend would: the handler
+    /// first, then `on_event`, then `on_action` for what the handler emitted.
+    ///
+    /// Returns whether the handler consumed the event.
+    pub fn canvas_event(&mut self, path: &[usize], event: CanvasEvent) -> bool {
+        let node = self.node(path).expect("the path must address a node");
+        let Some(RenderNode::View {
+            kind:
+                ViewKind::Canvas2D {
+                    canvas,
+                    reports_input,
+                    ..
+                },
+            ..
+        }) = self.composer.backend().value(node).cloned()
+        else {
+            panic!("the path must address a 2D canvas");
+        };
+        // Registering the canvas lets the views take the actions its handler emits.
+        canvas.attach(Rc::new(QuietHost), None);
+        let handled = canvas.event(&event);
+        if reports_input {
+            self.dispatch_node(node, Event::Canvas(event));
+        }
+        let route = self.composer.backend().event_route(node);
+        if let Some(route) = route {
+            self.composer.dispatch_event(
+                route,
+                Event::CanvasActions {
+                    canvas: canvas.id(),
+                },
+            );
+        }
+        handled
+    }
+
     /// Returns a copy of the value in `store`.
+    #[track_caller]
     pub fn get<T: Clone + 'static>(&mut self, store: Store<T>) -> T {
         self.composer.context(|cx| cx.get(store).clone())
     }
 
     /// Writes `value` to `store` and renders the views that depend on it.
+    #[track_caller]
     pub fn set<T: 'static>(&mut self, store: Store<T>, value: T) {
         self.update(store, |current| *current = value);
     }
 
     /// Fires `trigger` with `value` and renders the views that obey it.
+    #[track_caller]
     pub fn fire<T: 'static>(&mut self, trigger: Trigger<T>, value: T) {
         self.composer.context(|cx| cx.fire(trigger, value));
         self.composer.flush();
     }
 
     /// Updates `store` and renders the views that depend on it.
+    #[track_caller]
     pub fn update<T: 'static>(&mut self, store: Store<T>, update: impl FnOnce(&mut T)) {
         self.composer.context(|cx| cx.update(store, update));
         self.composer.flush();
@@ -179,16 +221,27 @@ impl Harness {
     }
 }
 
+/// Ignores the requests a canvas makes of its host.
+struct QuietHost;
+
+impl CanvasHost for QuietHost {
+    fn invalidate(&self) {}
+    fn set_focus(&self, _focused: bool) {}
+    fn set_cursor(&self, _cursor: Cursor) {}
+    fn actions_emitted(&self, _canvas: CanvasId) {}
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Attach, Button, Rect, Text, VStack, Window, list};
+    use crate::{Attach, Button, Size, Text, VStack, Window, list};
 
     #[test]
     fn find_returns_a_nested_view_by_its_id() {
         // Verifies IDs are found below windows and stacks, and unknown IDs are not.
         let harness = Harness::new(
-            Window::new(Rect::new(0.0, 0.0, 320.0, 240.0), "Main")
+            Window::new("Main")
+                .size(Size::new(320.0, 240.0))
                 .id("main")
                 .content(VStack::new(list![
                     Text::new("Title"),

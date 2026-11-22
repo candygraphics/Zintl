@@ -25,21 +25,19 @@ impl View for MainView {
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let tools = self.tools;
         let count = *cx.get(tools);
-        Window::new(Rect::new(100.0, 100.0, 420.0, 360.0), "Zintl Accessibility UI Test")
+        Window::new("Zintl Accessibility UI Test").size(Size::new(420.0, 360.0))
             .id("main-window")
             .content(
                 VStack::new(list![
                     HStack::new(list![
-                        Button::new("")
-                            .system_image("plus")
+                        Button::icon("plus", "Add tool")
                             .id("add")
-                            .accessibility_label("Add tool")
                             .accessibility_hint("Adds a tool to the toolbox")
                             .on_click(move |cx| {
                                 cx.update(tools, |tools| *tools += 1);
                                 cx.announce("Tool added", AnnouncementPriority::Medium);
                             }),
-                        Text::new("★").id("decoration").accessibility_hidden(),
+                        Text::new("★").id("decoration").accessibility_hidden(true),
                     ])
                     .spacing(8.0)
                     .id("toolbox")

@@ -36,10 +36,7 @@ impl View for MainView {
             .row_value
             .expect("MainView must be initialized before rendering");
 
-        Window::new(
-            Rect::new(100.0, 100.0, 640.0, 400.0),
-            "Zintl Text Field UI Test",
-        )
+        Window::new("Zintl Text Field UI Test").size(Size::new(640.0, 400.0))
         .id("main-window")
         .content(
             VStack::new(list![
@@ -54,7 +51,7 @@ impl View for MainView {
                 TextField::new()
                     .id("multiline-input")
                     .placeholder("Type multiple lines here")
-                    .multiline()
+                    .multiline(true)
                     .minimum_size(Size::new(320.0, 100.0))
                     .bind(multiline_value),
                 cx.watch(multiline_value, |value| {

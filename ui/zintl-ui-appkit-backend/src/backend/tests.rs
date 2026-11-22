@@ -32,7 +32,8 @@ impl Nodes {
     fn window(style: WindowStyle) -> RenderNode {
         RenderNode::Window {
             sidebar: None,
-            bounds: Rect::new(0.0, 0.0, 100.0, 100.0),
+            size: Size::new(100.0, 100.0),
+            position: None,
             title: String::new(),
             title_bar: crate::TitleBar::Standard,
             id: None,
@@ -201,19 +202,6 @@ fn tasks_queued_before_loop_start_are_forwarded_on_connect() {
         .set_main_task_sender(move |task| sender.send(task).is_ok());
 
     receiver.try_recv().unwrap()();
-}
-
-#[test]
-fn unchanged_declarative_bounds_are_not_reapplied() {
-    // Verifies later synchronization preserves a user-resized native window.
-    let declared = Rect::new(10.0, 20.0, 640.0, 480.0);
-
-    assert!(window_bounds_need_update(None, declared));
-    assert!(!window_bounds_need_update(Some(declared), declared));
-    assert!(window_bounds_need_update(
-        Some(Rect::new(10.0, 20.0, 800.0, 600.0)),
-        declared
-    ));
 }
 
 #[test]
