@@ -13,7 +13,7 @@ use crate::{
 };
 use zintl_ui::store::Local;
 
-native_view!(ZStack, Grid, GridCell);
+native_view!(ZStack, Grid);
 
 /// Stacks its children on top of each other, later children in front.
 ///
@@ -60,57 +60,30 @@ impl Canvas2DHandler for Stripe {
     }
 }
 
-/// Lays out children row by row in aligned columns, like a table without headers.
+/// Lays out rows of cells in aligned columns, like a table without headers.
 ///
-/// Each column is as wide as its widest cell. [`Grid::new`] flows cells into
-/// rows in order; [`Grid::rows`] takes one [`GridRow`] per row, which
-/// striping needs.
+/// Each column is as wide as its widest cell, and the grid has as many
+/// columns as its widest row covers. Rows with fewer cells leave the last
+/// columns empty.
 #[derive(Clone)]
 pub struct Grid {
-    columns: u16,
-    content: GridContent,
+    rows: Vec<GridRow>,
     striped: bool,
     layout: LayoutStyle,
     modifiers: ViewModifiers,
 }
 
-/// The cells of a [`Grid`]: flowing, or grouped into rows.
-#[derive(Clone)]
-enum GridContent {
-    Cells(ListFactory<RenderNode>),
-    Rows(Vec<GridRow>),
-}
-
 impl Grid {
-    /// Flows `children` into rows of `columns` cells, one cell per child.
-    ///
-    /// A [`GridCell`] child covers several columns.
-    pub fn new(columns: u16, children: ListFactory<RenderNode>) -> Self {
-        Self::with_content(columns, GridContent::Cells(children))
-    }
-
-    /// Lays out one grid row per [`GridRow`], each starting in the first column.
-    pub fn rows(columns: u16, rows: impl IntoIterator<Item = GridRow>) -> Self {
-        Self::with_content(columns, GridContent::Rows(rows.into_iter().collect()))
-    }
-
-    fn with_content(columns: u16, content: GridContent) -> Self {
-        let columns = columns.max(1);
-        let mut layout = LayoutStyle::stack(Axis::Vertical, 4.0);
-        layout.arrangement = Arrangement::Grid { columns };
+    pub fn new(rows: impl IntoIterator<Item = GridRow>) -> Self {
         Self {
-            columns,
-            content,
+            rows: rows.into_iter().collect(),
             striped: false,
-            layout,
+            layout: LayoutStyle::stack(Axis::Vertical, 4.0),
             modifiers: ViewModifiers::default(),
         }
     }
 
-    /// Shades every other row of a grid made with [`Grid::rows`].
-    ///
-    /// Grids made with [`Grid::new`] have no rows to shade, which debug
-    /// builds report.
+    /// Shades every other row, starting with the second.
     pub fn striped(mut self, striped: bool) -> Self {
         self.striped = striped;
         self
@@ -136,75 +109,75 @@ impl Grid {
 
 impl NativeView for Grid {
     fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+        let columns = self
+            .rows
+            .iter()
+            .map(GridRow::width)
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        let mut layout = self.layout;
+        layout.arrangement = Arrangement::Grid { columns };
+        // Stripes come first so the cells draw over them.
         let mut children: ListFactory<RenderNode> = Vec::new();
-        match &self.content {
-            GridContent::Cells(cells) => {
-                debug_assert!(!self.striped, "only grids made with Grid::rows are striped");
-                children.extend(cells.iter().cloned());
-            }
-            GridContent::Rows(rows) => {
-                // Stripes come first so the cells draw over them.
-                if self.striped {
-                    children.extend((1..rows.len()).step_by(2).map(Self::stripe));
-                }
-                for row in rows {
-                    row.push_cells(self.columns, &mut children);
-                }
-            }
+        if self.striped {
+            children.extend((1..self.rows.len()).step_by(2).map(Self::stripe));
         }
-        Container::new(self.layout, children).native_element(cx)
+        for row in &self.rows {
+            row.push_cells(columns, &mut children);
+        }
+        Container::new(layout, children).native_element(cx)
     }
 
     modifiers!();
 }
 
-/// One row of a [`Grid::rows`] grid.
+/// One row of a [`Grid`].
 #[derive(Clone)]
 pub struct GridRow {
     cells: ListFactory<RenderNode>,
-    spans_row: bool,
+    /// The columns each cell covers, in cell order.
+    spans: Vec<u16>,
 }
 
 impl GridRow {
-    /// Creates a row with one cell per child, at most the grid's column count.
-    ///
-    /// Columns after the last cell stay empty.
+    /// Creates a row whose cells each cover one column.
     pub fn new(cells: ListFactory<RenderNode>) -> Self {
-        Self {
-            cells,
-            spans_row: false,
-        }
+        let spans = vec![1; cells.len()];
+        Self { cells, spans }
     }
 
-    /// Creates a row of one cell that covers every column, such as a heading
+    /// Makes the cell at `index` cover `columns` columns, such as a heading
     /// between groups of rows.
-    pub fn spanning<V>(content: V) -> Self
-    where
-        V: Clone + IntoElement<Output = RenderNode> + 'static,
-    {
-        Self {
-            cells: list![content],
-            spans_row: true,
+    ///
+    /// An `index` past the last cell is ignored, which debug builds report.
+    pub fn span(mut self, index: usize, columns: u16) -> Self {
+        debug_assert!(
+            index < self.spans.len(),
+            "a grid row has no cell at index {index}"
+        );
+        if let Some(span) = self.spans.get_mut(index) {
+            *span = columns.max(1);
         }
+        self
+    }
+
+    /// Returns the columns the row's cells cover.
+    fn width(&self) -> u16 {
+        self.spans.iter().sum()
     }
 
     /// Adds the row's cells to `children`, filling the columns it leaves empty
     /// so the next row starts in the first column.
     fn push_cells(&self, columns: u16, children: &mut ListFactory<RenderNode>) {
-        if self.spans_row {
-            children.extend(
-                self.cells.iter().map(|cell| {
-                    ElementFactory::new(GridCell::new(cell.clone()).column_span(columns))
-                }),
-            );
-            return;
+        for (cell, span) in self.cells.iter().zip(&self.spans) {
+            children.push(if *span > 1 {
+                ElementFactory::new(GridCell::new(cell.clone(), *span))
+            } else {
+                cell.clone()
+            });
         }
-        debug_assert!(
-            self.cells.len() <= columns as usize,
-            "a grid row has more cells than the grid has columns"
-        );
-        children.extend(self.cells.iter().cloned());
-        for _ in self.cells.len()..columns as usize {
+        for _ in self.width()..columns {
             children.push(ElementFactory::new(Container::new(
                 LayoutStyle::leaf(Size::default()),
                 Vec::new(),
@@ -213,45 +186,31 @@ impl GridRow {
     }
 }
 
-/// A [`Grid`] child that covers several columns, such as a heading between groups of rows.
-///
-/// A span that does not fit the rest of its row starts the next row. In a
-/// [`Grid::rows`] grid, use [`GridRow::spanning`] instead.
+/// Wraps a [`GridRow`] cell that covers several columns.
 #[derive(Clone)]
-pub struct GridCell {
+struct GridCell {
     content: ElementFactory<RenderNode>,
     column_span: u16,
-    modifiers: ViewModifiers,
 }
 
-impl GridCell {
-    pub fn new<V>(content: V) -> Self
-    where
-        V: Clone + IntoElement<Output = RenderNode> + 'static,
-    {
-        Self {
-            content: ElementFactory::new(content),
-            column_span: 1,
-            modifiers: ViewModifiers::default(),
-        }
-    }
+impl View for GridCell {
+    type Output = RenderNode;
 
-    /// Covers `columns` columns, at most the grid's column count.
-    pub fn column_span(mut self, columns: u16) -> Self {
-        self.column_span = columns.max(1);
-        self
-    }
-}
-
-impl NativeView for GridCell {
-    fn base_element(&self, cx: &mut Context<'_>) -> Element<RenderNode> {
+    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         // The content stretches across the columns the cell covers.
         let mut layout = LayoutStyle::stack(Axis::Vertical, 0.0);
         layout.column_span = self.column_span;
         Container::new(layout, vec![self.content.clone()]).native_element(cx)
     }
+}
 
-    modifiers!();
+impl GridCell {
+    fn new(content: ElementFactory<RenderNode>, column_span: u16) -> Self {
+        Self {
+            content,
+            column_span,
+        }
+    }
 }
 
 /// A titled section whose content shows only while it is expanded.

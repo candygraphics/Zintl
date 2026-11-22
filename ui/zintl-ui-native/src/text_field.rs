@@ -77,16 +77,16 @@ impl TextField {
     /// and truncate. Labels with a declared width and no limit wrap to it, and
     /// the backend measures their height. Other labels need their text's width.
     fn resize_label(&mut self) {
-        let font = self
+        let font_size = self
             .style
             .font
-            .clone()
-            .unwrap_or_else(TextEstimate::system_font);
+            .as_ref()
+            .map_or(TextEstimate::SYSTEM_FONT_SIZE, |font| font.size() as f32);
         let lines = self.style.line_limit.unwrap_or(1).max(1) as f32;
-        let height = (TextEstimate::line_height(&font) * lines + 4.0)
+        let height = (TextEstimate::line_height(font_size) * lines + 4.0)
             .ceil()
             .max(20.0);
-        let width = TextEstimate::width(&self.value, &font);
+        let width = TextEstimate::width(&self.value, font_size);
         let wraps = self.style.line_limit.is_none() && self.layout.width != LayoutDimension::Auto;
         let (minimum, content) = match self.style.line_limit {
             Some(_) => (Size::new(0.0, height), Some(Size::new(width, height))),

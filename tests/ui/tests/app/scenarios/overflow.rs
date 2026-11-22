@@ -20,17 +20,18 @@ impl View for MainView {
             ])
             .spacing(4.0)
         };
-        let grid = Grid::new(
-            3,
-            list![
+        let grid = Grid::new([
+            GridRow::new(list![
                 Text::new("Row 1"),
                 pickers(1),
                 Text::new("After 1").id("after-1"),
+            ]),
+            GridRow::new(list![
                 Text::new("Row 2"),
                 pickers(2),
                 Text::new("After 2").id("after-2"),
-            ],
-        )
+            ]),
+        ])
         .spacing(6.0);
         let detail = VStack::new(list![
             Text::new("Detail").id("detail"),

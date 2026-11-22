@@ -46,11 +46,11 @@ impl View for MainView {
                     ])
                     .spacing(8.0),
                     HStack::new(list![
-                        Button::icon("gearshape")
+                        Button::icon("gearshape", "Settings")
                             .style(ButtonStyle::Borderless)
                             .id("gear")
                             .on_click(logged("gear")),
-                        Button::icon("plus")
+                        Button::icon("plus", "Add")
                             .style(ButtonStyle::Circular)
                             .id("circular")
                             .on_click(logged("circular")),
@@ -65,10 +65,10 @@ impl View for MainView {
                     .spacing(8.0),
                     // Icon-only push buttons take their symbol's size.
                     HStack::new(list![
-                        Button::icon("chevron.left")
+                        Button::icon("chevron.left", "Previous")
                             .id("previous")
                             .on_click(logged("previous")),
-                        Button::icon("chevron.right")
+                        Button::icon("chevron.right", "Next")
                             .id("next")
                             .on_click(logged("next")),
                     ])

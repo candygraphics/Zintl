@@ -55,7 +55,7 @@ impl View for MainView {
                         Text::new("Preview area").id("preview"),
                         Text::new("Updating").id("overlay"),
                     ]),
-                    Grid::rows(2, cells).striped(true).spacing(8.0).id("grid"),
+                    Grid::new(cells).striped(true).spacing(8.0).id("grid"),
                     DisclosureGroup::new("Line settings", Text::new("Gauge 1067").id("details"))
                         .bind(self.expanded)
                         .id("disclosure"),

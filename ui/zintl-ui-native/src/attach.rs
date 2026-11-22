@@ -103,7 +103,7 @@ pub trait NativeView: Clone + 'static {
         } else {
             debug_assert!(
                 !modifiers.targets_root(),
-                "layout, ID, and enabled modifiers need a view whose root is a native view node"
+                "layout, ID, enabled, help, title bar, and accessibility modifiers need a view whose root is a native view node"
             );
         }
         modifiers.attach(element, cx)
@@ -345,7 +345,12 @@ impl ViewModifiers {
 
     /// Returns whether a modifier that is written onto the root node is declared.
     fn targets_root(&self) -> bool {
-        self.id.is_some() || self.enabled.is_some() || !self.layout.is_empty()
+        self.id.is_some()
+            || self.enabled.is_some()
+            || !self.layout.is_empty()
+            || self.help.is_some()
+            || self.title_bar_interactive
+            || self.accessibility != Accessibility::default()
     }
 
     fn attach(
@@ -520,9 +525,10 @@ mod tests {
     #[test]
     fn icon_only_button_keeps_a_declared_minimum_size() {
         // Verifies a symbol-only button is measured by the backend unless the app declares a minimum.
-        let (measured, _, _) = Mounted::new(Button::icon("gearshape")).view(&[]);
+        let (measured, _, _) = Mounted::new(Button::icon("gearshape", "Settings")).view(&[]);
         let (declared, _, _) =
-            Mounted::new(Button::icon("gearshape").minimum_size(Size::new(32.0, 32.0))).view(&[]);
+            Mounted::new(Button::icon("gearshape", "Settings").minimum_size(Size::new(32.0, 32.0)))
+                .view(&[]);
 
         assert_eq!(measured.minimum_size, Some(Size::default()));
         assert_eq!(declared.minimum_size, Some(Size::new(32.0, 32.0)));
@@ -621,12 +627,14 @@ mod tests {
             Card::new()
                 .id("outer")
                 .width(200.0)
+                .help("Outer help")
                 .accessibility_label("Outer"),
         )
         .tree();
         let RenderNode::View {
             layout,
             id,
+            help,
             accessibility,
             ..
         } = node.value
@@ -636,6 +644,7 @@ mod tests {
 
         assert_eq!(id.as_deref(), Some("outer"));
         assert_eq!(layout.width, LayoutDimension::Points(200.0));
+        assert_eq!(help.as_deref(), Some("Outer help"));
         assert_eq!(accessibility.label.as_deref(), Some("Outer"));
         // Properties the outer view leaves alone keep the root's.
         assert_eq!(accessibility.hint.as_deref(), Some("Inner hint"));
@@ -677,17 +686,22 @@ mod tests {
         let node = Harness::new(
             crate::SplitView::horizontal(Text::new("List"), Text::new("Detail"))
                 .id("split")
+                .width(400.0)
                 .accessibility_label("Panes"),
         )
         .tree();
         let RenderNode::View {
-            id, accessibility, ..
+            id,
+            layout,
+            accessibility,
+            ..
         } = node.value
         else {
             panic!("expected the split view's stack");
         };
 
         assert_eq!(id.as_deref(), Some("split"));
+        assert_eq!(layout.width, LayoutDimension::Points(400.0));
         assert_eq!(accessibility.label.as_deref(), Some("Panes"));
     }
 

@@ -335,6 +335,76 @@ mod tests {
         assert_eq!(composer.context(|cx| *cx.get(local.store())), 9);
     }
 
+    #[test]
+    fn local_keeps_later_store_slots_when_a_binding_appears() {
+        // Verifies binding a Store on remount does not shift the Stores created after the local state.
+        let mut composer = Composer::new(TestBackend::new());
+        let bound = composer.context(|cx| cx.store(9_i32));
+        let version = composer.context(|cx| cx.store(0_u32));
+        let seen = Rc::new(std::cell::RefCell::new(Vec::new()));
+        composer.mount(BindingParent {
+            version,
+            bound,
+            seen: seen.clone(),
+        });
+        composer.context(|cx| cx.update(version, |version| *version += 1));
+        composer.flush();
+
+        let seen = seen.borrow();
+        assert_eq!(seen.len(), 2);
+        // The first mount uses local state; the second uses the bound Store.
+        assert_ne!(seen[0].0, bound);
+        assert_eq!(seen[1].0, bound);
+        // The Store created after the local state keeps its slot.
+        assert_eq!(seen[0].1, seen[1].1);
+    }
+
+    /// Creates local state, bound only after the first render, and a Store after it.
+    struct BindingView {
+        count: Local<i32>,
+        label: Store<String>,
+        seen: Rc<std::cell::RefCell<Vec<(Store<i32>, Store<String>)>>>,
+    }
+
+    impl View for BindingView {
+        type Output = TestRenderNode;
+
+        fn init(&mut self, cx: &mut Context<'_>) {
+            self.count.init(cx);
+            self.label = cx.store(String::from("label"));
+            self.seen
+                .borrow_mut()
+                .push((self.count.store(), self.label));
+        }
+
+        fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
+            Element::node(TestRenderNode::Text(cx.get(self.label).clone()))
+        }
+    }
+
+    /// Recreates a [`BindingView`], binding it from the second render on.
+    struct BindingParent {
+        version: Store<u32>,
+        bound: Store<i32>,
+        seen: Rc<std::cell::RefCell<Vec<(Store<i32>, Store<String>)>>>,
+    }
+
+    impl View for BindingParent {
+        type Output = TestRenderNode;
+
+        fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
+            let mut count = Local::new(0);
+            if *cx.get(self.version) > 0 {
+                count.bind(self.bound);
+            }
+            BindingView {
+                count,
+                label: Store::default(),
+                seen: self.seen.clone(),
+            }
+        }
+    }
+
     /// Renders its local count and reports the Store it initialized.
     struct LocalView {
         count: Local<i32>,

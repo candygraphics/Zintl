@@ -30,9 +30,8 @@ impl View for MainView {
             .content(
                 VStack::new(list![
                     HStack::new(list![
-                        Button::icon("plus")
+                        Button::icon("plus", "Add tool")
                             .id("add")
-                            .accessibility_label("Add tool")
                             .accessibility_hint("Adds a tool to the toolbox")
                             .on_click(move |cx| {
                                 cx.update(tools, |tools| *tools += 1);

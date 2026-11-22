@@ -68,14 +68,16 @@ impl Button {
         }
     }
 
-    /// Creates a button that shows only the SF Symbol `system_image`.
+    /// Creates a button that shows only the SF Symbol `system_image`;
+    /// assistive apps such as VoiceOver read `label` as its name.
     ///
     /// It takes the symbol's size instead of the standard push button size,
-    /// unless a minimum size is declared. Name it with
-    /// [`Attach::accessibility_label`], since it has no title for assistive
-    /// apps to read.
-    pub fn icon(system_image: impl Into<String>) -> Self {
-        Self::untitled().system_image(system_image)
+    /// unless a minimum size is declared. [`Attach::accessibility_label`]
+    /// replaces `label`.
+    pub fn icon(system_image: impl Into<String>, label: impl Into<String>) -> Self {
+        Self::untitled()
+            .system_image(system_image)
+            .accessibility_label(label)
     }
 
     /// Creates the round question mark button that opens help.
@@ -94,7 +96,7 @@ impl Button {
     /// Creates a checkbox whose title is drawn beside the box.
     pub(crate) fn checkbox(title: impl Into<String>) -> Self {
         let title = title.into();
-        let width = TextEstimate::width(&title, &TextEstimate::system_font()) + 24.0;
+        let width = TextEstimate::width(&title, TextEstimate::SYSTEM_FONT_SIZE) + 24.0;
         let mut button = Self::new(title).button_type(ButtonType::Checkbox);
         button.layout.minimum_size = Some(Size::new(width, 20.0));
         button
@@ -103,7 +105,7 @@ impl Button {
     /// Creates a radio button; group radios by binding them to one selection.
     pub(crate) fn radio(title: impl Into<String>) -> Self {
         let title = title.into();
-        let width = TextEstimate::width(&title, &TextEstimate::system_font()) + 24.0;
+        let width = TextEstimate::width(&title, TextEstimate::SYSTEM_FONT_SIZE) + 24.0;
         let mut button = Self::new(title).button_type(ButtonType::Radio);
         button.layout.minimum_size = Some(Size::new(width, 20.0));
         button

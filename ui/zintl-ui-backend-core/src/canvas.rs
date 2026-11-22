@@ -71,7 +71,8 @@ pub struct Palette {
     pub gray: Color,
     /// Lines between panes and around groups (`NSColor.separatorColor`).
     pub separator: Color,
-    /// The background of every other row in a striped list or grid.
+    /// The background of every other row in a striped grid; translucent, so
+    /// it lies over any background.
     pub alternating_row: Color,
 }
 
@@ -85,8 +86,8 @@ impl Palette {
         green: Color::rgb(0.157, 0.804, 0.255),
         blue: Color::rgb(0.0, 0.478, 1.0),
         gray: Color::rgb(0.557, 0.557, 0.576),
-        separator: Color::rgba(0.0, 0.0, 0.0, 0.1),
-        alternating_row: Color::rgb(0.957, 0.961, 0.961),
+        separator: Color::rgba(0.5, 0.5, 0.5, 0.35),
+        alternating_row: Color::rgba(0.5, 0.5, 0.5, 0.1),
     };
 
     /// Returns the platform color for `color`.

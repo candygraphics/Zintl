@@ -60,10 +60,6 @@ pub enum MainAxisDistribution {
     End,
     /// Places the first and last children at both ends and spreads the rest.
     SpaceBetween,
-    /// Gives each child equal space on both sides.
-    SpaceAround,
-    /// Makes every gap, including those at both ends, equal.
-    SpaceEvenly,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -580,8 +576,6 @@ fn to_taffy_style(style: LayoutStyle) -> TaffyStyle {
             MainAxisDistribution::Center => Some(JustifyContent::CENTER),
             MainAxisDistribution::End => Some(JustifyContent::END),
             MainAxisDistribution::SpaceBetween => Some(JustifyContent::SPACE_BETWEEN),
-            MainAxisDistribution::SpaceAround => Some(JustifyContent::SPACE_AROUND),
-            MainAxisDistribution::SpaceEvenly => Some(JustifyContent::SPACE_EVENLY),
         },
         gap: TaffySize {
             width: gap,
@@ -675,7 +669,6 @@ mod tests {
         assert_eq!(place(MainAxisDistribution::Start), 0.0);
         assert_eq!(place(MainAxisDistribution::Center), 150.0);
         assert_eq!(place(MainAxisDistribution::End), 300.0);
-        assert_eq!(place(MainAxisDistribution::SpaceEvenly), 150.0);
     }
 
     #[test]

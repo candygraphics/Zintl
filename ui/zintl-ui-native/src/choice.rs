@@ -28,6 +28,9 @@ pub enum ToggleStyle {
 }
 
 /// A two-state control bound to a `Store<bool>`.
+///
+/// It shows `value` unless bound and keeps no state of its own, so `bind` it
+/// for clicks to change what it shows.
 #[derive(Clone)]
 pub struct Toggle {
     label: String,
@@ -100,7 +103,7 @@ impl NativeView for Toggle {
                 .button(Button::checkbox(self.label.clone()))
                 .native_element(cx),
             ToggleStyle::Button => {
-                let width = TextEstimate::width(&self.label, &TextEstimate::system_font()) + 32.0;
+                let width = TextEstimate::width(&self.label, TextEstimate::SYSTEM_FONT_SIZE) + 32.0;
                 self.button(
                     Button::new(self.label.clone())
                         .button_type(ButtonType::PushOnPushOff)
@@ -145,6 +148,8 @@ pub enum PickerStyle {
 ///
 /// The shown value comes from `bind`, then `selection`, and otherwise is the
 /// first option. A value that no option has shows nothing selected.
+///
+/// It keeps no state of its own, so `bind` it for picks to change what it shows.
 #[derive(Clone)]
 pub struct Picker<V: Clone + PartialEq + 'static = usize> {
     options: Vec<(V, String)>,

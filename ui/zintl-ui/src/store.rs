@@ -160,15 +160,16 @@ impl<T: Clone + 'static> Local<T> {
     /// Picks the bound Store, or creates local state; call it from `View::init`.
     ///
     /// A remounted view gets the same local Store back, as with
-    /// [`Context::store`].
+    /// [`Context::store`], and its new initial value is not used. The local
+    /// Store is created even when a Store is bound, so binding or unbinding
+    /// between renders does not shift the Stores `init` creates after it.
     pub fn init<'a>(&mut self, cx: &mut impl Context<'a>) {
-        self.store = match self.bound {
-            Some(store) => store,
-            None => cx.store(self.initial.clone()),
-        };
+        let local = cx.store(self.initial.clone());
+        self.store = self.bound.unwrap_or(local);
     }
 
     /// Returns the Store chosen by [`Local::init`].
+    #[track_caller]
     pub fn store(&self) -> Store<T> {
         self.store
     }

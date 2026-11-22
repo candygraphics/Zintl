@@ -139,7 +139,7 @@ impl BarChart {
     /// Estimates the width that shows `text` on one line in the system font,
     /// with room for the label's insets.
     pub(crate) fn text_width(text: &str) -> f32 {
-        TextEstimate::width(text, &TextEstimate::system_font()) + 12.0
+        TextEstimate::width(text, TextEstimate::SYSTEM_FONT_SIZE) + 8.0
     }
 
     /// Returns a column of `width` points that shows `text` on one line, truncated if longer.

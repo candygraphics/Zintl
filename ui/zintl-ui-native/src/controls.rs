@@ -225,7 +225,7 @@ impl Slider {
 
     /// Only allows the values of the tick marks with `true`.
     ///
-    /// It has no effect without [`Slider::ticks`].
+    /// It is independent of [`Slider::ticks`] and has no effect without tick marks.
     pub fn snaps_to_ticks(mut self, snaps: bool) -> Self {
         self.snaps_to_ticks = snaps;
         self
@@ -252,7 +252,7 @@ impl NativeView for Slider {
                 minimum: self.minimum,
                 maximum: self.maximum,
                 tick_marks: self.tick_marks,
-                snaps_to_ticks: self.snaps_to_ticks && self.tick_marks > 0,
+                snaps_to_ticks: self.snaps_to_ticks,
             },
             layout: self.layout,
             id: None,
@@ -314,10 +314,9 @@ pub(crate) struct PopUpButton {
 impl PopUpButton {
     pub fn new(items: impl IntoIterator<Item = impl Into<String>>) -> Self {
         let items: Vec<String> = items.into_iter().map(Into::into).collect();
-        let font = TextEstimate::system_font();
         let width = items
             .iter()
-            .map(|item| TextEstimate::width(item, &font))
+            .map(|item| TextEstimate::width(item, TextEstimate::SYSTEM_FONT_SIZE))
             .fold(0.0, f32::max)
             + 44.0;
         Self {
@@ -380,7 +379,7 @@ impl SegmentedControl {
         let segments: Vec<String> = segments.into_iter().map(Into::into).collect();
         let width = segments
             .iter()
-            .map(|segment| TextEstimate::width(segment, &TextEstimate::system_font()) + 24.0)
+            .map(|segment| TextEstimate::width(segment, TextEstimate::SYSTEM_FONT_SIZE) + 24.0)
             .sum::<f32>();
         Self {
             selected: (!segments.is_empty()).then_some(0),
@@ -1141,11 +1140,10 @@ impl NativeView for OptionalDatePicker {
                     .style(self.style)
                     .enabled(enabled)
                     .on_change(move |cx, date| route.send(cx, Some(date)));
-                let mut clear = crate::Button::icon("xmark.circle.fill")
+                let mut clear = crate::Button::icon("xmark.circle.fill", "Clear Date")
                     .style(crate::ButtonStyle::Borderless)
                     .enabled(enabled)
                     .on_click(self.change(None))
-                    .accessibility_label("Clear Date")
                     .help("Clear Date");
                 if let Some(id) = id {
                     picker = picker.id(id);

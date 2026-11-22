@@ -172,7 +172,7 @@ impl View for FullscreenCanvas {
                     })
                     .fill_width()
                     .grow()
-                    .ignores_safe_area(true),
+                    .ignores_safe_area(),
             )
     }
 }

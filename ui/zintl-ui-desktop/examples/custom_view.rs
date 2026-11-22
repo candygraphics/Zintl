@@ -87,12 +87,10 @@ impl NativeView for Counter {
         let count = self.count.store();
         let value = *cx.get(count);
         HStack::new(list![
-            Button::icon("minus")
-                .accessibility_label("Decrease")
+            Button::icon("minus", "Decrease")
                 .on_click(move |cx| cx.update(count, |count| *count -= 1)),
             Text::new(value.to_string()),
-            Button::icon("plus")
-                .accessibility_label("Increase")
+            Button::icon("plus", "Increase")
                 .on_click(move |cx| cx.update(count, |count| *count += 1)),
         ])
         .accessibility_value(value.to_string())

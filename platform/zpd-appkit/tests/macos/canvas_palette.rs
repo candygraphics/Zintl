@@ -104,7 +104,8 @@ fn main() {
     for palette in [light, dark] {
         assert!(palette.green.green > palette.green.red && palette.green.green > palette.green.blue);
         assert!(palette.red.red > palette.red.green && palette.red.red > palette.red.blue);
-        // Verifies the separator is a translucent line color, not an opaque fill.
+        // Verifies the separator and row stripes are translucent, so they lie over any background.
         assert!(palette.separator.alpha > 0.0 && palette.separator.alpha < 1.0);
+        assert!(palette.alternating_row.alpha > 0.0 && palette.alternating_row.alpha < 1.0);
     }
 }

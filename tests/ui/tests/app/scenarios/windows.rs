@@ -29,7 +29,7 @@ impl View for MainView {
         let titled = |id: &'static str, x: f64, y: f64, title_bar: TitleBar, extends: bool| {
             let content = VStack::new(list![Text::new("Top").id(format!("{id}-top"))]);
             let content = if extends {
-                content.ignores_safe_area(true)
+                content.ignores_safe_area()
             } else {
                 content
             };

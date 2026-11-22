@@ -51,7 +51,7 @@ mod view_tests;
 #[cfg(test)]
 mod widget_tests;
 
-pub use arrangements::{DisclosureGroup, Grid, GridCell, GridRow, ZStack};
+pub use arrangements::{DisclosureGroup, Grid, GridRow, ZStack};
 pub use attach::{Attach, Control, Layout, LayoutOverrides, NativeView, ViewModifiers};
 pub use button::{Button, ButtonStyle};
 pub use canvas::Canvas2D;

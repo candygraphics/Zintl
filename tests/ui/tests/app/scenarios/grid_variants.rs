@@ -42,20 +42,17 @@ impl View for MainView {
             .id("main-window")
             .content(
                 VStack::new(list![
-                    Grid::rows(1, Self::rows("striped"))
+                    Grid::new(Self::rows("striped"))
                         .striped(true)
                         .spacing(0.0)
                         .fill_width(),
-                    Grid::rows(1, Self::rows("plain")).spacing(0.0).fill_width(),
-                    Grid::new(4, {
-                        let mut children = Self::cells("food", ["Food", "Bar", "3480", "62%"]);
-                        children.push(ElementFactory::new(
-                            GridCell::new(Text::new("Transport").id("heading").fill_width())
-                                .column_span(4),
-                        ));
-                        children.extend(Self::cells("bus", ["Bus pass", "Bar", "1200", "21%"]));
-                        children
-                    })
+                    Grid::new(Self::rows("plain")).spacing(0.0).fill_width(),
+                    Grid::new([
+                        GridRow::new(Self::cells("food", ["Food", "Bar", "3480", "62%"])),
+                        GridRow::new(list![Text::new("Transport").id("heading").fill_width()])
+                            .span(0, 4),
+                        GridRow::new(Self::cells("bus", ["Bus pass", "Bar", "1200", "21%"])),
+                    ])
                     .spacing(6.0)
                     .fill_width(),
                 ])

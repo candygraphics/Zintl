@@ -212,9 +212,12 @@ fn icon_only_buttons_leave_their_size_to_the_backend() {
         RenderNode::View { layout, .. } => layout.minimum_size,
         _ => None,
     };
-    assert_eq!(minimum(Button::icon("chevron.left")), Some(Size::default()));
     assert_eq!(
-        minimum(Button::icon("chevron.left").minimum_size(Size::new(44.0, 30.0))),
+        minimum(Button::icon("chevron.left", "Previous")),
+        Some(Size::default())
+    );
+    assert_eq!(
+        minimum(Button::icon("chevron.left", "Previous").minimum_size(Size::new(44.0, 30.0))),
         Some(Size::new(44.0, 30.0))
     );
     assert_eq!(minimum(Button::new("Save")), Some(Size::new(80.0, 32.0)));
@@ -1048,7 +1051,7 @@ fn button_roles_and_styles_configure_nsbutton() {
     ));
     assert!(matches!(
         render(
-            Button::icon("gearshape")
+            Button::icon("gearshape", "Settings")
                 .style(ButtonStyle::Borderless)
         ),
         RenderNode::View { kind: ViewKind::Button(zintl_ui_backend_core::Button { bezel: None, system_image: Some(name), .. }), .. } if name == "gearshape"
@@ -1815,6 +1818,53 @@ fn split_view_divider_drag_resizes_the_first_pane_within_its_range() {
 }
 
 #[test]
+fn split_view_follows_a_drag_while_its_parent_reads_the_width() {
+    // Verifies two moves move the divider twice when each move re-renders the parent that reads the bound width.
+    let (mut app, width) = WithStores::mount(|cx| cx.store(200.0_f32), |width| WatchWidth(width));
+    let divider = |app: &Harness| match &app.tree().children[1].value {
+        RenderNode::View {
+            kind: ViewKind::Canvas2D { canvas, .. },
+            ..
+        } => canvas.clone(),
+        other => panic!("expected the divider, got {other:?}"),
+    };
+    let mounted = divider(&app);
+
+    app.canvas_event(&[0, 1], divider_pointer(PointerPhase::Down, 3.0));
+    app.canvas_event(&[0, 1], divider_pointer(PointerPhase::Moved, 23.0));
+    // The divider moved with the pointer, so another 20 points lands at the same canvas location.
+    app.canvas_event(&[0, 1], divider_pointer(PointerPhase::Moved, 23.0));
+
+    assert_eq!(app.get(width), 240.0);
+    // The re-renders reconcile into the mounted divider instead of replacing it.
+    assert_eq!(divider(&app), mounted);
+}
+
+/// Reads the bound width while rendering, so every width change re-renders it.
+struct WatchWidth(Store<f32>);
+
+impl View for WatchWidth {
+    type Output = RenderNode;
+
+    fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
+        let _ = cx.get(self.0);
+        SplitView::horizontal(Text::new("List"), Text::new("Detail")).bind(self.0)
+    }
+}
+
+#[test]
+fn split_view_clamps_its_position_to_a_range_declared_later() {
+    // Verifies the range clamps the starting size even when it is declared after the position.
+    let app = Harness::new(
+        SplitView::horizontal(Text::new("List"), Text::new("Detail"))
+            .position(500.0)
+            .range(100.0..=300.0),
+    );
+
+    assert_eq!(first_pane_width(&app), LayoutDimension::Points(300.0));
+}
+
+#[test]
 fn split_view_drag_survives_a_rebuild_of_its_parent() {
     // Verifies a drag in progress keeps its grab point when the parent renders a new split view.
     let (mut app, (width, version)) = WithStores::mount(
@@ -2319,7 +2369,7 @@ fn zstack_and_grid_declare_their_arrangements() {
         ])
     });
     // Three rows of two cells; only the middle one is shaded.
-    let grid = Harness::new(Grid::rows(2, rows).striped(true)).tree();
+    let grid = Harness::new(Grid::new(rows).striped(true)).tree();
     assert!(matches!(
         grid.value,
         RenderNode::View {
@@ -2349,17 +2399,14 @@ fn zstack_and_grid_declare_their_arrangements() {
 
 #[test]
 fn grid_rows_stripe_the_right_rows_around_a_spanning_heading() {
-    // Verifies stripes follow the declared rows when a heading spans a row and short rows leave columns empty.
+    // Verifies stripes land on the second and fourth rows around a spanning heading, and short rows are filled so the next row starts in the first column.
     let grid = Harness::new(
-        Grid::rows(
-            3,
-            [
-                GridRow::new(list![Text::new("a"), Text::new("b")]),
-                GridRow::spanning(Text::new("Heading")),
-                GridRow::new(list![Text::new("c"), Text::new("d"), Text::new("e")]),
-                GridRow::new(list![Text::new("f")]),
-            ],
-        )
+        Grid::new([
+            GridRow::new(list![Text::new("a"), Text::new("b")]),
+            GridRow::new(list![Text::new("Heading")]).span(0, 3),
+            GridRow::new(list![Text::new("c"), Text::new("d"), Text::new("e")]),
+            GridRow::new(list![Text::new("f")]),
+        ])
         .striped(true),
     )
     .tree();
@@ -2389,6 +2436,16 @@ fn grid_rows_stripe_the_right_rows_around_a_spanning_heading() {
         })
         .collect::<Vec<_>>();
 
+    assert!(matches!(
+        grid.value,
+        RenderNode::View {
+            layout: LayoutStyle {
+                arrangement: zintl_ui_layout::Arrangement::Grid { columns: 3 },
+                ..
+            },
+            ..
+        }
+    ));
     assert_eq!(stripe_rows, [1, 3]);
     // Each row fills all three columns, so every row starts in the first column.
     assert_eq!(flowing, [1, 1, 1, 3, 1, 1, 1, 1, 1, 1]);
@@ -3066,9 +3123,7 @@ fn accessibility_modifiers_reach_any_view() {
     // Verifies every accessibility modifier lands on controls and containers alike.
     let app = Harness::new(
         VStack::new(list![
-            Button::icon("plus")
-                .accessibility_label("Add train")
-                .accessibility_hint("Adds a train to the timetable"),
+            Button::icon("plus", "Add train").accessibility_hint("Adds a train to the timetable"),
             Text::new("Speed")
                 .id("speed-label")
                 .accessibility_hidden(true),
@@ -3321,8 +3376,8 @@ fn focus_trigger_counts_fires_and_starts_at_zero() {
 }
 
 #[test]
-fn slider_ticks_and_snapping_are_separate() {
-    // Verifies tick marks and snapping are set independently, and snapping needs ticks.
+fn slider_ticks_and_snapping_are_independent() {
+    // Verifies tick marks and snapping are separate settings whose call order does not matter.
     let slider = |slider: Slider| match Harness::new(slider).tree().value {
         RenderNode::View {
             kind:
@@ -3340,31 +3395,88 @@ fn slider_ticks_and_snapping_are_separate() {
         slider(Slider::new(0.0..=1.0).ticks(5).snaps_to_ticks(true)),
         (5, true)
     );
-    assert_eq!(slider(Slider::new(0.0..=1.0).ticks(5)), (5, false));
     assert_eq!(
-        slider(Slider::new(0.0..=1.0).snaps_to_ticks(true)),
-        (0, false)
+        slider(Slider::new(0.0..=1.0).snaps_to_ticks(true).ticks(5)),
+        (5, true)
     );
+    assert_eq!(slider(Slider::new(0.0..=1.0).ticks(5)), (5, false));
 }
 
 #[test]
-fn untitled_buttons_show_their_symbol_or_help_bezel() {
-    // Verifies icon and help buttons have no title and leave their size to the backend.
+fn icon_and_help_buttons_have_no_title_and_measure_their_size() {
+    // Verifies icon buttons carry their label for accessibility, which a later label replaces, and help buttons use the help bezel.
     let button = |button: Button| match Harness::new(button).tree().value {
         RenderNode::View {
             kind: ViewKind::Button(button),
             layout,
+            accessibility,
             ..
-        } => (button, layout.minimum_size),
+        } => (button, layout.minimum_size, accessibility.label),
         other => panic!("expected a button, got {other:?}"),
     };
-    let (icon, icon_minimum) = button(Button::icon("gearshape"));
-    let (help, help_minimum) = button(Button::help());
+    let (icon, icon_minimum, icon_label) = button(Button::icon("gearshape", "Settings"));
+    let (_, _, replaced) =
+        button(Button::icon("gearshape", "Settings").accessibility_label("Preferences"));
+    let (help, help_minimum, _) = button(Button::help());
 
     assert_eq!(icon.title, "");
     assert_eq!(icon.system_image.as_deref(), Some("gearshape"));
     assert_eq!(icon_minimum, Some(Size::default()));
+    assert_eq!(icon_label.as_deref(), Some("Settings"));
+    assert_eq!(replaced.as_deref(), Some("Preferences"));
     assert_eq!(help.title, "");
     assert_eq!(help.bezel, Some(BezelStyle::Help));
     assert_eq!(help_minimum, Some(Size::default()));
+}
+
+#[test]
+fn table_column_width_is_a_layout_length() {
+    // Verifies a column width reaches the node as an f32 layout length.
+    let node = Harness::new(Table::new(
+        [TableColumn::new("Name").width(120.0)],
+        Vec::<TableRow>::new(),
+    ))
+    .tree()
+    .value;
+    let RenderNode::View {
+        kind: ViewKind::Table { columns, .. },
+        ..
+    } = node
+    else {
+        panic!("expected a table, got {node:?}");
+    };
+
+    assert_eq!(columns[0].width, Some(120.0_f32));
+}
+
+#[test]
+fn menu_picker_reserves_more_width_for_wide_characters() {
+    // Verifies a pop-up picker estimates full-width items wider than ASCII items of the same length.
+    let minimum = |picker: Picker<usize>| match Harness::new(picker).tree().value {
+        RenderNode::View { layout, .. } => layout.minimum_size.map_or(0.0, |size| size.width),
+        other => panic!("expected a pop-up button, got {other:?}"),
+    };
+
+    assert!(minimum(Picker::indexed(["設定項目名前"])) > minimum(Picker::indexed(["abcdef"])));
+}
+
+#[test]
+fn palette_resolves_separator_and_alternating_row() {
+    // Verifies the new palette colors resolve to their fields, and the light defaults keep the colors drawn before.
+    let palette = Palette {
+        separator: Color::rgb(1.0, 0.0, 0.0),
+        alternating_row: Color::rgb(0.0, 1.0, 0.0),
+        ..Palette::LIGHT
+    };
+
+    assert_eq!(palette.resolve(PaletteColor::Separator), palette.separator);
+    assert_eq!(
+        palette.resolve(PaletteColor::AlternatingRow),
+        palette.alternating_row
+    );
+    assert_eq!(Palette::LIGHT.separator, Color::rgba(0.5, 0.5, 0.5, 0.35));
+    assert_eq!(
+        Palette::LIGHT.alternating_row,
+        Color::rgba(0.5, 0.5, 0.5, 0.1)
+    );
 }

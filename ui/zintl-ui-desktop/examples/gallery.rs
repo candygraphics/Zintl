@@ -201,11 +201,10 @@ impl Gallery {
                     .system_image("square.and.arrow.up")
                     .on_click(report("Shared")),
                 // Buttons without a title need a label.
-                Button::icon("gearshape")
+                Button::icon("gearshape", "Settings")
                     .style(ButtonStyle::Borderless)
                     .minimum_size(Size::new(32.0, 32.0))
-                    .on_click(report("Gear"))
-                    .accessibility_label("Settings"),
+                    .on_click(report("Gear")),
                 Button::help()
                     .minimum_size(Size::new(32.0, 32.0))
                     .on_click(report("Help"))

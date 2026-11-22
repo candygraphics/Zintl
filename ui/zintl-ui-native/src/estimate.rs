@@ -1,8 +1,5 @@
 //! Text sizes estimated without asking the backend.
 
-use zintl_ui_backend_core::graphics::Font;
-use zintl_ui_layout::Size;
-
 /// The approximate size of text, computed without the backend.
 ///
 /// Views use it for minimum sizes and fixed columns before the backend has
@@ -12,57 +9,31 @@ use zintl_ui_layout::Size;
 pub struct TextEstimate;
 
 impl TextEstimate {
-    /// The size of the system font controls and labels use by default.
-    pub const SYSTEM_FONT_SIZE: f64 = 13.0;
+    /// The size of the system font controls and labels use by default, in points.
+    pub const SYSTEM_FONT_SIZE: f32 = 13.0;
     /// An average Latin glyph's width as a fraction of the font size.
     const LATIN_WIDTH: f32 = 0.54;
     /// A line's height as a multiple of the font size.
     const LINE_HEIGHT: f32 = 1.25;
 
-    /// Returns the system font at its default size.
-    pub fn system_font() -> Font {
-        Font::system(Self::SYSTEM_FONT_SIZE)
-    }
-
-    /// Estimates the width of `text` on one line.
-    pub fn width(text: &str, font: &Font) -> f32 {
-        let size = font.size() as f32;
+    /// Estimates the width of `text` on one line at `font_size` points.
+    ///
+    /// The weight and family do not change the estimate.
+    pub fn width(text: &str, font_size: f32) -> f32 {
         text.chars()
             .map(|character| {
                 if Self::is_wide(character) {
-                    size
+                    font_size
                 } else {
-                    size * Self::LATIN_WIDTH
+                    font_size * Self::LATIN_WIDTH
                 }
             })
             .sum()
     }
 
-    /// Estimates the height of one line of `font`.
-    pub fn line_height(font: &Font) -> f32 {
-        font.size() as f32 * Self::LINE_HEIGHT
-    }
-
-    /// Estimates the size of `text`, wrapped to `wrap_width` when given.
-    ///
-    /// Line breaks in `text` start new lines either way.
-    pub fn size(text: &str, font: &Font, wrap_width: Option<f32>) -> Size {
-        let mut width: f32 = 0.0;
-        let mut lines = 0_usize;
-        for line in text.split('\n') {
-            let line_width = Self::width(line, font);
-            match wrap_width {
-                Some(wrap) if wrap > 0.0 && line_width > wrap => {
-                    lines += (line_width / wrap).ceil() as usize;
-                    width = width.max(wrap);
-                }
-                _ => {
-                    lines += 1;
-                    width = width.max(line_width);
-                }
-            }
-        }
-        Size::new(width, lines as f32 * Self::line_height(font))
+    /// Estimates the height of one line at `font_size` points.
+    pub fn line_height(font_size: f32) -> f32 {
+        font_size * Self::LINE_HEIGHT
     }
 
     /// Returns whether `character` is East Asian wide or full-width, such as kanji or kana.
@@ -93,27 +64,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn wide_characters_take_a_full_em() {
-        // Verifies kanji take the font size each while Latin letters take about half.
-        let font = TextEstimate::system_font();
+    fn wide_characters_take_a_full_em_and_others_about_half() {
+        // Verifies kanji take the font size each and ASCII letters 0.54 em.
+        let size = TextEstimate::SYSTEM_FONT_SIZE;
 
-        assert_eq!(TextEstimate::width("給与", &font), 26.0);
-        assert!(TextEstimate::width("Food", &font) < TextEstimate::width("給与給与", &font));
-        assert_eq!(TextEstimate::width("", &font), 0.0);
-    }
-
-    #[test]
-    fn size_counts_line_breaks_and_wrapped_lines() {
-        // Verifies explicit line breaks and wrapping both add lines, and wrapping caps the width.
-        let font = Font::system(10.0);
-        let line = TextEstimate::line_height(&font);
-
-        assert_eq!(
-            TextEstimate::size("ab\nc", &font, None),
-            Size::new(10.8, 2.0 * line)
-        );
-        // Ten wide characters are 100 points, so a 40-point width takes three lines.
-        let wrapped = TextEstimate::size(&"あ".repeat(10), &font, Some(40.0));
-        assert_eq!(wrapped, Size::new(40.0, 3.0 * line));
+        assert_eq!(TextEstimate::width("給与", size), 26.0);
+        assert_eq!(TextEstimate::width("ab", 10.0), 10.8);
+        assert_eq!(TextEstimate::width("", size), 0.0);
+        assert_eq!(TextEstimate::line_height(10.0), 12.5);
     }
 }

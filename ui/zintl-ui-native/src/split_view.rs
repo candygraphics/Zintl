@@ -122,7 +122,7 @@ impl NativeView for SplitView {
             Canvas2D::new(Divider::new(self.axis)).on_action(move |cx, drag: &DividerDrag| {
                 let (min, max) = (*range.start(), *range.end());
                 cx.update(position, |size| {
-                    *size = (*size + drag.delta).clamp(min, max).max(0.0);
+                    *size = (*size + drag.delta as f32).clamp(min, max).max(0.0);
                 });
             });
         match self.axis {
@@ -153,7 +153,8 @@ impl NativeView for SplitView {
 /// How far the divider was dragged along its split view's axis.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct DividerDrag {
-    delta: f32,
+    /// The distance in canvas points; the split view converts it to a layout length.
+    delta: f64,
 }
 
 /// Draws the divider line, follows drags, and keeps them from reaching views behind it.
@@ -207,7 +208,7 @@ impl Canvas2DHandler for Divider {
             (PointerPhase::Moved, Some(PointerButton::Primary)) => {
                 if let Some(grab) = self.grab {
                     cx.emit(DividerDrag {
-                        delta: (along - grab) as f32,
+                        delta: along - grab,
                     });
                 }
             }

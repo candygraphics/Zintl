@@ -101,28 +101,28 @@ VStack::new(list![
 
 Buttons take a `ButtonStyle` (push, borderless, toolbar, …), a
 `ButtonRole` (`Default` answers Return, `Cancel` answers Escape, `Destructive`
-warns), and SF Symbols through `system_image`. `Button::icon("gearshape")`
-shows a symbol alone and takes its size; give it an `accessibility_label`.
-`Button::help()` is the round question mark button.
+warns), and SF Symbols through `system_image`. `Button::icon("gearshape", "Settings")`
+shows a symbol alone and takes its size; VoiceOver reads the second argument as
+its name. `Button::help()` is the round question mark button.
 
 Builder methods that turn a state or feature on take a `bool`, such as
 `enabled(false)`, `multiline(true)`, or `accessibility_hidden(true)`, so a
 condition does not need an `if` around the builder. Layout instructions take
-none: `fill_width()`, `fill_height()`, `grow()`.
+none: `fill_width()`, `fill_height()`, `grow()`, `ignores_safe_area()`.
 
 `ScrollView::new(content)` and `TabView::new([Tab::new("general", "General", page)])`
 fill their parent's width and the remaining space. Each `Tab` carries the value
 that selects it. Stacks accept `padding`, `grow`, `equal_children()`, and a
 `MainAxisDistribution` such as `distribution(MainAxisDistribution::SpaceBetween)`.
 
-`Grid::new(columns, children)` flows cells into rows; a `GridCell` covers
-several columns. `Grid::rows` takes one `GridRow` per row, and only such grids
-can be `striped`:
+`Grid` takes one `GridRow` per row and has as many columns as its widest row.
+`GridRow::span` makes a cell cover several columns, and `striped` shades every
+other row:
 
 ```rust,ignore
-Grid::rows(2, [
+Grid::new([
     GridRow::new(list![Text::new("Name"), TextField::new()]),
-    GridRow::spanning(Text::new("Advanced")), // covers both columns
+    GridRow::new(list![Text::new("Advanced")]).span(0, 2), // covers both columns
     GridRow::new(list![Text::new("Port"), IntegerField::new()]),
 ])
 .striped(true)
@@ -432,13 +432,13 @@ To fill a window, hide its title bar. On macOS only the window buttons stay
 above the content; on Windows the content extends into the title bar.
 
 Content starts below the title bar by default. A top-level view that calls
-`ignores_safe_area(true)` extends under it instead; a canvas then reads
+`ignores_safe_area()` extends under it instead; a canvas then reads
 `Frame::safe_area` to keep text and controls clear of the title bar.
 
 ```rust,ignore
 Window::new("Orbits")
     .title_bar(TitleBar::Hidden) // or TitleBar::Overlay to keep the title
-    .content(Canvas2D::new(Orbits::new()).fill_width().grow().ignores_safe_area(true))
+    .content(Canvas2D::new(Orbits::new()).fill_width().grow().ignores_safe_area())
 ```
 
 Clicks in the title bar area move the window and do not reach the views under

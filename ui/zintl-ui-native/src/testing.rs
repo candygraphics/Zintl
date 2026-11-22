@@ -130,22 +130,26 @@ impl Harness {
     }
 
     /// Returns a copy of the value in `store`.
+    #[track_caller]
     pub fn get<T: Clone + 'static>(&mut self, store: Store<T>) -> T {
         self.composer.context(|cx| cx.get(store).clone())
     }
 
     /// Writes `value` to `store` and renders the views that depend on it.
+    #[track_caller]
     pub fn set<T: 'static>(&mut self, store: Store<T>, value: T) {
         self.update(store, |current| *current = value);
     }
 
     /// Fires `trigger` with `value` and renders the views that obey it.
+    #[track_caller]
     pub fn fire<T: 'static>(&mut self, trigger: Trigger<T>, value: T) {
         self.composer.context(|cx| cx.fire(trigger, value));
         self.composer.flush();
     }
 
     /// Updates `store` and renders the views that depend on it.
+    #[track_caller]
     pub fn update<T: 'static>(&mut self, store: Store<T>, update: impl FnOnce(&mut T)) {
         self.composer.context(|cx| cx.update(store, update));
         self.composer.flush();
