@@ -283,7 +283,7 @@ mod tests {
     use std::rc::Rc;
     use zintl_ui::composer::Composer;
     use zintl_ui::element::{Element, IntoElement, KeyedElement};
-    use zintl_ui::store::Store;
+    use zintl_ui::store::{Local, Store};
     use zintl_ui::view::View;
 
     type Context<'a> = <TestRenderNode as RenderNode>::Context<'a>;
@@ -302,13 +302,103 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Store was used before View::init initialized it")]
+    #[should_panic(expected = "Store<i32> was used before View::init initialized it")]
     fn uninitialized_store_access_has_a_clear_error() {
-        // Accessing a declared Store before View::init reports the violated lifecycle contract.
+        // Accessing a declared Store before View::init names its type and the violated lifecycle contract.
         let mut composer = Composer::new(TestBackend::new());
         composer.context(|cx| {
             let _ = cx.get(Store::<i32>::uninitialized());
         });
+    }
+
+    #[test]
+    fn local_without_a_binding_creates_a_store_with_its_initial_value() {
+        // Verifies unbound local state starts at its initial value once initialized.
+        let mut composer = Composer::new(TestBackend::new());
+        let mut local = Local::new(3_i32);
+        composer.context(|cx| local.init(cx));
+
+        assert!(local.store().is_initialized());
+        assert_eq!(composer.context(|cx| *cx.get(local.store())), 3);
+    }
+
+    #[test]
+    fn local_with_a_binding_uses_the_bound_store() {
+        // Verifies a bound Store replaces local state and its initial value.
+        let mut composer = Composer::new(TestBackend::new());
+        let bound = composer.context(|cx| cx.store(9_i32));
+        let mut local = Local::new(3_i32);
+        local.bind(bound);
+        composer.context(|cx| local.init(cx));
+
+        assert_eq!(local.store(), bound);
+        assert_eq!(composer.context(|cx| *cx.get(local.store())), 9);
+    }
+
+    /// Renders its local count and reports the Store it initialized.
+    struct LocalView {
+        count: Local<i32>,
+        seen: Rc<std::cell::RefCell<Vec<Store<i32>>>>,
+    }
+
+    impl View for LocalView {
+        type Output = TestRenderNode;
+
+        fn init(&mut self, cx: &mut Context<'_>) {
+            self.count.init(cx);
+            self.seen.borrow_mut().push(self.count.store());
+        }
+
+        fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
+            Element::node(TestRenderNode::Text(cx.get(self.count.store()).to_string()))
+        }
+    }
+
+    /// Recreates a [`LocalView`] on every render.
+    struct LocalParent {
+        version: Store<u32>,
+        seen: Rc<std::cell::RefCell<Vec<Store<i32>>>>,
+    }
+
+    impl View for LocalParent {
+        type Output = TestRenderNode;
+
+        fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = Self::Output> {
+            let _version = cx.get(self.version);
+            LocalView {
+                count: Local::new(0),
+                seen: self.seen.clone(),
+            }
+        }
+    }
+
+    #[test]
+    fn local_initialized_again_keeps_its_store() {
+        // Verifies a view recreated by its parent's rebuild initializes the same local Store.
+        let mut composer = Composer::new(TestBackend::new());
+        let version = composer.context(|cx| cx.store(0_u32));
+        let seen = Rc::new(std::cell::RefCell::new(Vec::new()));
+        composer.mount(LocalParent {
+            version,
+            seen: seen.clone(),
+        });
+        let first = seen.borrow()[0];
+        composer.context(|cx| cx.update(first, |count| *count = 4));
+        composer.flush();
+
+        composer.context(|cx| cx.update(version, |version| *version += 1));
+        composer.flush();
+
+        let seen = seen.borrow();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0], seen[1]);
+        assert_eq!(
+            composer.backend().roots(),
+            vec![TestTree {
+                value: TestRenderNode::Text("4".into()),
+                children: vec![],
+            }]
+        );
     }
 
     struct InitializedView {

@@ -8,10 +8,7 @@ impl View for MainView {
 
     fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let long = "A very long document name that cannot fit beside the toolbar buttons.route";
-        Window::new(
-            Rect::new(100.0, 100.0, 360.0, 200.0),
-            "Zintl Truncation UI Test",
-        )
+        Window::new("Zintl Truncation UI Test").size(Size::new(360.0, 200.0))
         .id("main-window")
         .content(
             VStack::new(list![

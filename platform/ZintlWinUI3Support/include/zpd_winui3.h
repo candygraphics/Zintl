@@ -398,9 +398,12 @@ int32_t zpd_winui3_element_set_context_menu(
 int32_t zpd_winui3_element_clear_context_menu(zpd_winui3_element* element);
 
 zpd_winui3_window* zpd_winui3_window_create_styled(int32_t style);
-/* Moves the window and sizes its client area in device-independent pixels. */
-int32_t zpd_winui3_window_move_and_resize(
-    zpd_winui3_window* window, double x, double y, double width, double height);
+/* Sizes the client area in device-independent pixels, keeping the frame's top-left corner. */
+int32_t zpd_winui3_window_resize_client(zpd_winui3_window* window, double width, double height);
+/* Moves the frame's top-left corner to `x`, `y` in device-independent pixels. */
+int32_t zpd_winui3_window_move(zpd_winui3_window* window, double x, double y);
+/* Centers the window in the work area of its display. */
+int32_t zpd_winui3_window_center(zpd_winui3_window* window);
 /* Invokes `invoke` after the user or the app closed the window. */
 int32_t zpd_winui3_window_set_closed_handler(
     zpd_winui3_window* window,

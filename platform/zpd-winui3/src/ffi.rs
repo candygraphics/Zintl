@@ -281,13 +281,9 @@ unsafe extern "C" {
     pub fn zpd_winui3_element_clear_context_menu(element: *mut Element) -> i32;
 
     pub fn zpd_winui3_window_create_styled(style: i32) -> *mut Window;
-    pub fn zpd_winui3_window_move_and_resize(
-        window: *mut Window,
-        x: f64,
-        y: f64,
-        width: f64,
-        height: f64,
-    ) -> i32;
+    pub fn zpd_winui3_window_resize_client(window: *mut Window, width: f64, height: f64) -> i32;
+    pub fn zpd_winui3_window_move(window: *mut Window, x: f64, y: f64) -> i32;
+    pub fn zpd_winui3_window_center(window: *mut Window) -> i32;
     pub fn zpd_winui3_window_set_closed_handler(
         window: *mut Window,
         data: *const c_void,

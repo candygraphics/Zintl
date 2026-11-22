@@ -25,7 +25,7 @@ impl View for MainView {
         let logged = move |name: &'static str| {
             move |cx: &mut Context<'_>| cx.update(log, |log| log.push(name))
         };
-        Window::new(Rect::new(100.0, 100.0, 520.0, 340.0), "Zintl Buttons UI Test")
+        Window::new("Zintl Buttons UI Test").size(Size::new(520.0, 340.0))
             .id("main-window")
             .content(
                 VStack::new(list![
@@ -46,18 +46,15 @@ impl View for MainView {
                     ])
                     .spacing(8.0),
                     HStack::new(list![
-                        Button::new("")
+                        Button::icon("gearshape")
                             .style(ButtonStyle::Borderless)
-                            .system_image("gearshape")
                             .id("gear")
                             .on_click(logged("gear")),
-                        Button::new("")
+                        Button::icon("plus")
                             .style(ButtonStyle::Circular)
-                            .system_image("plus")
                             .id("circular")
                             .on_click(logged("circular")),
-                        Button::new("")
-                            .style(ButtonStyle::Help)
+                        Button::help()
                             .id("help")
                             .on_click(logged("help")),
                         Button::new("Unavailable")
@@ -68,12 +65,10 @@ impl View for MainView {
                     .spacing(8.0),
                     // Icon-only push buttons take their symbol's size.
                     HStack::new(list![
-                        Button::new("")
-                            .system_image("chevron.left")
+                        Button::icon("chevron.left")
                             .id("previous")
                             .on_click(logged("previous")),
-                        Button::new("")
-                            .system_image("chevron.right")
+                        Button::icon("chevron.right")
                             .id("next")
                             .on_click(logged("next")),
                     ])

@@ -7,18 +7,18 @@ mod app;
 
 pub use app::*;
 pub use zintl_ui::element::{ElementFactory, IntoElement};
-pub use zintl_ui::store::{Store, Trigger};
+pub use zintl_ui::store::{Local, Store, Trigger};
 pub use zintl_ui::view::View;
 pub use zintl_ui_layout::{Axis, CrossAxisAlignment, MainAxisDistribution, Size};
 pub use zintl_ui_native::graphics::{AttributedText, Font, FontWeight};
 pub use zintl_ui_native::{
     Attach, BarChart, Button, ButtonRole, ButtonStyle, ByItemKey, CalendarDate, ChartBar, Color,
     ColorWell, ComboBox, Context, Control, DatePicker, DatePickerStyle, DisclosureGroup, Grid,
-    GridCell, HStack, IntegerField, ItemIdFn, ItemIdSource, ItemKey, Layout, List, ListFactory,
-    ListRow, ListSection, ListStyle, NumberField, OptionalDatePicker, PaletteColor, Picker,
-    PickerStyle, ProgressIndicator, Rect, RenderNode, ScrollAlignment, ScrollAxes, ScrollStatus,
-    ScrollView, SearchField, Separator, Sidebar, SidebarItem, SidebarSection, Slider, SortOrder,
-    Spacer, SplitView, SystemColor, Tab, TabView, Table, TableColumn, TableRow, Text,
+    GridCell, GridRow, HStack, IntegerField, ItemIdFn, ItemIdSource, ItemKey, Layout, List,
+    ListFactory, ListRow, ListSection, ListStyle, NumberField, OptionalDatePicker, PaletteColor,
+    Picker, PickerStyle, Point, ProgressIndicator, Rect, RenderNode, ScrollAlignment, ScrollAxes,
+    ScrollStatus, ScrollView, SearchField, Separator, Sidebar, SidebarItem, SidebarSection, Slider,
+    SortOrder, Spacer, SplitView, SystemColor, Tab, TabView, Table, TableColumn, TableRow, Text,
     TextAlignment, TextColor, TextEditor, TextField, TitleBar, Toggle, ToggleStyle, Toolbar,
     ToolbarItem, UndoHandler, VStack, ViewId, Window, ZStack, graphics, list,
 };
@@ -58,12 +58,25 @@ pub mod dialog {
 }
 
 /// The pieces custom views are built from.
+///
+/// A view composed of other views takes the shared modifiers (`id`, sizes,
+/// `context_menu`, `accessibility_*`) by implementing [`NativeView`]: keep a
+/// [`ViewModifiers`] field, add [`modifiers!`] for its accessors, render the
+/// root view's `native_element`, and implement `View` with [`native_view!`].
+/// See [`NativeView`] for how modifiers layer and when it applies, and
+/// `examples/custom_view.rs` for a complete view.
+///
+/// Apps cannot add native control kinds; a new control is a change to
+/// `zintl-ui-backend-core` and every backend. Outside this crate, build
+/// views by composing existing ones, or draw them with
+/// [`Canvas2D`](crate::canvas::Canvas2D) and report to the app with
+/// `CanvasEventContext::emit` and `on_action`.
 pub mod render {
     pub use zintl_ui::element::{Element, ElementFactory, IntoElement, KeyedElement};
     pub use zintl_ui_layout::{ChildSizing, LayoutDimension, LayoutStyle};
     pub use zintl_ui_native::{
-        Event, EventKind, LayoutOverrides, ListFactory, NativeView, RenderNode, ViewKind,
-        ViewModifiers, modifiers,
+        Event, EventKind, LayoutOverrides, ListFactory, NativeView, RenderNode, TextEstimate,
+        ViewKind, ViewModifiers, modifiers, native_view,
     };
 }
 
@@ -85,13 +98,13 @@ mod tests {
     #[test]
     fn glob_import_covers_an_ordinary_app() {
         // Verifies the crate root alone declares a window of text, fields, and buttons.
-        let harness = Harness::new(
-            Window::new(Rect::new(0.0, 0.0, 320.0, 240.0), "Zintl").content(VStack::new(list![
+        let harness = Harness::new(Window::new("Zintl").size(Size::new(320.0, 240.0)).content(
+            VStack::new(list![
                 Text::new("Name").font(Font::system(13.0)),
                 TextField::new().id("name"),
                 HStack::new(list![Spacer::new(), Button::new("Save").enabled(false)]),
-            ])),
-        );
+            ]),
+        ));
 
         assert!(matches!(harness.tree().value, RenderNode::Window { .. }));
         assert!(harness.find("name").is_some());
@@ -106,7 +119,10 @@ mod tests {
             canvas::{Canvas2D, Canvas2DHandler, CanvasEvent, Frame, PointerEvent},
             dialog::{Alert, ColorPanel, FileDialog, Popover},
             menu::{MainMenu, Menu, MenuItem, NamedKey, Shortcut, StandardMenu},
-            render::{Element, Event, NativeView, ViewKind, ViewModifiers, modifiers},
+            render::{
+                Element, Event, NativeView, TextEstimate, ViewKind, ViewModifiers, modifiers,
+                native_view,
+            },
             testing::RenderedNode,
             thread::{Signal, StoreSender},
         };

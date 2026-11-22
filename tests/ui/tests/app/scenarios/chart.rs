@@ -60,7 +60,7 @@ impl View for MainView {
         .value_width(96.0)
         .value_format(whole)
         .id("income");
-        Window::new(Rect::new(100.0, 100.0, 480.0, 520.0), "Zintl Chart UI Test")
+        Window::new("Zintl Chart UI Test").size(Size::new(480.0, 520.0))
             .id("main-window")
             .content(
                 VStack::new(list![

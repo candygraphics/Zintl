@@ -460,12 +460,22 @@ impl Window {
         check(unsafe { ffi::zpd_winui3_window_clear_menu_bar(self.raw.as_ptr()) })
     }
 
-    /// Moves the window and sizes its client area in device-independent pixels.
-    pub fn move_and_resize(&self, x: f64, y: f64, width: f64, height: f64) -> Result<()> {
+    /// Sizes the client area in device-independent pixels, keeping the frame's top-left corner.
+    pub fn resize_client(&self, width: f64, height: f64) -> Result<()> {
         // SAFETY: The window is live on the UI thread.
-        check(unsafe {
-            ffi::zpd_winui3_window_move_and_resize(self.raw.as_ptr(), x, y, width, height)
-        })
+        check(unsafe { ffi::zpd_winui3_window_resize_client(self.raw.as_ptr(), width, height) })
+    }
+
+    /// Moves the frame's top-left corner to `x`, `y` in device-independent pixels.
+    pub fn move_to(&self, x: f64, y: f64) -> Result<()> {
+        // SAFETY: The window is live on the UI thread.
+        check(unsafe { ffi::zpd_winui3_window_move(self.raw.as_ptr(), x, y) })
+    }
+
+    /// Centers the window in the work area of its display.
+    pub fn center(&self) -> Result<()> {
+        // SAFETY: The window is live on the UI thread.
+        check(unsafe { ffi::zpd_winui3_window_center(self.raw.as_ptr()) })
     }
 
     /// Invokes `callback` once the window has closed.

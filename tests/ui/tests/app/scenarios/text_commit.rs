@@ -41,10 +41,7 @@ impl View for MainView {
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let commits = self.commits;
-        Window::new(
-            Rect::new(100.0, 100.0, 480.0, 320.0),
-            "Zintl Text Commit UI Test",
-        )
+        Window::new("Zintl Text Commit UI Test").size(Size::new(480.0, 320.0))
         .id("main-window")
         .content(
             VStack::new(list![

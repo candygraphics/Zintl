@@ -1,15 +1,19 @@
 //! Declarative desktop views that render core `RenderNode` descriptions.
 
-/// Implements `View` for native views through their native element.
+/// Implements `View` for [`NativeView`] types through their native element.
+///
+/// Views with their own `View::init` implement `View` by hand instead and
+/// return `self.native_element(cx)` from `render`.
+#[macro_export]
 macro_rules! native_view {
     ($($view:ident),* $(,)?) => {$(
-        impl zintl_ui::view::View for $view {
+        impl $crate::View for $view {
             type Output = $crate::RenderNode;
 
             fn render(
                 &self,
                 cx: &mut $crate::Context<'_>,
-            ) -> impl zintl_ui::element::IntoElement<Output = Self::Output> {
+            ) -> impl $crate::IntoElement<Output = Self::Output> {
                 $crate::NativeView::native_element(self, cx)
             }
         }
@@ -25,6 +29,7 @@ mod choice;
 mod container;
 mod containers;
 mod controls;
+mod estimate;
 mod indicators;
 mod item_key;
 mod list;
@@ -46,7 +51,7 @@ mod view_tests;
 #[cfg(test)]
 mod widget_tests;
 
-pub use arrangements::{DisclosureGroup, Grid, GridCell, ZStack};
+pub use arrangements::{DisclosureGroup, Grid, GridCell, GridRow, ZStack};
 pub use attach::{Attach, Control, Layout, LayoutOverrides, NativeView, ViewModifiers};
 pub use button::{Button, ButtonStyle};
 pub use canvas::Canvas2D;
@@ -61,6 +66,7 @@ pub use controls::{
     ColorWell, ComboBox, DatePicker, IntegerField, IntegerValue, NumberField, OptionalDatePicker,
     SearchField, Slider,
 };
+pub use estimate::TextEstimate;
 pub use indicators::{ProgressIndicator, Separator};
 pub use item_key::{ByItemKey, ItemIdFn, ItemIdSource, ItemKey};
 pub use list::{List, ListRow, ListSection};
@@ -81,13 +87,14 @@ pub use types::{ButtonRole, ScrollStatus, ViewId};
 pub use window::{UndoHandler, Window};
 pub use zintl_ui::element::{Element, IntoElement, ListFactory};
 pub use zintl_ui::list;
-pub use zintl_ui::store::{Store, Trigger};
+pub use zintl_ui::store::{Local, Store, Trigger};
+pub use zintl_ui::view::View;
 pub use zintl_ui_backend_core::{
     Accessibility, AccessibilityRole, AlertStyle, AnnouncementPriority, CalendarDate,
     Canvas2DHandler, CanvasEvent, CanvasEventContext, CanvasId, CanvasNode, CanvasSetup, Color,
     Cursor, DatePickerStyle, DocumentState, Event, EventKind, Frame, GesturePhase, Invalidator,
     Key, KeyEvent, KeyPhase, ListStyle, MagnifyEvent, Modifiers, NamedKey, NodeId, Palette,
-    PaletteColor, PointerButton, PointerEvent, PointerPhase, PopoverEdge, Rect, Redraw,
+    PaletteColor, Point, PointerButton, PointerEvent, PointerPhase, PopoverEdge, Rect, Redraw,
     RedrawPolicy, RenderNode, ScrollAlignment, ScrollAxes, ScrollEvent, ScrollTarget, ShortcutKey,
     Signal, SortOrder, StoreSender, SystemColor, TextAlignment, TextColor, TextStyle, TitleBar,
     UndoState, ViewKind, graphics,
@@ -195,9 +202,11 @@ mod tests {
 
     #[test]
     fn text_field_multiline_is_opt_in() {
-        // Verifies text fields are single-line by default and opt into multiline rendering.
-        let single_line = Harness::new(TextField::new()).tree().value;
-        let multiline = Harness::new(TextField::new().multiline()).tree().value;
+        // Verifies text fields are single-line by default, opt into multiline rendering, and `false` turns it off again.
+        let single_line = Harness::new(TextField::new().multiline(true).multiline(false))
+            .tree()
+            .value;
+        let multiline = Harness::new(TextField::new().multiline(true)).tree().value;
 
         assert!(matches!(
             single_line,
@@ -224,9 +233,8 @@ mod tests {
     #[test]
     fn window_title_bar_is_standard_by_default() {
         // Verifies Window::new keeps the standard title bar unless the builder changes it.
-        let bounds = Rect::new(0.0, 0.0, 640.0, 480.0);
-        let normal = Harness::new(Window::new(bounds, "Normal")).tree().value;
-        let full_size = Harness::new(Window::new(bounds, "Hidden").title_bar(TitleBar::Hidden))
+        let normal = Harness::new(Window::new("Normal")).tree().value;
+        let full_size = Harness::new(Window::new("Hidden").title_bar(TitleBar::Hidden))
             .tree()
             .value;
 
@@ -478,7 +486,7 @@ mod tests {
     fn title_bar_interactive_is_opt_in_per_view() {
         // Verifies only views marked with the modifier keep input under the title bar.
         let plain = Harness::new(Button::new("Plain")).tree().value;
-        let marked = Harness::new(Button::new("Marked").title_bar_interactive())
+        let marked = Harness::new(Button::new("Marked").title_bar_interactive(true))
             .tree()
             .value;
 
@@ -522,10 +530,12 @@ mod tests {
         let mut harness = Harness::empty();
         let selection = harness.store(None::<&str>);
         harness.mount(
-            Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Navigation").sidebar(
-                Sidebar::new([SidebarSection::new([SidebarItem::new("home", "Home")])])
-                    .bind(selection),
-            ),
+            Window::new("Navigation")
+                .size(Size::new(640.0, 480.0))
+                .sidebar(
+                    Sidebar::new([SidebarSection::new([SidebarItem::new("home", "Home")])])
+                        .bind(selection),
+                ),
         );
 
         assert!(harness.dispatch(&[0], Event::SidebarSelectionChanged { id: "home".into() },));

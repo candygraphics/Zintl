@@ -10,8 +10,8 @@ use zintl_ui_backend_core::WindowStyle;
 use crate::menu::MenuActions;
 use crate::sidebar::WindowSidebar;
 use crate::{
-    Alert, ColorPanel, Context, DocumentState, Element, EventKind, FileDialog, ItemIdSource, Rect,
-    RenderNode, Sidebar, TitleBar, Toolbar, UndoState, ViewId,
+    Alert, ColorPanel, Context, DocumentState, Element, EventKind, FileDialog, ItemIdSource, Point,
+    RenderNode, Sidebar, Size, TitleBar, Toolbar, UndoState, ViewId,
 };
 
 type Action = dyn for<'a> Fn(&mut Context<'a>);
@@ -71,7 +71,8 @@ impl WindowAttachment {
 #[derive(Clone)]
 pub struct Window {
     sidebar: Option<Rc<dyn WindowSidebar>>,
-    bounds: Rect,
+    size: Size,
+    position: Option<Point>,
     title: String,
     title_bar: TitleBar,
     style: WindowStyle,
@@ -90,10 +91,17 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new(bounds: Rect, title: impl Into<String>) -> Self {
+    /// The content size of a window that does not declare one.
+    pub const DEFAULT_SIZE: Size = Size::new(640.0, 480.0);
+    /// The content size of a panel that does not declare one.
+    pub const DEFAULT_PANEL_SIZE: Size = Size::new(320.0, 400.0);
+
+    /// Creates a window of [`Window::DEFAULT_SIZE`] centered on the screen.
+    pub fn new(title: impl Into<String>) -> Self {
         Self {
             sidebar: None,
-            bounds,
+            size: Self::DEFAULT_SIZE,
+            position: None,
             title: title.into(),
             title_bar: TitleBar::Standard,
             style: WindowStyle::Normal,
@@ -111,12 +119,32 @@ impl Window {
         }
     }
 
-    /// Creates a floating utility panel, such as an inspector or palette.
-    pub fn panel(bounds: Rect, title: impl Into<String>) -> Self {
+    /// Creates a floating utility panel, such as an inspector or palette, of
+    /// [`Window::DEFAULT_PANEL_SIZE`] centered on the screen.
+    pub fn panel(title: impl Into<String>) -> Self {
         Self {
             style: WindowStyle::Panel,
-            ..Self::new(bounds, title)
+            size: Self::DEFAULT_PANEL_SIZE,
+            ..Self::new(title)
         }
+    }
+
+    /// Sets the size of the content area, below the title bar.
+    ///
+    /// Changing it later resizes the window and keeps its top-left corner.
+    pub fn size(mut self, size: Size) -> Self {
+        self.size = size;
+        self
+    }
+
+    /// Places the frame's top-left corner at `position` in screen points, with
+    /// the origin at the top left of the main screen.
+    ///
+    /// Without it a new window opens centered. A frame saved with
+    /// [`Window::autosave`] takes precedence either way.
+    pub fn position(mut self, position: Point) -> Self {
+        self.position = Some(position);
+        self
     }
 
     pub fn sidebar<K, I>(mut self, sidebar: Sidebar<K, I>) -> Self
@@ -236,7 +264,8 @@ impl View for Window {
                 .sidebar
                 .as_ref()
                 .map(|sidebar| sidebar.state(cx, &mut actions)),
-            bounds: self.bounds,
+            size: self.size,
+            position: self.position,
             title: self.title.clone(),
             title_bar: self.title_bar,
             id: self.id.clone(),

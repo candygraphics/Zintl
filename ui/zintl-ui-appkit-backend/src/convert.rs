@@ -215,7 +215,7 @@ impl Native for core::TableColumn {
     fn native(&self) -> ui::TableColumn {
         ui::TableColumn {
             title: self.title.clone(),
-            width: self.width,
+            width: self.width.map(f64::from),
             alignment: self.alignment.native(),
             sort_key: self.sort_key.clone(),
         }
@@ -352,6 +352,8 @@ impl Shared for ui::CanvasPalette {
             green: self.green.shared(),
             blue: self.blue.shared(),
             gray: self.gray.shared(),
+            separator: self.separator.shared(),
+            alternating_row: self.alternating_row.shared(),
         }
     }
 }

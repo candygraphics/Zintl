@@ -43,7 +43,7 @@ impl View for MainView {
         let row = |key: Callsign| {
             ListRow::new(key, Text::new(format!("{key:?}")).id(format!("{}-title", key.item_id())))
         };
-        Window::new(Rect::new(100.0, 100.0, 420.0, 460.0), "Zintl List UI Test")
+        Window::new("Zintl List UI Test").size(Size::new(420.0, 460.0))
             .id("main-window")
             .content(
                 VStack::new(list![

@@ -177,15 +177,19 @@ fn text_style_reaches_the_render_node_and_sizes_the_label() {
 }
 
 #[test]
-fn window_element_preserves_bounds_and_title() {
-    // Verifies a window preserves its declarative bounds and title.
-    let bounds = Rect::new(10.0, 20.0, 640.0, 480.0);
-    let app = Harness::new(Window::new(bounds, "Zintl"));
+fn window_element_preserves_size_position_and_title() {
+    // Verifies a window carries its declared content size, position, and title to the backend.
+    let app = Harness::new(
+        Window::new("Zintl")
+            .size(Size::new(800.0, 600.0))
+            .position(Point::new(10.0, 20.0)),
+    );
     assert_eq!(
         app.tree().value,
         RenderNode::Window {
             sidebar: None,
-            bounds,
+            size: Size::new(800.0, 600.0),
+            position: Some(Point::new(10.0, 20.0)),
             title: "Zintl".into(),
             title_bar: TitleBar::Standard,
             id: None,
@@ -198,10 +202,27 @@ fn window_element_preserves_bounds_and_title() {
 }
 
 #[test]
+fn windows_without_a_size_or_position_open_centered_at_their_default_size() {
+    // Verifies an undeclared position reaches the backend as None, and windows and panels have their own default sizes.
+    let window = Harness::new(Window::new("Main")).tree().value;
+    let panel = Harness::new(Window::panel("Inspector")).tree().value;
+
+    assert!(matches!(
+        window,
+        RenderNode::Window { size, position: None, .. } if size == Window::DEFAULT_SIZE
+    ));
+    assert!(matches!(
+        panel,
+        RenderNode::Window { size, position: None, .. } if size == Window::DEFAULT_PANEL_SIZE
+    ));
+    assert_eq!(Window::DEFAULT_SIZE, Size::new(640.0, 480.0));
+    assert_eq!(Window::DEFAULT_PANEL_SIZE, Size::new(320.0, 400.0));
+}
+
+#[test]
 fn window_title_bar_reaches_the_render_node() {
     // Verifies the declared title bar style is carried to the backend.
-    let bounds = Rect::new(10.0, 20.0, 640.0, 480.0);
-    let app = Harness::new(Window::new(bounds, "Zintl").title_bar(TitleBar::Overlay));
+    let app = Harness::new(Window::new("Zintl").title_bar(TitleBar::Overlay));
 
     assert!(matches!(
         app.tree().value,
@@ -216,7 +237,8 @@ fn window_title_bar_reaches_the_render_node() {
 fn stack_render_tree_carries_layout_and_control_sizes() {
     // Verifies stacks preserve layout policy while using native render nodes.
     let app = Harness::new(
-        Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Zintl")
+        Window::new("Zintl")
+            .size(Size::new(640.0, 480.0))
             .content(HStack::new(list![Button::new("Save"), TextField::new()]).spacing(12.0)),
     );
     let tree = app.tree();
@@ -313,12 +335,12 @@ fn stack_list_children_have_no_arity_limit() {
 fn stack_builders_preserve_width_and_child_distribution() {
     // Verifies stack options reach the container layout.
     let app = Harness::new(
-        Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Zintl").content(
+        Window::new("Zintl").size(Size::new(640.0, 480.0)).content(
             VStack::new(list![
                 HStack::new(list![Button::new("Save"), Button::new("Cancel")])
                     .fill_width()
-                    .space_between()
-                    .equal_width_children()
+                    .distribution(MainAxisDistribution::SpaceBetween)
+                    .equal_children()
             ])
             .fill_width(),
         ),
@@ -398,7 +420,8 @@ fn button_dispatches_its_registered_action() {
 fn view_ids_are_preserved_in_the_render_tree() {
     // Verifies IDs reach the render nodes for accessibility.
     let app = Harness::new(
-        Window::new(Rect::new(0.0, 0.0, 640.0, 480.0), "Zintl")
+        Window::new("Zintl")
+            .size(Size::new(640.0, 480.0))
             .id("main-window")
             .content(TextField::new().id("name-input")),
     );

@@ -75,6 +75,7 @@ impl StoreContext<'_> {
         Store::new(store_id, hook_id)
     }
 
+    #[track_caller]
     pub fn get<'context, T: 'static>(&'context self, store: Store<T>) -> &'context T {
         let handle = store.handle();
         self.depend(handle.hook_id);
@@ -87,6 +88,7 @@ impl StoreContext<'_> {
     /// Returns how many times `store` has been written, even with an equal value.
     ///
     /// Reading it rebuilds the reader on each write, like [`Self::get`].
+    #[track_caller]
     pub fn revision<T: 'static>(&self, store: Store<T>) -> u64 {
         let handle = store.handle();
         self.depend(handle.hook_id);
@@ -99,6 +101,7 @@ impl StoreContext<'_> {
     }
 
     /// Runs `trigger` once with `value`, even when it last fired with an equal value.
+    #[track_caller]
     pub fn fire<T: 'static>(&mut self, trigger: Trigger<T>, value: T) {
         self.update(trigger.store(), |fired| *fired = Some(value));
     }
@@ -113,6 +116,7 @@ impl StoreContext<'_> {
         }
     }
 
+    #[track_caller]
     pub fn watch<T, F, E>(&self, store: Store<T>, render: F) -> StoreWatcher<T, F, E>
     where
         T: 'static,
@@ -127,6 +131,7 @@ impl StoreContext<'_> {
         }
     }
 
+    #[track_caller]
     pub fn update<T: 'static, U>(
         &mut self,
         store: Store<T>,
@@ -153,6 +158,7 @@ pub trait Context<'a> {
         self.store_context_mut().store(value)
     }
 
+    #[track_caller]
     fn get<'context, T: 'static>(&'context self, store: Store<T>) -> &'context T
     where
         'a: 'context,
@@ -160,6 +166,7 @@ pub trait Context<'a> {
         self.store_context().get(store)
     }
 
+    #[track_caller]
     fn watch<T, F, E>(&self, store: Store<T>, render: F) -> StoreWatcher<T, F, E>
     where
         T: 'static,
@@ -169,10 +176,12 @@ pub trait Context<'a> {
         self.store_context().watch(store, render)
     }
 
+    #[track_caller]
     fn revision<T: 'static>(&self, store: Store<T>) -> u64 {
         self.store_context().revision(store)
     }
 
+    #[track_caller]
     fn update<T: 'static, U>(&mut self, store: Store<T>, update: impl FnOnce(&mut T) -> U) -> U {
         self.store_context_mut().update(store, update)
     }
@@ -181,6 +190,7 @@ pub trait Context<'a> {
         self.store_context_mut().trigger()
     }
 
+    #[track_caller]
     fn fire<T: 'static>(&mut self, trigger: Trigger<T>, value: T) {
         self.store_context_mut().fire(trigger, value)
     }

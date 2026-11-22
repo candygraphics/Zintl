@@ -12,7 +12,7 @@ use zintl_ui_layout::{LayoutStyle, Size};
 use crate::modifiers;
 use crate::{
     Attach, Change, Color, Context, Control, Element, Event, EventKind, NativeView, RenderNode,
-    ViewModifiers,
+    TextEstimate, ViewModifiers,
 };
 
 native_view!(
@@ -220,14 +220,14 @@ impl Slider {
     /// Shows `count` tick marks below the track.
     pub fn ticks(mut self, count: usize) -> Self {
         self.tick_marks = count;
-        self.snaps_to_ticks = false;
         self
     }
 
-    /// Shows `count` tick marks and only allows their values.
-    pub fn snapping_ticks(mut self, count: usize) -> Self {
-        self.tick_marks = count;
-        self.snaps_to_ticks = true;
+    /// Only allows the values of the tick marks with `true`.
+    ///
+    /// It has no effect without [`Slider::ticks`].
+    pub fn snaps_to_ticks(mut self, snaps: bool) -> Self {
+        self.snaps_to_ticks = snaps;
         self
     }
 
@@ -252,7 +252,7 @@ impl NativeView for Slider {
                 minimum: self.minimum,
                 maximum: self.maximum,
                 tick_marks: self.tick_marks,
-                snaps_to_ticks: self.snaps_to_ticks,
+                snaps_to_ticks: self.snaps_to_ticks && self.tick_marks > 0,
             },
             layout: self.layout,
             id: None,
@@ -314,12 +314,11 @@ pub(crate) struct PopUpButton {
 impl PopUpButton {
     pub fn new(items: impl IntoIterator<Item = impl Into<String>>) -> Self {
         let items: Vec<String> = items.into_iter().map(Into::into).collect();
+        let font = TextEstimate::system_font();
         let width = items
             .iter()
-            .map(|item| item.chars().count())
-            .max()
-            .unwrap_or(0) as f32
-            * 7.0
+            .map(|item| TextEstimate::width(item, &font))
+            .fold(0.0, f32::max)
             + 44.0;
         Self {
             selected: (!items.is_empty()).then_some(0),
@@ -381,7 +380,7 @@ impl SegmentedControl {
         let segments: Vec<String> = segments.into_iter().map(Into::into).collect();
         let width = segments
             .iter()
-            .map(|segment| segment.chars().count() as f32 * 7.0 + 24.0)
+            .map(|segment| TextEstimate::width(segment, &TextEstimate::system_font()) + 24.0)
             .sum::<f32>();
         Self {
             selected: (!segments.is_empty()).then_some(0),
@@ -1142,8 +1141,7 @@ impl NativeView for OptionalDatePicker {
                     .style(self.style)
                     .enabled(enabled)
                     .on_change(move |cx, date| route.send(cx, Some(date)));
-                let mut clear = crate::Button::new("")
-                    .system_image("xmark.circle.fill")
+                let mut clear = crate::Button::icon("xmark.circle.fill")
                     .style(crate::ButtonStyle::Borderless)
                     .enabled(enabled)
                     .on_click(self.change(None))

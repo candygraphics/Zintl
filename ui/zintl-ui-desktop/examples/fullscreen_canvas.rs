@@ -162,7 +162,8 @@ impl View for FullscreenCanvas {
     type Output = RenderNode;
 
     fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
-        Window::new(Rect::new(120.0, 120.0, 900.0, 600.0), "Orbits")
+        Window::new("Orbits")
+            .size(Size::new(900.0, 600.0))
             .title_bar(TitleBar::Hidden)
             .content(
                 Canvas2D::new(Orbits::new())
@@ -171,7 +172,7 @@ impl View for FullscreenCanvas {
                     })
                     .fill_width()
                     .grow()
-                    .ignores_safe_area(),
+                    .ignores_safe_area(true),
             )
     }
 }

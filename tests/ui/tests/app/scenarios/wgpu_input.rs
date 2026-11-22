@@ -73,7 +73,7 @@ impl View for MainView {
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let (red, clicks, key) = (self.red, self.clicks, self.key);
-        Window::new(Rect::new(100.0, 100.0, 480.0, 400.0), "Zintl Wgpu Input UI Test")
+        Window::new("Zintl Wgpu Input UI Test").size(Size::new(480.0, 400.0))
             .id("main-window")
             .content(
                 VStack::new(list![

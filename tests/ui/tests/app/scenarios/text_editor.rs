@@ -33,7 +33,7 @@ impl View for MainView {
         };
         list![
             MainMenu::standard().app_name("Zintl Text Editor"),
-            Window::new(Rect::new(100.0, 100.0, 520.0, 380.0), "Zintl Text Editor UI Test")
+            Window::new("Zintl Text Editor UI Test").size(Size::new(520.0, 380.0))
                 .id("main-window")
                 .content(
                     VStack::new(list![

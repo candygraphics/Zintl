@@ -588,6 +588,38 @@ impl<'application> Window<'application> {
             })
             .map_err(Into::into)
     }
+    /// Sizes the content area below the title bar, keeping the frame's top-left corner.
+    pub fn set_content_size(&self, width: f64, height: f64) -> Result<(), UiError> {
+        self.actor
+            .with(|window| {
+                // SAFETY: The live window converts between its frame and content rectangles
+                // for its current style; all values are plain NSRects.
+                unsafe {
+                    let frame =
+                        zpd_objc::msg_send!(window, zpd_objc::sel!("frame"), () => native::Rect);
+                    let content = zpd_objc::msg_send!(window, zpd_objc::sel!("contentRectForFrameRect:"), ((frame): native::Rect) => native::Rect);
+                    let resized = native::Rect {
+                        origin: content.origin,
+                        size: native::Size { width, height },
+                    };
+                    let mut next = zpd_objc::msg_send!(window, zpd_objc::sel!("frameRectForContentRect:"), ((resized): native::Rect) => native::Rect);
+                    // AppKit's origin is the bottom-left corner, so move it to keep the top edge.
+                    next.origin.x = frame.origin.x;
+                    next.origin.y = frame.origin.y + frame.size.height - next.size.height;
+                    zpd_objc::msg_send!(window, zpd_objc::sel!("setFrame:display:"), ((next): native::Rect, (true): bool) => ());
+                }
+            })
+            .map_err(Into::into)
+    }
+    /// Centers the window on its screen, slightly above the middle as AppKit places new windows.
+    pub fn center(&self) -> Result<(), UiError> {
+        self.actor
+            .with(|window| {
+                // SAFETY: The live window moves itself on the main thread.
+                unsafe { zpd_objc::msg_send!(window, zpd_objc::sel!("center"), () => ()) }
+            })
+            .map_err(Into::into)
+    }
     pub fn set_position(&self, x: f64, y: f64) -> Result<(), UiError> {
         let top = Self::screen_top() - y;
         self.actor

@@ -99,9 +99,12 @@ fn main() {
     // Verifies system colors are resolved for the canvas's appearance, not a fixed value.
     assert_ne!(light.green, dark.green);
     assert_ne!(light.gray, dark.gray);
+    assert_ne!(light.alternating_row, dark.alternating_row);
     // Verifies the colors are the system hues in both appearances.
     for palette in [light, dark] {
         assert!(palette.green.green > palette.green.red && palette.green.green > palette.green.blue);
         assert!(palette.red.red > palette.red.green && palette.red.red > palette.red.blue);
+        // Verifies the separator is a translucent line color, not an opaque fill.
+        assert!(palette.separator.alpha > 0.0 && palette.separator.alpha < 1.0);
     }
 }

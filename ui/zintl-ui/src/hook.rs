@@ -12,5 +12,6 @@ impl HookId {
 }
 
 pub trait Hook {
+    #[track_caller]
     fn hook_id(&self) -> HookId;
 }

@@ -33,15 +33,13 @@ impl View for FullSizeContentViewExample {
             ])
             .minimum_size(Size::new(360.0, 120.0))
             .spacing(24.0);
-            let window = Window::new(
-                Rect::new(100.0, 100.0, 480.0, 300.0),
-                "Full-size Content View",
-            )
-            .sidebar(Sidebar::new([SidebarSection::new([
-                SidebarItem::new("home", "Home").system_image("house"),
-                SidebarItem::new("settings", "Settings").system_image("gearshape"),
-            ])]))
-            .content(content);
+            let window = Window::new("Full-size Content View")
+                .size(Size::new(480.0, 300.0))
+                .sidebar(Sidebar::new([SidebarSection::new([
+                    SidebarItem::new("home", "Home").system_image("house"),
+                    SidebarItem::new("settings", "Settings").system_image("gearshape"),
+                ])]))
+                .content(content);
 
             if *enabled {
                 window.title_bar(TitleBar::Overlay)

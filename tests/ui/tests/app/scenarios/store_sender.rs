@@ -25,10 +25,7 @@ impl View for MainView {
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let status = self.status;
-        Window::new(
-            Rect::new(100.0, 100.0, 480.0, 240.0),
-            "Zintl Store Sender UI Test",
-        )
+        Window::new("Zintl Store Sender UI Test").size(Size::new(480.0, 240.0))
         .id("main-window")
         .content(
             VStack::new(list![

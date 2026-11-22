@@ -9,7 +9,7 @@ use zintl_ui_layout::{Axis, LayoutStyle, MainAxisDistribution, Size};
 use crate::modifiers;
 use crate::{
     Attach, Button, ButtonType, Change, ChangeRoute, Container, Context, Control, Element, Layout,
-    ListFactory, NativeView, PopUpButton, RenderNode, SegmentedControl, Switch, Text,
+    ListFactory, NativeView, PopUpButton, RenderNode, SegmentedControl, Switch, Text, TextEstimate,
     ViewModifiers, list,
 };
 
@@ -100,7 +100,7 @@ impl NativeView for Toggle {
                 .button(Button::checkbox(self.label.clone()))
                 .native_element(cx),
             ToggleStyle::Button => {
-                let width = self.label.chars().count() as f32 * 7.0 + 32.0;
+                let width = TextEstimate::width(&self.label, &TextEstimate::system_font()) + 32.0;
                 self.button(
                     Button::new(self.label.clone())
                         .button_type(ButtonType::PushOnPushOff)

@@ -33,7 +33,7 @@ impl View for MainView {
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let (count, removes, query) = (self.count, self.removes, self.query);
         let search_focus = self.search_focus;
-        Window::new(Rect::new(100.0, 100.0, 560.0, 260.0), "Zintl Toolbar UI Test")
+        Window::new("Zintl Toolbar UI Test").size(Size::new(560.0, 260.0))
             .id("main-window")
             .toolbar(Toolbar::new([
                 ToolbarItem::button("add", "Add", "plus")

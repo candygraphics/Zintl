@@ -13,8 +13,8 @@ use zintl_ui_backend_core::layout::{HostLayout, LayoutSnapshot};
 use zintl_ui_backend_core::tree::{ErrorSlot, MainTasks, NodeTree};
 use zintl_ui_backend_core::{
     AlertButtonRole, AlertConfig, Announcement, Color, CommandSet, Context, DocumentState, Event,
-    FileDialogConfig, FileDialogMode, MainTask, NodeId, PopoverEdge, Rect, RenderNode, Sidebar,
-    TitleBar, Toolbar, ToolbarItem, ViewKind, WindowStyle,
+    FileDialogConfig, FileDialogMode, MainTask, NodeId, Point, PopoverEdge, RenderNode, Sidebar,
+    TitleBar, Toolbar, ToolbarItem, ViewKind, WindowPlacement, WindowPosition, WindowStyle,
 };
 use zintl_ui_layout::{LayoutError, Size};
 use zpd_winui3::{
@@ -129,7 +129,10 @@ struct WindowState {
     /// The sidebar, which then contains `canvas`.
     navigation: Option<Control>,
     style: WindowStyle,
-    applied_bounds: Option<Rect>,
+    /// The content size last applied; `None` until the window is placed once.
+    applied_size: Option<Size>,
+    /// The declared position last applied, so an unchanged one does not move the window back.
+    applied_position: Option<Point>,
     applied_title: Option<String>,
     applied_title_bar: Option<TitleBar>,
     /// `None` until the sidebar declaration has been applied once.
@@ -479,7 +482,8 @@ impl WinUI3Backend {
             host,
             navigation: None,
             style,
-            applied_bounds: None,
+            applied_size: None,
+            applied_position: None,
             applied_title: None,
             applied_title_bar: None,
             applied_sidebar: None,
@@ -510,7 +514,8 @@ impl WinUI3Backend {
         rebuild_structure: bool,
     ) -> Result<(), AppError> {
         let RenderNode::Window {
-            bounds,
+            size,
+            position,
             title,
             title_bar,
             sidebar,
@@ -550,13 +555,27 @@ impl WinUI3Backend {
             .window
             .as_mut()
             .expect("a synchronized window has native state");
-        if state.applied_bounds != Some(bounds) {
+        // The client area does not depend on the title bar here, so a title bar
+        // change needs no refit.
+        let placement = WindowPlacement::changes(
+            new_window,
+            false,
+            (state.applied_size, state.applied_position),
+            (size, position),
+        );
+        if let Some(size) = placement.size {
             state
                 .native
-                .move_and_resize(bounds.x, bounds.y, bounds.width, bounds.height)?;
-            state.applied_bounds = Some(bounds);
+                .resize_client(f64::from(size.width), f64::from(size.height))?;
         }
-        // A saved placement replaces the declared bounds on a new window.
+        match placement.position {
+            Some(WindowPosition::At(position)) => state.native.move_to(position.x, position.y)?,
+            Some(WindowPosition::Center) => state.native.center()?,
+            None => {}
+        }
+        state.applied_size = Some(size);
+        state.applied_position = position;
+        // A saved placement replaces the declared size and position on a new window.
         if new_window && let Some(name) = &autosave {
             state.native.set_autosave(name)?;
         }
@@ -1193,7 +1212,8 @@ impl WinUI3Backend {
         let report = Rc::new(report);
         let window = application.create_styled_window(zpd_winui3::WindowStyle::Panel)?;
         window.set_title("Colors")?;
-        window.move_and_resize(200.0, 200.0, 360.0, 520.0)?;
+        window.resize_client(360.0, 520.0)?;
+        window.move_to(200.0, 200.0)?;
         let picker = Control::new(ControlKind::ColorPicker)?;
         picker.set_bool(BoolProperty::Alpha, shows_alpha)?;
         picker.set_color(Self::native_color(color))?;

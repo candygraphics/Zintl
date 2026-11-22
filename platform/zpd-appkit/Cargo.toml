@@ -42,6 +42,11 @@ path = "tests/canvas_palette.rs"
 harness = false
 
 [[test]]
+name = "window_placement"
+path = "tests/window_placement.rs"
+harness = false
+
+[[test]]
 name = "metal_canvas"
 path = "tests/metal_canvas.rs"
 harness = false

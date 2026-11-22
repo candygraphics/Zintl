@@ -30,7 +30,7 @@ impl View for MainView {
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let (date, due) = (self.date, self.due);
-        Window::new(Rect::new(100.0, 100.0, 420.0, 460.0), "Zintl Date Picker UI Test")
+        Window::new("Zintl Date Picker UI Test").size(Size::new(420.0, 460.0))
             .id("main-window")
             .content(
                 VStack::new(list![

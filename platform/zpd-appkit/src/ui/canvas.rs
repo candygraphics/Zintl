@@ -69,6 +69,10 @@ pub struct CanvasPalette {
     pub green: super::Color,
     pub blue: super::Color,
     pub gray: super::Color,
+    /// `NSColor.separatorColor`.
+    pub separator: super::Color,
+    /// The second of `NSColor.alternatingContentBackgroundColors`.
+    pub alternating_row: super::Color,
 }
 
 impl CanvasPalette {
@@ -90,6 +94,10 @@ impl CanvasPalette {
                     zpd_objc::msg_send!(zpd_objc::class!("NSColor"), selector, () => Id),
                 )
             };
+            let alternating = zpd_objc::msg_send!(zpd_objc::class!("NSColor"), zpd_objc::sel!("alternatingContentBackgroundColors"), () => Id);
+            let alternating_row = super::Color::from_native(
+                zpd_objc::msg_send!(alternating, zpd_objc::sel!("objectAtIndex:"), ((1): u64) => Id),
+            );
             let palette = Self {
                 accent: color(zpd_objc::sel!("controlAccentColor")),
                 red: color(zpd_objc::sel!("systemRedColor")),
@@ -98,6 +106,8 @@ impl CanvasPalette {
                 green: color(zpd_objc::sel!("systemGreenColor")),
                 blue: color(zpd_objc::sel!("systemBlueColor")),
                 gray: color(zpd_objc::sel!("systemGrayColor")),
+                separator: color(zpd_objc::sel!("separatorColor")),
+                alternating_row,
             };
             zpd_objc::msg_send!(appearance_class, zpd_objc::sel!("setCurrentAppearance:"), ((previous): Id) => ());
             palette

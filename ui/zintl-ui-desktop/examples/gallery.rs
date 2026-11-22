@@ -201,14 +201,12 @@ impl Gallery {
                     .system_image("square.and.arrow.up")
                     .on_click(report("Shared")),
                 // Buttons without a title need a label.
-                Button::new("")
-                    .system_image("gearshape")
+                Button::icon("gearshape")
                     .style(ButtonStyle::Borderless)
                     .minimum_size(Size::new(32.0, 32.0))
                     .on_click(report("Gear"))
                     .accessibility_label("Settings"),
-                Button::new("")
-                    .style(ButtonStyle::Help)
+                Button::help()
                     .minimum_size(Size::new(32.0, 32.0))
                     .on_click(report("Help"))
                     .accessibility_label("Help"),
@@ -377,7 +375,8 @@ impl View for Gallery {
             Page::Buttons => self.buttons(),
             Page::Dialogs => self.dialogs(),
         };
-        let window = Window::new(Rect::new(120.0, 120.0, 820.0, 620.0), "Zintl Gallery")
+        let window = Window::new("Zintl Gallery")
+            .size(Size::new(820.0, 620.0))
             .sidebar(self.sidebar(cx.get(self.query)))
             .content(content.fill_width())
             .alert(
@@ -393,7 +392,7 @@ impl View for Gallery {
             )
             .file_dialog(
                 FileDialog::open()
-                    .multiple()
+                    .multiple(true)
                     .bind_presented(self.open_file)
                     .on_select(move |cx, paths| {
                         report(cx, format!("Opened {} item(s)", paths.len()))
@@ -414,7 +413,9 @@ impl View for Gallery {
                     .bind(self.tint)
                     .bind_presented(self.color_panel),
             );
-        let inspector = Window::panel(Rect::new(960.0, 160.0, 260.0, 200.0), "Inspector")
+        let inspector = Window::panel("Inspector")
+            .size(Size::new(260.0, 200.0))
+            .position(Point::new(960.0, 160.0))
             .content(
                 VStack::new(list![
                     Text::new("Tint"),

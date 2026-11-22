@@ -86,16 +86,11 @@ macro_rules! canvas_view {
                 self
             }
 
-
-
-
-
-
-            /// As a window's content, extends under its title bar instead of starting below it.
+            /// As a window's content, extends under its title bar with `true` instead of starting below it.
             ///
             /// Use [`Frame::safe_area`](crate::Frame::safe_area) to keep drawing clear of it.
-            pub fn ignores_safe_area(mut self) -> Self {
-                self.layout.ignores_safe_area = true;
+            pub fn ignores_safe_area(mut self, ignores: bool) -> Self {
+                self.layout.ignores_safe_area = ignores;
                 self
             }
         }

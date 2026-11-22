@@ -36,13 +36,7 @@ final class FullSizeSidebarTests: ZintlUITestCase {
     // Resize through the native bottom-right handle and first prove that the frame really changed.
     // This guard prevents the final preservation assertions from passing when UI automation failed
     // to resize the window and merely compared the original size with itself.
-    let resizeHandle = window.coordinate(
-      withNormalizedOffset: CGVector(dx: 0.98, dy: 0.98)
-    )
-    resizeHandle.click(
-      forDuration: 0.2,
-      thenDragTo: resizeHandle.withOffset(CGVector(dx: 160, dy: 100))
-    )
+    resizeWindow(window, by: CGVector(dx: 160, dy: 100))
     let resizedSize = window.frame.size
     XCTAssertNotEqual(resizedSize, initialSize)
 

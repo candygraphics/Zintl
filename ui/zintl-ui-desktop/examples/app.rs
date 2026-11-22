@@ -24,7 +24,8 @@ impl View for MainView {
             println!("hello");
         });
 
-        Window::new(Rect::new(100.0, 100.0, 640.0, 400.0), "Zintl")
+        Window::new("Zintl")
+            .size(Size::new(640.0, 400.0))
             .sidebar(
                 Sidebar::new([SidebarSection::new([
                     SidebarItem::new("home", "Home").system_image("house"),
@@ -53,7 +54,7 @@ impl View for MainView {
                     HStack::new(list![Button::new("Continue"), Button::new("Cancel")])
                         .spacing(12.0)
                         .fill_width()
-                        .equal_width_children(),
+                        .equal_children(),
                     cx.watch(count, move |c| {
                         Button::new(format!("Counter: {c}")).on_click(move |cx| {
                             cx.update(count, |value| *value += 1);

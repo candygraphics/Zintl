@@ -28,7 +28,7 @@ impl View for MainView {
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let (selected, changes) = (self.selected, self.changes);
-        Window::new(Rect::new(100.0, 100.0, 480.0, 360.0), "Zintl Tabs UI Test")
+        Window::new("Zintl Tabs UI Test").size(Size::new(480.0, 360.0))
             .id("main-window")
             .content(
                 VStack::new(list![

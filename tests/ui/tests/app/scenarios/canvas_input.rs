@@ -90,7 +90,7 @@ impl View for MainView {
         let (hover, clicks, key, scrolls, renders) =
             (self.hover, self.clicks, self.key, self.scrolls, self.renders);
         let tint = if *cx.get(renders) % 2 == 0 { 0.4 } else { 0.7 };
-        Window::new(Rect::new(100.0, 100.0, 480.0, 400.0), "Zintl Canvas Input UI Test")
+        Window::new("Zintl Canvas Input UI Test").size(Size::new(480.0, 400.0))
             .id("main-window")
             .content(
                 VStack::new(list![

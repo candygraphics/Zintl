@@ -113,7 +113,7 @@ impl View for MainView {
         if *cx.get(self.more_columns) {
             columns.extend(["A", "B", "C", "D"].map(|name| TableColumn::new(format!("Col {name}")).width(150.0)));
         }
-        Window::new(Rect::new(100.0, 100.0, 480.0, 420.0), "Zintl Table UI Test")
+        Window::new("Zintl Table UI Test").size(Size::new(480.0, 420.0))
             .id("main-window")
             .content(
                 VStack::new(list![

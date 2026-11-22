@@ -21,7 +21,7 @@ type SelectionCheck<K> = dyn for<'a> Fn(&mut Context<'a>, Option<&K>) -> bool;
 #[derive(Clone, Debug, PartialEq)]
 pub struct TableColumn {
     title: String,
-    width: Option<f64>,
+    width: Option<f32>,
     alignment: TextAlignment,
     sort_key: Option<String>,
 }
@@ -54,7 +54,7 @@ impl TableColumn {
     ///
     /// The widths of all columns add up to the table's width. The user can
     /// still resize the column.
-    pub fn width(mut self, width: f64) -> Self {
+    pub fn width(mut self, width: f32) -> Self {
         self.width = Some(width);
         self
     }

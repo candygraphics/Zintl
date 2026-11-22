@@ -32,7 +32,7 @@ impl View for MainView {
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let (station, query, count, searches) =
             (self.station, self.query, self.count, self.searches);
-        Window::new(Rect::new(100.0, 100.0, 420.0, 320.0), "Zintl Text Inputs UI Test")
+        Window::new("Zintl Text Inputs UI Test").size(Size::new(420.0, 320.0))
             .id("main-window")
             .content(
                 VStack::new(list![

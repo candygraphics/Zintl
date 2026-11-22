@@ -680,16 +680,36 @@ int32_t zpd_winui3_window_close(zpd_winui3_window* window) { return status([&] {
 int32_t zpd_winui3_window_extend_content_into_title_bar(zpd_winui3_window* window, bool enabled) { return status([&] { window->window.ExtendsContentIntoTitleBar(enabled); }); }
 int32_t zpd_winui3_window_set_title_bar(zpd_winui3_window* window, const zpd_winui3_element* element) { return status([&] { window->window.SetTitleBar(element ? element->value : nullptr); }); }
 
-int32_t zpd_winui3_window_move_and_resize(zpd_winui3_window* window, double x, double y, double width, double height) {
+int32_t zpd_winui3_window_resize_client(zpd_winui3_window* window, double width, double height) {
   return status([&] {
     double scale = GetDpiForWindow(window->hwnd()) / 96.0;
     auto pixels = [scale](double value) { return static_cast<int32_t>(value * scale + 0.5); };
-    // Declared bounds describe the content area, as on macOS.
-    // A closed window has no AppWindow to place.
+    // A closed window has no AppWindow to size.
+    auto app = window->window.AppWindow();
+    if (!app) return;
+    // Resizing keeps the outer frame's top-left corner, as on macOS.
+    app.ResizeClient({pixels(width), pixels(height)});
+  });
+}
+
+int32_t zpd_winui3_window_move(zpd_winui3_window* window, double x, double y) {
+  return status([&] {
+    double scale = GetDpiForWindow(window->hwnd()) / 96.0;
+    auto pixels = [scale](double value) { return static_cast<int32_t>(value * scale + 0.5); };
     auto app = window->window.AppWindow();
     if (!app) return;
     app.Move({pixels(x), pixels(y)});
-    app.ResizeClient({pixels(width), pixels(height)});
+  });
+}
+
+int32_t zpd_winui3_window_center(zpd_winui3_window* window) {
+  return status([&] {
+    auto app = window->window.AppWindow();
+    if (!app) return;
+    auto display = Windowing::DisplayArea::GetFromWindowId(app.Id(), Windowing::DisplayAreaFallback::Nearest);
+    auto work = display.WorkArea();
+    auto size = app.Size();
+    app.Move({work.X + (work.Width - size.Width) / 2, work.Y + (work.Height - size.Height) / 2});
   });
 }
 

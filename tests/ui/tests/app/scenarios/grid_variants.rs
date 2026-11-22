@@ -20,15 +20,15 @@ impl MainView {
             .collect()
     }
 
-    /// Builds four rows whose IDs start with `prefix`.
-    fn rows(prefix: &str) -> ListFactory<RenderNode> {
+    /// Builds four one-cell rows whose IDs start with `prefix`.
+    fn rows(prefix: &str) -> Vec<GridRow> {
         (0..4)
             .map(|row| {
-                ElementFactory::new(
+                GridRow::new(list![
                     Text::new(format!("Train {row}"))
                         .id(format!("{prefix}-{row}"))
                         .fill_width(),
-                )
+                ])
             })
             .collect()
     }
@@ -38,15 +38,15 @@ impl View for MainView {
     type Output = RenderNode;
 
     fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
-        Window::new(Rect::new(100.0, 100.0, 360.0, 420.0), "Zintl Grid Variants UI Test")
+        Window::new("Zintl Grid Variants UI Test").size(Size::new(360.0, 420.0))
             .id("main-window")
             .content(
                 VStack::new(list![
-                    Grid::new(1, Self::rows("striped"))
+                    Grid::rows(1, Self::rows("striped"))
                         .striped(true)
                         .spacing(0.0)
                         .fill_width(),
-                    Grid::new(1, Self::rows("plain")).spacing(0.0).fill_width(),
+                    Grid::rows(1, Self::rows("plain")).spacing(0.0).fill_width(),
                     Grid::new(4, {
                         let mut children = Self::cells("food", ["Food", "Bar", "3480", "62%"]);
                         children.push(ElementFactory::new(

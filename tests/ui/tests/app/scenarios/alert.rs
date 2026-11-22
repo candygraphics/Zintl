@@ -43,7 +43,7 @@ impl View for MainView {
         let echo = |cx: &mut Context<'_>, store: Store<bool>, id: &'static str| {
             cx.watch(store, move |shown| Text::new(format!("{shown}")).id(id))
         };
-        Window::new(Rect::new(100.0, 100.0, 480.0, 360.0), "Zintl Alert UI Test")
+        Window::new("Zintl Alert UI Test").size(Size::new(480.0, 360.0))
             .id("main-window")
             .alert(
                 Alert::new("Delete the route?")

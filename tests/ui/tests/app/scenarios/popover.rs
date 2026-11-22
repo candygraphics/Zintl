@@ -40,7 +40,7 @@ impl View for MainView {
             }),
         ])
         .spacing(8.0);
-        Window::new(Rect::new(100.0, 100.0, 420.0, 300.0), "Zintl Popover UI Test")
+        Window::new("Zintl Popover UI Test").size(Size::new(420.0, 300.0))
             .id("main-window")
             .content(
                 VStack::new(list![

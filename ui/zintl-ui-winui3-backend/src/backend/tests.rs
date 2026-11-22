@@ -28,7 +28,8 @@ impl Nodes {
     fn window(style: WindowStyle) -> RenderNode {
         RenderNode::Window {
             sidebar: None,
-            bounds: Rect::new(0.0, 0.0, 100.0, 100.0),
+            size: zintl_ui_layout::Size::new(100.0, 100.0),
+            position: None,
             title: String::new(),
             title_bar: zintl_ui_backend_core::TitleBar::Standard,
             id: None,

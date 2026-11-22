@@ -55,7 +55,7 @@ pub struct ListSection {
 pub struct TableColumn {
     pub title: String,
     /// The initial rendered width in points; `None` lets the table size it.
-    pub width: Option<f64>,
+    pub width: Option<f32>,
     /// The header's alignment, and the default for text cells that keep the leading alignment.
     pub alignment: TextAlignment,
     /// The key reported when the user sorts by this column; `None` makes it unsortable.

@@ -151,6 +151,16 @@ class ZintlUITestCase: XCTestCase {
     origin.click(forDuration: 0.2, thenDragTo: origin.withOffset(offset))
   }
 
+  /// Drags `window`'s bottom-right resize handle by `offset` points.
+  ///
+  /// The handle is a fixed few points inside the corner, so the drag lands in
+  /// AppKit's resize area whatever the window's size.
+  func resizeWindow(_ window: XCUIElement, by offset: CGVector) {
+    let corner = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1))
+    let handle = corner.withOffset(CGVector(dx: -3, dy: -3))
+    handle.click(forDuration: 0.2, thenDragTo: handle.withOffset(offset))
+  }
+
   /// Counts the pixels in a screenshot of `element` whose sRGB color satisfies `matches`.
   func pixelCount(in element: XCUIElement, where matches: (NSColor) -> Bool) -> Int {
     guard let data = element.screenshot().image.tiffRepresentation,

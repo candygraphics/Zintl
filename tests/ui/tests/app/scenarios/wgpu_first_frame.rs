@@ -88,10 +88,7 @@ impl View for MainView {
         if *cx.get(shown) {
             children.push(ElementFactory::new(canvas));
         }
-        Window::new(
-            Rect::new(100.0, 100.0, 480.0, 320.0),
-            "Zintl Wgpu First Frame UI Test",
-        )
+        Window::new("Zintl Wgpu First Frame UI Test").size(Size::new(480.0, 320.0))
         .id("main-window")
         .content(VStack::new(children).spacing(12.0).fill_width().grow())
     }

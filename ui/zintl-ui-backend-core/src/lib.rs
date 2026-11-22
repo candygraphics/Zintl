@@ -11,6 +11,7 @@ mod model;
 mod signal;
 #[cfg(feature = "wgpu")]
 mod wgpu_canvas;
+mod window;
 
 pub mod headless;
 pub mod layout;
@@ -41,8 +42,9 @@ pub use signal::Signal;
 pub use wgpu;
 #[cfg(feature = "wgpu")]
 pub use wgpu_canvas::{WgpuCanvasHandler, WgpuContext, WgpuError, WgpuSetup, WgpuTarget};
+pub use window::{WindowPlacement, WindowPosition};
 pub use zintl_ui_graphics as graphics;
-pub use zintl_ui_graphics::{Color, Rect};
+pub use zintl_ui_graphics::{Color, Point, Rect};
 use zintl_ui_layout::{LayoutStyle, Size};
 
 pub type MainTask = Box<dyn FnOnce() + Send + 'static>;
@@ -253,7 +255,11 @@ impl ViewKind {
 pub enum RenderNode {
     Window {
         sidebar: Option<Sidebar>,
-        bounds: Rect,
+        /// The size of the content area, below the title bar.
+        size: Size,
+        /// The top-left corner of the frame in screen points, top-left origin;
+        /// `None` centers a new window on the screen.
+        position: Option<Point>,
         title: String,
         title_bar: TitleBar,
         id: Option<String>,

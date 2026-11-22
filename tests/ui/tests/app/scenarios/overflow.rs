@@ -43,10 +43,7 @@ impl View for MainView {
                 .id("table-scroll"),
         ])
         .grow();
-        Window::new(
-            Rect::new(100.0, 100.0, 520.0, 320.0),
-            "Zintl Overflow UI Test",
-        )
+        Window::new("Zintl Overflow UI Test").size(Size::new(520.0, 320.0))
         .id("main-window")
         .content(
             SplitView::horizontal(VStack::new(list![Text::new("List")]).grow(), detail)

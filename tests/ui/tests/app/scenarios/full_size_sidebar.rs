@@ -13,10 +13,7 @@ impl View for MainView {
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
-        Window::new(
-            Rect::new(100.0, 100.0, 640.0, 400.0),
-            "Zintl Full-size Sidebar UI Test",
-        )
+        Window::new("Zintl Full-size Sidebar UI Test").size(Size::new(640.0, 400.0))
         .id("main-window")
         .title_bar(TitleBar::Overlay)
         .sidebar(

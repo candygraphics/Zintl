@@ -55,7 +55,7 @@ impl View for MainView {
                 Text::new(if *on { "On" } else { "Off" }).id(id)
             })
         };
-        Window::new(Rect::new(100.0, 100.0, 420.0, 440.0), "Zintl Toggles UI Test")
+        Window::new("Zintl Toggles UI Test").size(Size::new(420.0, 440.0))
             .id("main-window")
             .content(
                 VStack::new(list![

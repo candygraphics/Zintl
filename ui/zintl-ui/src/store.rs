@@ -1,4 +1,5 @@
 use crate::hook::{Hook, HookId};
+use crate::view::Context;
 use std::marker::PhantomData;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -53,9 +54,16 @@ impl<T: 'static> Store<T> {
         }
     }
 
+    /// Returns the handle, panicking at the caller when the Store is uninitialized.
+    #[track_caller]
     pub(crate) fn handle(self) -> StoreHandle {
-        self.handle
-            .expect("Store was used before View::init initialized it")
+        match self.handle {
+            Some(handle) => handle,
+            None => panic!(
+                "Store<{}> was used before View::init initialized it",
+                std::any::type_name::<T>()
+            ),
+        }
     }
 }
 
@@ -66,10 +74,9 @@ impl<T: 'static> Default for Store<T> {
 }
 
 impl<T: 'static> Hook for Store<T> {
+    #[track_caller]
     fn hook_id(&self) -> HookId {
-        self.handle
-            .expect("Store was used before View::init initialized it")
-            .hook_id
+        self.handle().hook_id
     }
 }
 
@@ -110,5 +117,59 @@ impl<T: 'static> Trigger<T> {
 impl<T: 'static> Default for Trigger<T> {
     fn default() -> Self {
         Self::uninitialized()
+    }
+}
+
+/// State a view owns itself unless the app binds a Store to it, such as
+/// whether a disclosure group is expanded.
+///
+/// Call [`Local::init`] from [`crate::view::View::init`]; [`Local::store`]
+/// then returns the bound Store, or one holding the initial value.
+#[derive(Clone, Debug)]
+pub struct Local<T: 'static> {
+    initial: T,
+    bound: Option<Store<T>>,
+    store: Store<T>,
+}
+
+impl<T: Clone + 'static> Local<T> {
+    /// Creates local state that starts at `initial` unless a Store is bound.
+    pub fn new(initial: T) -> Self {
+        Self {
+            initial,
+            bound: None,
+            store: Store::uninitialized(),
+        }
+    }
+
+    /// Uses `store` instead of local state; the initial value is then ignored.
+    pub fn bind(&mut self, store: Store<T>) {
+        self.bound = Some(store);
+    }
+
+    /// Replaces the value local state starts at.
+    pub fn set_initial(&mut self, initial: T) {
+        self.initial = initial;
+    }
+
+    /// Returns the value local state starts at.
+    pub fn initial(&self) -> &T {
+        &self.initial
+    }
+
+    /// Picks the bound Store, or creates local state; call it from `View::init`.
+    ///
+    /// A remounted view gets the same local Store back, as with
+    /// [`Context::store`].
+    pub fn init<'a>(&mut self, cx: &mut impl Context<'a>) {
+        self.store = match self.bound {
+            Some(store) => store,
+            None => cx.store(self.initial.clone()),
+        };
+    }
+
+    /// Returns the Store chosen by [`Local::init`].
+    pub fn store(&self) -> Store<T> {
+        self.store
     }
 }

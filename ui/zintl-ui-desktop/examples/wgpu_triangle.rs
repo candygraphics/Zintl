@@ -251,32 +251,30 @@ impl View for TriangleExample {
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let spin = self.spin;
-        Window::new(Rect::new(120.0, 120.0, 640.0, 520.0), "wgpu Triangle").content(
-            VStack::new(list![
-                cx.watch(spin, move |on| {
-                    Toggle::new("Spin")
-                        .on(*on)
-                        .on_change(move |cx, on| cx.update(spin, |spin| *spin = on))
-                }),
-                cx.watch(spin, |on| {
-                    let redraw = if *on {
-                        RedrawPolicy::Continuous {
-                            preferred_fps: None,
-                        }
-                    } else {
-                        RedrawPolicy::OnDemand
-                    };
-                    WgpuCanvas::new(Triangle::new(*on))
-                        .redraw(redraw)
-                        .fill_width()
-                        .grow()
-                }),
-            ])
-            .spacing(12.0)
-            .padding(16.0)
-            .fill_width()
-            .grow(),
-        )
+        Window::new("wgpu Triangle")
+            .size(Size::new(640.0, 520.0))
+            .content(
+                VStack::new(list![
+                    Toggle::new("Spin").bind(spin),
+                    cx.watch(spin, |on| {
+                        let redraw = if *on {
+                            RedrawPolicy::Continuous {
+                                preferred_fps: None,
+                            }
+                        } else {
+                            RedrawPolicy::OnDemand
+                        };
+                        WgpuCanvas::new(Triangle::new(*on))
+                            .redraw(redraw)
+                            .fill_width()
+                            .grow()
+                    }),
+                ])
+                .spacing(12.0)
+                .padding(16.0)
+                .fill_width()
+                .grow(),
+            )
     }
 }
 

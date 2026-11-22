@@ -62,7 +62,7 @@ impl View for MainView {
         };
         list![
             menu,
-            Window::new(Rect::new(100.0, 100.0, 420.0, 240.0), "Zintl Main Menu UI Test")
+            Window::new("Zintl Main Menu UI Test").size(Size::new(420.0, 240.0))
                 .id("main-window")
                 .content(
                     VStack::new(list![

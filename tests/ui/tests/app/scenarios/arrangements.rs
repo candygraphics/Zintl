@@ -46,10 +46,8 @@ impl View for MainView {
         .enumerate()
         .map(|(index, text)| ElementFactory::new(Text::new(text).id(format!("cell-{index}"))))
         .collect::<Vec<_>>();
-        Window::new(
-            Rect::new(100.0, 100.0, 520.0, 520.0),
-            "Zintl Arrangements UI Test",
-        )
+        let cells = cells.chunks(2).map(|row| GridRow::new(row.to_vec()));
+        Window::new("Zintl Arrangements UI Test").size(Size::new(520.0, 520.0))
         .id("main-window")
         .content(
             VStack::new(list![
@@ -57,7 +55,7 @@ impl View for MainView {
                         Text::new("Preview area").id("preview"),
                         Text::new("Updating").id("overlay"),
                     ]),
-                    Grid::new(2, cells).striped(true).spacing(8.0).id("grid"),
+                    Grid::rows(2, cells).striped(true).spacing(8.0).id("grid"),
                     DisclosureGroup::new("Line settings", Text::new("Gauge 1067").id("details"))
                         .bind(self.expanded)
                         .id("disclosure"),
