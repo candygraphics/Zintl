@@ -3,34 +3,24 @@
 `ui/` 配下、主に `zintl-ui-desktop` と `zintl-ui-native` の API を揃えるための計画でした。
 クロスプラットフォーム対応の評価は対象外です。
 
-ステップ 1〜8(共通モディファイア、ラッパー層の廃止、値とコールバック、選択と ID、公開面、利用者定義ビュー、ビューの状態、細かい不揃い)はすべて完了しました。
+ステップ 1〜8 はすべて完了しました。内訳は、共通モディファイア、ラッパー層の廃止、値とコールバック、選択と ID、公開面、利用者定義ビュー、ビューの状態、細かい不揃いです。
 使い方は `ui/zintl-ui-desktop/README.md` と `ui/zintl-ui-desktop/examples/custom_view.rs` を参照してください。
+後で拾う価値のある課題は `TODO.md` に移しています。
 
-## 決定事項
+## 見送ったこと
 
-各ステップで未決だった点の結論です。見送ったものは、再開するときの前提として残します。
+再開するときの前提として、採らなかった案とその理由を残します。
 
-### 利用者定義ビュー(ステップ 6)
-
-- **`Event` の統合は行わない。** サイドバーとツールバーのイベントはウィンドウ宛てで、統合には送信元を区別するフィールドが要ります。効果に対して変更が大きいためです。
-- **`Palette` に `separator` と `alternating_row` を追加した。** AppKit は `NSColor.separatorColor` と `alternatingContentBackgroundColors[1]` を外観ごとに解決します。WinUI は従来どおり `Palette::LIGHT` の固定値です。
-- **実測ベースの文字幅 API は用意しない。** 見積もりは `TextEstimate` に一本化しました。AppKit はコントロールとラベルの最小サイズを実測で引き上げるため、見積もりは下限として働きます。必要になったら `Context` 経由で問い合わせ、ヘッドレスでは `TextEstimate` に戻す形にします。
-- 外部クレートは `ViewKind` を追加できません。拡張手段は合成、`Canvas2D`、`WgpuCanvas` です(`render` モジュールの doc に記載)。
-
-### ビューの状態(ステップ 7)
-
-- **`Toggle` / `Picker` / `TabView` に非制御モードは与えない。** 値を表示する制御コンポーネントのままにします(ステップ 3 の規則 4)。内部状態が欲しい合成ビューは `Local<T>` で自作できます。
-- **名前は `Local<T>`。** `zintl_ui::store` に置き、`zintl-ui-desktop` の直下から再公開しています。
-- **要確認事項の結果**: 旧 `SplitView` はドラッグ中に親が再描画されると掴み位置を失っていました。掴み位置を `Divider` ハンドラに移して修正し、回帰テスト `split_view_drag_survives_a_rebuild_of_its_parent` を追加しました。
-
-### 細かい不揃い(ステップ 8)
-
-- **`Window` の既定サイズは 640 × 480、パネルは 320 × 400。** 位置を省略すると画面中央に開きます。
-- **ラベルの無いアイコンボタンは警告しない。** 親にラベルがある場合などで誤検出しやすく、出力先も決められないためです。`Button::icon` の doc で `accessibility_label` を案内します。
-- **`TextEditor` にプレーンテキストのバインドは足さない。** `AttributedText::from(&str)` と `AttributedText::text` で変換します。
-- **`system_image` は SF Symbols 名の `String` のまま。** クロスプラットフォーム評価を始めるときに、`Button`、`SidebarItem`、`ToolbarItem` を同時に `Symbol` 型へ置き換えます。
-- `Grid` の縞は `Grid::rows` と `GridRow` で作ったグリッドだけに付きます(案 A)。`Grid::new` は従来どおり子を順に流し込み、`GridCell` で列を結合します。
-- ヘルプボタンは `ButtonStyle::Help` をやめ、`Button::help()` にしました。
+| 項目 | 理由 |
+|---|---|
+| `Event` の統合(選択系 3 つ、テキスト系 3 つ) | サイドバーとツールバーのイベントは宛先がウィンドウです。統合には送信元を区別するフィールドが要り、両バックエンドのイベント送出を書き換えることになります。効果に対して変更が大きいため見送りました。 |
+| 実測ベースの文字幅 API | 実測はすでにレイアウト時に行われています(`LayoutNative::measure_wrapping`)。広げるなら、ラベルとボタンの幅もレイアウト時に測る方向にします(`TODO.md`)。 |
+| `Toggle` / `Picker` / `TabView` の非制御モード | ステップ 3 で決めた「離散的なコントロールは常に `value` を表示する」規則の例外になるためです。また、`init` を持つ型が増えます。状態を変えるには `bind` します。 |
+| アイコンボタンのラベル欠落の警告 | `Button::icon` がラベルを必須の引数にしたので不要です。 |
+| `TextEditor` のプレーンテキストバインド | 貼り付けた書式を落とす設定をバックエンドに足す必要があり、別の機能になります(`TODO.md`)。 |
+| `system_image` の `Symbol` 型化 | クロスプラットフォーム評価の範囲です。そのときは `Button::icon`、`Button::system_image`、`SidebarItem::system_image`、`ToolbarItem::button` を同時に変えます。 |
+| `MainAxisDistribution::SpaceAround` / `SpaceEvenly` | 使う箇所がありません。 |
+| `Grid` の縞をレイアウト後の行位置に敷く案 | レイアウト結果を Canvas に渡す仕組みが要るためです。`Grid` は `GridRow` で行単位に受け取ります。 |
 
 ## 現状の層構造
 
