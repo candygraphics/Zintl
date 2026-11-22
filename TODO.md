@@ -28,3 +28,15 @@
   `ListView`.
 - Rich text links are written with `ITextRange::Link` but have not been checked
   in a running app.
+
+## Layout and text follow-ups
+
+- Measure labels and buttons at layout time. `TextEstimate` only guesses a
+  minimum width from the character count; backends already measure wrapping
+  labels through `LayoutNative::measure_wrapping`. Extending that to the
+  natural width of labels and button titles would replace the estimate on
+  AppKit and WinUI and keep it only for the headless backend.
+- A plain-text `TextEditor` bound to `Store<String>`. It needs a backend flag
+  that drops pasted formatting (`NSTextView.isRichText = false` on macOS, a
+  plain `TextBox` or `RichEditBox` text mode on Windows), not only a
+  conversion through `AttributedText::from` and `AttributedText::text`.
