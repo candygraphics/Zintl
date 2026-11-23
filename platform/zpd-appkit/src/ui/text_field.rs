@@ -82,6 +82,8 @@ impl TextAlignment {
 pub struct TextField {
     view: ViewActor,
     accessory: AccessorySlot,
+    /// Whether the cell's accessibility role was written, so it is kept up to date.
+    sets_role: std::cell::Cell<bool>,
 }
 impl TextField {
     pub fn with_string(application: &Application, value: &str) -> Result<Self, UiError> {
@@ -144,6 +146,7 @@ impl TextField {
         Ok(Self {
             view,
             accessory: AccessorySlot::default(),
+            sets_role: std::cell::Cell::new(false),
         })
     }
     pub fn set_string_value(&self, value: &str) -> Result<(), UiError> {
@@ -165,10 +168,12 @@ impl TextField {
             zpd_objc::msg_send!(field, zpd_objc::sel!("setPlaceholderString:"), ((value.as_ref().map_or(zpd_objc::NIL, Strong::as_ptr)): zpd_objc::Id) => ());
         })
     }
+    /// Allows or prevents typing; a field with a border then stays a text field to accessibility.
     pub fn set_editable(&self, editable: bool) -> Result<(), UiError> {
         self.view.as_view().with(|field| unsafe {
             zpd_objc::msg_send!(field, zpd_objc::sel!("setEditable:"), ((editable): bool) => ())
-        })
+        })?;
+        self.update_accessibility_role()
     }
     pub fn set_selectable(&self, selectable: bool) -> Result<(), UiError> {
         self.view.as_view().with(|field| unsafe {
@@ -178,6 +183,30 @@ impl TextField {
     pub fn set_bordered(&self, bordered: bool) -> Result<(), UiError> {
         self.view.as_view().with(|field| unsafe {
             zpd_objc::msg_send!(field, zpd_objc::sel!("setBordered:"), ((bordered): bool) => ())
+        })?;
+        self.update_accessibility_role()
+    }
+    /// Reports a read-only field with a border as a text field rather than static text.
+    ///
+    /// AppKit reports every non-editable field as static text. Once written,
+    /// the role follows later changes, since AppKit cannot restore its own.
+    fn update_accessibility_role(&self) -> Result<(), UiError> {
+        self.view.as_view().with(|field| {
+            // SAFETY: The live view is an NSTextField whose cell implements NSAccessibility and
+            // copies the role string.
+            unsafe {
+                let editable = zpd_objc::msg_send!(field, zpd_objc::sel!("isEditable"), () => bool);
+                let framed = zpd_objc::msg_send!(field, zpd_objc::sel!("isBezeled"), () => bool)
+                    || zpd_objc::msg_send!(field, zpd_objc::sel!("isBordered"), () => bool);
+                let read_only = !editable && framed;
+                if !read_only && !self.sets_role.get() {
+                    return;
+                }
+                self.sets_role.set(true);
+                let role = if editable || framed { "AXTextField" } else { "AXStaticText" };
+                let cell = zpd_objc::msg_send!(field, zpd_objc::sel!("cell"), () => zpd_objc::Id);
+                zpd_objc::msg_send!(cell, zpd_objc::sel!("setAccessibilityRole:"), ((native::nsstring(role).as_ptr()): zpd_objc::Id) => ());
+            }
         })
     }
     pub fn set_draws_background(&self, draws_background: bool) -> Result<(), UiError> {

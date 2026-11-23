@@ -522,6 +522,7 @@ pub struct NumberField {
     suffix: String,
     store: Option<Store<f64>>,
     action: Option<Rc<Change<f64>>>,
+    editable: bool,
     focus: Option<Trigger>,
     accessory: Option<FieldAccessory>,
     layout: LayoutStyle,
@@ -541,6 +542,7 @@ impl NumberField {
             suffix: String::new(),
             store: None,
             action: None,
+            editable: true,
             focus: None,
             accessory: None,
             layout: LayoutStyle::leaf(Size::new(100.0, 22.0)),
@@ -588,6 +590,16 @@ impl NumberField {
     /// Appends `suffix`, such as `" m"`, to the shown text; typed text may omit it.
     pub fn suffix(mut self, suffix: impl Into<String>) -> Self {
         self.suffix = suffix.into();
+        self
+    }
+
+    /// Makes the field read-only with `false`.
+    ///
+    /// It hides the stepper and keeps its border; its text can still be
+    /// selected and copied. It shows `value` or the bound Store and never
+    /// runs `on_change`. Unlike `enabled(false)`, it is not dimmed.
+    pub fn editable(mut self, editable: bool) -> Self {
+        self.editable = editable;
         self
     }
 
@@ -664,6 +676,7 @@ impl NativeView for NumberField {
                 },
                 text: self.formats_text().then(|| self.format(value)),
                 placeholder: None,
+                editable: self.editable,
                 focus: self.focus.map_or(0, |trigger| cx.revision(trigger.store())),
                 accessory: FieldAccessory::native(&self.accessory),
             },
@@ -675,6 +688,10 @@ impl NativeView for NumberField {
             accessibility: Default::default(),
         });
         let element = FieldAccessory::route(&self.accessory, element);
+        // A read-only field reports no edits.
+        if !self.editable {
+            return element;
+        }
         let binding = || ChangeRoute::new(self.store, self.action.clone());
         let (minimum, maximum) = (self.minimum, self.maximum);
         let element = binding().route(element, EventKind::ValueChanged, move |event| match event {
@@ -756,6 +773,7 @@ pub struct IntegerField<T: IntegerValue = i64> {
     placeholder: Option<String>,
     store: Option<Store<T>>,
     action: Option<Rc<Change<T>>>,
+    editable: bool,
     focus: Option<Trigger>,
     accessory: Option<FieldAccessory>,
     layout: LayoutStyle,
@@ -793,6 +811,7 @@ impl<T: IntegerValue> IntegerField<T> {
             placeholder: None,
             store: None,
             action: None,
+            editable: true,
             focus: None,
             accessory: None,
             layout: LayoutStyle::leaf(Size::new(100.0, 22.0)),
@@ -826,6 +845,16 @@ impl<T: IntegerValue> IntegerField<T> {
     /// Appends `suffix`, such as `" pcs"`, to the shown text; typed text may omit it.
     pub fn suffix(mut self, suffix: impl Into<String>) -> Self {
         self.suffix = suffix.into();
+        self
+    }
+
+    /// Makes the field read-only with `false`.
+    ///
+    /// It hides the stepper and keeps its border; its text can still be
+    /// selected and copied. It shows `value` or the bound Store and never
+    /// runs `on_change`. Unlike `enabled(false)`, it is not dimmed.
+    pub fn editable(mut self, editable: bool) -> Self {
+        self.editable = editable;
         self
     }
 
@@ -938,6 +967,7 @@ impl<T: IntegerValue> NativeView for IntegerField<T> {
                 },
                 text: Some(self.format(value)),
                 placeholder: self.placeholder.clone(),
+                editable: self.editable,
                 focus: self.focus.map_or(0, |trigger| cx.revision(trigger.store())),
                 accessory: FieldAccessory::native(&self.accessory),
             },
@@ -949,6 +979,10 @@ impl<T: IntegerValue> NativeView for IntegerField<T> {
             accessibility: Default::default(),
         });
         let element = FieldAccessory::route(&self.accessory, element);
+        // A read-only field reports no edits.
+        if !self.editable {
+            return element;
+        }
         let binding = || ChangeRoute::new(self.store, self.action.clone());
         let field = self.clone();
         let element = binding().route(element, EventKind::ValueChanged, move |event| match event {

@@ -346,6 +346,53 @@ fn main() {
     Checks::send_action(button);
     assert_eq!(take(), vec![WindowEventKind::AccessoryClicked]);
 
+    // Verifies a read-only number field hides its stepper, gives its text field the whole width,
+    // keeps the text selectable, and stays a text field to accessibility.
+    // SAFETY: The cell and views are live; the role is an autoreleased NSString.
+    let role = |field: Id| unsafe {
+        let cell = zpd_objc::msg_send!(field, zpd_objc::sel!("cell"), () => Id);
+        rust_string(zpd_objc::msg_send!(cell, zpd_objc::sel!("accessibilityRole"), () => Id))
+    };
+    // SAFETY: The view is live.
+    let width = |view: Id| unsafe { zpd_objc::msg_send!(view, zpd_objc::sel!("frame"), () => NsRect).width };
+    let container_width = width(number_native);
+    let editable_width = width(field);
+    number.set_editable(false).unwrap();
+    // SAFETY: The field and stepper are live.
+    let (editable, selectable, stepper_hidden) = unsafe {
+        (
+            zpd_objc::msg_send!(field, zpd_objc::sel!("isEditable"), () => bool),
+            zpd_objc::msg_send!(field, zpd_objc::sel!("isSelectable"), () => bool),
+            zpd_objc::msg_send!(stepper, zpd_objc::sel!("isHidden"), () => bool),
+        )
+    };
+    assert!(!editable && selectable && stepper_hidden);
+    assert_eq!(width(field), container_width);
+    assert_eq!(role(field), "AXTextField");
+    number.set_editable(true).unwrap();
+    // SAFETY: The stepper is live.
+    assert!(!unsafe { zpd_objc::msg_send!(stepper, zpd_objc::sel!("isHidden"), () => bool) });
+    assert_eq!(width(field), editable_width);
+
+    // Verifies a read-only text field with a border stays a text field to accessibility, while a
+    // label is static text, even after switching between them.
+    let read_only = TextField::with_string(&application, "Expense").unwrap();
+    content.add_subview(&read_only).unwrap();
+    let read_only_native = Checks::native(&read_only);
+    read_only.set_editable(false).unwrap();
+    assert_eq!(role(read_only_native), "AXTextField");
+    read_only.set_selectable(false).unwrap();
+    read_only.set_bordered(false).unwrap();
+    assert_eq!(role(read_only_native), "AXStaticText");
+    read_only.set_editable(true).unwrap();
+    read_only.set_bordered(true).unwrap();
+    assert_eq!(role(read_only_native), "AXTextField");
+    // A selectable label is still static text.
+    let label = TextField::label_with_string(&application, "1,234").unwrap();
+    content.add_subview(&label).unwrap();
+    label.set_selectable(true).unwrap();
+    assert_eq!(role(Checks::native(&label)), "AXStaticText");
+
     // Verifies the general pasteboard round-trips plain text; the previous text is put back.
     let previous = Pasteboard::string();
     Pasteboard::set_string("zintl pasteboard check");

@@ -313,6 +313,7 @@ fn label(line_limit: Option<usize>) -> ViewKind {
             ..Default::default()
         },
         focus: 0,
+        accessory: None,
     }
 }
 
@@ -329,13 +330,19 @@ fn view_kinds_choose_matching_controls() {
         multiline: false,
         style: Default::default(),
         focus: 0,
+        accessory: None,
     };
     assert_eq!(
         NativeNode::control_kind(&field(true)),
         Some(ControlKind::TextBox)
     );
+    // Read-only fields keep their text box; only borderless labels are text blocks.
     assert_eq!(
         NativeNode::control_kind(&field(false)),
+        Some(ControlKind::TextBox)
+    );
+    assert_eq!(
+        NativeNode::control_kind(&label(None)),
         Some(ControlKind::TextBlock)
     );
     let button = |button_type| {

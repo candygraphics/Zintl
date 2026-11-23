@@ -65,6 +65,7 @@ scenarios! {
     perform_main => "perform-main": |_| perform_main::MainView::new(),
     pickers => "pickers": |_| pickers::MainView::new(),
     popover => "popover": |_| popover::MainView::new(),
+    read_only_field => "read-only-field": |_| read_only_field::MainView::new(),
     scroll_status => "scroll-status": |_| scroll_status::MainView::default(),
     selectable_text => "selectable-text": |_| selectable_text::MainView::new(),
     sidebar_features => "sidebar-features": |_| sidebar_features::MainView::new(),

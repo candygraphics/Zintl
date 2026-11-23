@@ -193,7 +193,7 @@ impl NativeNode {
             | ViewKind::DatePicker { .. } => (true, true),
             // Wrapping labels need a width before they have a height.
             ViewKind::TextField {
-                editable: false,
+                bordered: false,
                 multiline: false,
                 style,
                 ..
@@ -220,7 +220,7 @@ impl NativeNode {
     ) -> Result<Option<Size>, UiError> {
         let (
             ViewKind::TextField {
-                editable: false,
+                bordered: false,
                 multiline: false,
                 style,
                 ..
@@ -441,14 +441,16 @@ impl NativeNode {
                 if old_field.is_none_or(|old| old.0 != placeholder) {
                     field.set_placeholder_string(placeholder.as_deref())?;
                 }
+                // The border comes first, so a new label is never a read-only field with a
+                // bezel, which would make the field write its own accessibility role.
+                if old_field.is_none_or(|old| old.3 != bordered) {
+                    field.set_bordered(*bordered)?;
+                }
                 if old_field.is_none_or(|old| old.1 != editable) {
                     field.set_editable(*editable)?;
                 }
                 if old_field.is_none_or(|old| old.2 != selectable) {
                     field.set_selectable(*selectable)?;
-                }
-                if old_field.is_none_or(|old| old.3 != bordered) {
-                    field.set_bordered(*bordered)?;
                 }
                 if old_field.is_none_or(|old| old.4 != draws_background) {
                     field.set_draws_background(*draws_background)?;
@@ -572,10 +574,19 @@ impl NativeNode {
                     format,
                     text,
                     placeholder,
+                    editable,
                     accessory,
                     ..
                 },
             ) => {
+                // New fields start editable.
+                let was_editable = match old {
+                    Some(ViewKind::NumberField { editable, .. }) => *editable,
+                    _ => true,
+                };
+                if was_editable != *editable {
+                    field.set_editable(*editable)?;
+                }
                 if !matches!(old, Some(ViewKind::NumberField { accessory: old, .. }) if old == accessory)
                 {
                     field.set_accessory(accessory.as_ref().map(Native::native).as_ref())?;

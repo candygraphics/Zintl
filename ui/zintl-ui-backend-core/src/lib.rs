@@ -79,8 +79,10 @@ pub enum ViewKind {
     TextField {
         value: String,
         placeholder: Option<String>,
+        /// Read-only fields keep their text selectable but never report edits.
         editable: bool,
         selectable: bool,
+        /// Fields without a border are labels, sized from their text.
         bordered: bool,
         draws_background: bool,
         multiline: bool,
@@ -127,6 +129,8 @@ pub enum ViewKind {
         text: Option<String>,
         /// Text shown while the field is empty.
         placeholder: Option<String>,
+        /// Read-only fields hide the stepper and never report edits; their text stays selectable.
+        editable: bool,
         /// Each increase makes the field take keyboard focus.
         focus: u64,
         accessory: Option<FieldAccessory>,

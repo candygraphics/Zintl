@@ -924,6 +924,7 @@ fn number_field_clamps_entered_values() {
                 },
                 text: None,
                 placeholder: None,
+                editable: true,
                 focus: 0,
                 accessory: None,
             },
@@ -3687,4 +3688,123 @@ fn selectable_text_stays_a_label() {
         (false, true, false)
     );
     assert_eq!(flags(Text::new("1,234")), (false, false, false));
+}
+
+#[test]
+fn read_only_text_fields_keep_their_frame_and_ignore_edits() {
+    // Verifies a read-only field keeps its border, stays selectable, follows its Store, and reports no edits.
+    let changes = Calls::default();
+    let (change, commit) = (changes.clone(), changes.clone());
+    let (mut app, kind) = WithStores::mount(
+        |cx| cx.store(String::from("Expense")),
+        move |kind| {
+            let (change, commit) = (change.action(), commit.action());
+            TextField::new()
+                .bind(kind)
+                .editable(false)
+                .on_change(move |cx, _| change(cx))
+                .on_commit(move |cx, _| commit(cx))
+                // The accessory gives the field a route, so edits can be sent to it.
+                .accessory(FieldAccessory::button("doc.on.doc", "Copy").on_click(|_| {}))
+                .id("kind")
+        },
+    );
+    let field = |app: &Harness| match app.tree().value {
+        RenderNode::View {
+            kind:
+                ViewKind::TextField {
+                    value,
+                    editable,
+                    selectable,
+                    bordered,
+                    draws_background,
+                    ..
+                },
+            ..
+        } => (value, editable, selectable, bordered, draws_background),
+        other => panic!("expected a text field, got {other:?}"),
+    };
+    assert_eq!(field(&app), ("Expense".into(), false, true, true, true));
+
+    let typed = Event::TextChanged {
+        value: "Income".into(),
+    };
+    assert!(!app.dispatch_to("kind", typed));
+    let committed = Event::TextCommitted {
+        value: "Income".into(),
+    };
+    assert!(!app.dispatch_to("kind", committed));
+    assert_eq!(changes.count(), 0);
+    assert_eq!(app.get(kind), "Expense");
+
+    // The shown value still follows the Store.
+    app.set(kind, String::from("Transfer"));
+    assert_eq!(field(&app).0, "Transfer");
+}
+
+#[test]
+fn read_only_text_fields_size_like_fields() {
+    // Verifies a read-only field keeps an input's size instead of a label's text-based size.
+    let size = |field: TextField| match Harness::new(field).tree().value {
+        RenderNode::View { layout, .. } => (layout.minimum_size, layout.wraps),
+        other => panic!("expected a text field, got {other:?}"),
+    };
+
+    assert_eq!(
+        size(
+            TextField::new()
+                .value("Long text")
+                .editable(false)
+                .font(Font::system(15.0))
+        ),
+        size(TextField::new().value("Long text").font(Font::system(15.0)))
+    );
+}
+
+#[test]
+fn read_only_number_fields_ignore_edits() {
+    // Verifies read-only integer and number fields say so to the backend and leave their Stores alone on input.
+    let changes = Calls::default();
+    let change = changes.clone();
+    let (mut app, (count, amount)) = WithStores::mount(
+        |cx| (cx.store(1_234_i64), cx.store(2.5_f64)),
+        move |(count, amount)| {
+            let change = change.action();
+            VStack::new(list![
+                // The accessories give the fields routes, so edits can be sent to them.
+                IntegerField::new()
+                    .bind(count)
+                    .grouping(true)
+                    .editable(false)
+                    .on_change(move |cx, _| change(cx))
+                    .accessory(FieldAccessory::button("doc.on.doc", "Copy").on_click(|_| {})),
+                NumberField::new()
+                    .bind(amount)
+                    .editable(false)
+                    .accessory(FieldAccessory::button("doc.on.doc", "Copy").on_click(|_| {})),
+            ])
+        },
+    );
+    let editable = |node: &RenderedNode| match &node.value {
+        RenderNode::View {
+            kind: ViewKind::NumberField { editable, text, .. },
+            ..
+        } => (*editable, text.clone()),
+        other => panic!("expected a number field, got {other:?}"),
+    };
+    let tree = app.tree();
+    assert_eq!(editable(&tree.children[0]), (false, Some("1,234".into())));
+    assert!(!editable(&tree.children[1]).0);
+
+    for event in [
+        Event::ValueChanged { value: 9.0 },
+        Event::TextChanged { value: "9".into() },
+        Event::TextCommitted { value: "9".into() },
+    ] {
+        assert!(!app.dispatch(&[0, 0], event.clone()));
+        assert!(!app.dispatch(&[0, 1], event));
+    }
+    assert_eq!(changes.count(), 0);
+    assert_eq!(app.get(count), 1_234);
+    assert_eq!(app.get(amount), 2.5);
 }

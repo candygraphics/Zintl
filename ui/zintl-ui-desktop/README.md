@@ -160,20 +160,14 @@ clears the editor's undo history, since it describes the replaced text.
 `Text::selectable(true)` lets the user select a displayed value and copy it,
 while it still looks like plain text. In a table, the first click selects the
 row and a click on the selected row's text selects the text.
+`TextField`, `IntegerField`, and `NumberField` take `editable(false)` for a
+value shown in a form that cannot be changed: the field keeps its border and
+is not dimmed, its text can be selected and copied, it shows the bound Store,
+and it never runs `on_change`. Number fields hide their stepper.
 
 ```rust,ignore
 Text::new(format_amount(total)).selectable(true).id("total");
-```
-
-Actions read and write plain text on the system clipboard with
-`cx.clipboard()`; the test `Harness` keeps its own clipboard instead.
-
-```rust,ignore
-Button::new("Copy").on_click(move |cx| {
-    let text = cx.get(result).to_string();
-    cx.clipboard().set_text(text);
-});
-let pasted: Option<String> = cx.clipboard().text();
+TextField::new().value(kind_label).editable(false).id("kind");
 ```
 
 Actions read and write plain text on the system clipboard with

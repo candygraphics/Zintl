@@ -649,6 +649,36 @@ impl NumberField {
         })?;
         Ok(())
     }
+    /// Allows or prevents typing; a read-only field hides its stepper and widens its text field.
+    ///
+    /// Its text stays selectable, and it is still a text field to accessibility.
+    pub fn set_editable(&self, editable: bool) -> Result<(), UiError> {
+        let width = self.view.as_view().with(|container| {
+            // SAFETY: The live container reports its bounds.
+            unsafe { zpd_objc::msg_send!(container, zpd_objc::sel!("bounds"), () => native::Rect) }
+                .size
+                .width
+        })?;
+        let stepper = if editable {
+            Self::STEPPER_WIDTH + Self::SPACING
+        } else {
+            0.0
+        };
+        self.field.with(|field| {
+            // SAFETY: The live field and its cell accept these setters; the cell copies the role.
+            unsafe {
+                zpd_objc::msg_send!(field, zpd_objc::sel!("setEditable:"), ((editable): bool) => ());
+                zpd_objc::msg_send!(field, zpd_objc::sel!("setSelectable:"), ((true): bool) => ());
+                // AppKit reports non-editable fields as static text.
+                let cell = zpd_objc::msg_send!(field, zpd_objc::sel!("cell"), () => Id);
+                zpd_objc::msg_send!(cell, zpd_objc::sel!("setAccessibilityRole:"), ((native::nsstring("AXTextField").as_ptr()): Id) => ());
+                let mut frame = zpd_objc::msg_send!(field, zpd_objc::sel!("frame"), () => native::Rect);
+                frame.size.width = (width - stepper).max(0.0);
+                zpd_objc::msg_send!(field, zpd_objc::sel!("setFrame:"), ((frame): native::Rect) => ());
+            }
+        })?;
+        ViewRef::from_actor(&self.stepper).set_hidden(!editable)
+    }
     /// Returns the text field, which VoiceOver reads as the number.
     pub fn accessibility_view(&self) -> ViewRef<'_> {
         ViewRef::from_actor(&self.field)

@@ -157,7 +157,7 @@ impl NativeNode {
                 ButtonType::Checkbox => ControlKind::CheckBox,
                 ButtonType::Radio => ControlKind::RadioButton,
             },
-            ViewKind::TextField { editable: true, .. } => ControlKind::TextBox,
+            ViewKind::TextField { bordered: true, .. } => ControlKind::TextBox,
             // No native date picker yet: the view parses the ISO date typed into a text box.
             ViewKind::DatePicker { .. } => ControlKind::TextBox,
             ViewKind::TextField { .. } => ControlKind::TextBlock,
@@ -239,7 +239,7 @@ impl NativeNode {
                 (text(&button.title) + icon + 28.0, 28.0)
             }
             ViewKind::TextField {
-                editable: false,
+                bordered: false,
                 multiline: false,
                 style,
                 value,
@@ -253,7 +253,7 @@ impl NativeNode {
                 };
                 (width, 20.0)
             }
-            ViewKind::TextField { editable: true, .. }
+            ViewKind::TextField { bordered: true, .. }
             | ViewKind::Slider { .. }
             | ViewKind::ComboBox { .. }
             | ViewKind::SearchField { .. } => (0.0, 28.0),
@@ -287,7 +287,7 @@ impl NativeNode {
         match (kind, declared) {
             (
                 ViewKind::TextField {
-                    editable: false,
+                    bordered: false,
                     multiline: false,
                     style,
                     ..
@@ -306,7 +306,7 @@ impl NativeNode {
         if !matches!(
             kind,
             ViewKind::TextField {
-                editable: false,
+                bordered: false,
                 multiline: false,
                 ..
             }
@@ -736,6 +736,7 @@ impl NativeNode {
                         draws_background,
                         multiline,
                         style,
+                        editable,
                         ..
                     }) => Some((
                         value,
@@ -745,6 +746,7 @@ impl NativeNode {
                         draws_background,
                         multiline,
                         style,
+                        editable,
                     )),
                     _ => None,
                 };
@@ -758,7 +760,11 @@ impl NativeNode {
                 if old.is_none_or(|old| old.6 != style || old.5 != multiline) {
                     control.set_text_style(&Self::text_style(style))?;
                 }
-                if *editable {
+                // Fields with a border are text boxes; the others are labels.
+                if *bordered {
+                    if old.is_none_or(|old| old.7 != editable) {
+                        control.set_bool(BoolProperty::ReadOnly, !*editable)?;
+                    }
                     if old.is_none_or(|old| old.1 != placeholder) {
                         control.set_text(
                             TextProperty::Placeholder,
