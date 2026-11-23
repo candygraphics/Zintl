@@ -5,6 +5,7 @@
 
 mod accessibility;
 mod canvas;
+mod clipboard;
 mod context;
 mod event;
 mod model;
@@ -26,6 +27,7 @@ pub use canvas::{
     Modifiers, NamedKey, Palette, PaletteColor, PointerButton, PointerEvent, PointerPhase, Redraw,
     RedrawPolicy, ScrollEvent,
 };
+pub use clipboard::{Clipboard, ClipboardAccess, MemoryClipboard};
 pub use context::{Context, StoreSender, StoreUpdate, StoreUpdates};
 pub use event::{Event, EventKind};
 pub use headless::HeadlessBackend;

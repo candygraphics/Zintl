@@ -3,6 +3,7 @@
 #![cfg(target_os = "windows")]
 
 mod canvas;
+mod clipboard;
 mod control;
 mod ffi;
 mod presentation;
@@ -12,6 +13,7 @@ pub use canvas::{
     DrawContext, Font, GradientStop, ImageData, LineCap, LineJoin, Modifiers, Paint, Path,
     PathElement, PointerPhase, Rect, Stroke, TextMetrics, Transform, measure_text,
 };
+pub use clipboard::Clipboard;
 pub use control::{
     BoolProperty, Color, Control, ControlEvent, ControlKind, LIST_ROW_INSET, ListEntry,
     NavigationItem, NumberProperty, ParagraphStyle, RichRun, RichText, ScrollAlignment,

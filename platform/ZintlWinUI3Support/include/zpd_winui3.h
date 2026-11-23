@@ -285,6 +285,11 @@ zpd_winui3_dispatcher* zpd_winui3_app_dispatcher(const zpd_winui3_app_context* c
 zpd_winui3_string zpd_winui3_last_error(void);
 int32_t zpd_winui3_application_exit(void);
 
+/* Replaces the clipboard's contents with plain text. Call on the UI thread. */
+int32_t zpd_winui3_clipboard_set_text(zpd_winui3_string text);
+/* Passes the clipboard's plain text to `receive`; it is not called when the clipboard has none. */
+int32_t zpd_winui3_clipboard_get_text(const void* data, zpd_winui3_string_fn receive);
+
 zpd_winui3_dispatcher* zpd_winui3_dispatcher_clone(const zpd_winui3_dispatcher* dispatcher);
 void zpd_winui3_dispatcher_release(zpd_winui3_dispatcher* dispatcher);
 bool zpd_winui3_dispatcher_try_enqueue(

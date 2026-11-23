@@ -26,6 +26,7 @@ use zpd_winui3::{
 mod app;
 mod attachment;
 mod canvas;
+mod clipboard;
 mod menu;
 mod native;
 #[cfg(feature = "wgpu")]
@@ -34,6 +35,7 @@ mod wgpu;
 pub use app::run_composer;
 use app::{Message, MessageSender};
 use attachment::{Attachment, ContextMenu};
+use clipboard::SystemClipboard;
 use menu::Menus;
 use native::{CanvasHost, Environment, Glyph, HostContent, NativeNode, NativeView, RouteCell};
 
@@ -1351,7 +1353,11 @@ impl RenderBackend<RenderNode> for WinUI3Backend {
     type NodeId = NodeId;
 
     fn create_context<'a>(&'a self, store_context: StoreContext<'a>) -> Context<'a> {
-        Context::new(store_context, Some(self.main_tasks.shared_sender()))
+        Context::new(
+            store_context,
+            Some(self.main_tasks.shared_sender()),
+            &SystemClipboard,
+        )
     }
 
     fn root(&self) -> Self::NodeId {

@@ -10,7 +10,7 @@ use zpd_appkit::ui::{
     AlertButton, AlertButtonRole, AlertConfig, AlertSheet, AsView, Button, ButtonType, Color,
     DatePicker, DatePickerStyle, FieldAccessory,
     ColorWell, ListEntry, ListStyle, ListView, CommandItem, CommandMenu, CommandRole, CommandSet, ContextMenu, MenuRole,
-    NumberField, NumberFormat, PopUpButton, Popover, ScrollView, SegmentedControl, Sidebar,
+    NumberField, NumberFormat, Pasteboard, PopUpButton, Popover, ScrollView, SegmentedControl, Sidebar,
     SidebarItem, SidebarSearch, SidebarSection, Slider, Switch, SystemColor, TabView, TextAlignment, TextColor,
     RichParagraph, RichRun, RichStyle, TableColumn, TextEditor, TextField, Toolbar, ToolbarItem, View,
     WindowStyle,
@@ -345,6 +345,14 @@ fn main() {
     };
     Checks::send_action(button);
     assert_eq!(take(), vec![WindowEventKind::AccessoryClicked]);
+
+    // Verifies the general pasteboard round-trips plain text; the previous text is put back.
+    let previous = Pasteboard::string();
+    Pasteboard::set_string("zintl pasteboard check");
+    assert_eq!(Pasteboard::string().as_deref(), Some("zintl pasteboard check"));
+    if let Some(previous) = previous {
+        Pasteboard::set_string(&previous);
+    }
 
     // Verifies dates round-trip through a date picker around month ends, leap days, and year boundaries.
     let picker = DatePicker::new(&application).unwrap();

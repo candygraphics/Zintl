@@ -6,7 +6,7 @@ use zintl_ui::composer::Composer;
 use zintl_ui::element::IntoElement;
 use zintl_ui::renderer::RenderBackend;
 use zintl_ui::store::{Store, Trigger};
-use zintl_ui_backend_core::{CanvasHost, HeadlessBackend};
+use zintl_ui_backend_core::{CanvasHost, ClipboardAccess, HeadlessBackend};
 
 use crate::{CanvasEvent, CanvasId, Context, Cursor, Event, NodeId, RenderNode, ViewKind};
 
@@ -158,6 +158,18 @@ impl Harness {
     /// Creates a Store outside `View::init`.
     pub fn store<T: 'static>(&mut self, value: T) -> Store<T> {
         self.composer.context(|cx| cx.store(value))
+    }
+
+    /// Returns the text views last put on the harness's clipboard.
+    ///
+    /// The harness keeps its own clipboard, so tests leave the user's alone.
+    pub fn clipboard_text(&self) -> Option<String> {
+        self.composer.backend().clipboard().text()
+    }
+
+    /// Puts `text` on the harness's clipboard, for views that read it.
+    pub fn set_clipboard_text(&self, text: impl AsRef<str>) {
+        self.composer.backend().clipboard().set_text(text.as_ref());
     }
 
     /// Runs `action` with the context views receive, for anything the other methods do not cover.

@@ -3639,3 +3639,28 @@ fn palette_resolves_separator_and_alternating_row() {
         Color::rgba(0.5, 0.5, 0.5, 0.1)
     );
 }
+
+#[test]
+fn actions_write_and_read_the_clipboard() {
+    // Verifies actions put text on the harness's clipboard and read it back, so tests never touch the user's.
+    let (mut app, pasted) = WithStores::mount(
+        |cx| cx.store(None::<String>),
+        |pasted| {
+            VStack::new(list![
+                Button::new("Copy").on_click(|cx| cx.clipboard().set_text(String::from("1,234"))),
+                Button::new("Paste").on_click(move |cx| {
+                    let text = cx.clipboard().text();
+                    cx.update(pasted, |pasted| *pasted = text);
+                }),
+            ])
+        },
+    );
+    assert_eq!(app.clipboard_text(), None);
+
+    assert!(app.dispatch(&[0, 0], Event::Activated));
+    assert_eq!(app.clipboard_text().as_deref(), Some("1,234"));
+
+    app.set_clipboard_text("5,678");
+    assert!(app.dispatch(&[0, 1], Event::Activated));
+    assert_eq!(app.get(pasted).as_deref(), Some("5,678"));
+}

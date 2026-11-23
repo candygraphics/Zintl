@@ -185,6 +185,14 @@ class ZintlUITestCase: XCTestCase {
   /// Typing goes through the input source, which may change characters such as
   /// `/`; pasting does not. The previous pasteboard text comes back afterwards.
   func paste(_ text: String, into field: XCUIElement) {
+    let pasteboard = borrowPasteboard()
+    pasteboard.setString(text, forType: .string)
+    field.typeKey("a", modifierFlags: .command)
+    field.typeKey("v", modifierFlags: .command)
+  }
+
+  /// Clears the general pasteboard for the test and puts its previous text back afterwards.
+  func borrowPasteboard() -> NSPasteboard {
     let pasteboard = NSPasteboard.general
     let previous = pasteboard.string(forType: .string)
     addTeardownBlock { @MainActor in
@@ -194,9 +202,12 @@ class ZintlUITestCase: XCTestCase {
       }
     }
     pasteboard.clearContents()
-    pasteboard.setString(text, forType: .string)
-    field.typeKey("a", modifierFlags: .command)
-    field.typeKey("v", modifierFlags: .command)
+    return pasteboard
+  }
+
+  /// Waits until the general pasteboard holds `text`.
+  func waitForPasteboard(_ text: String, timeout: TimeInterval = 2) -> Bool {
+    Self.poll(timeout: timeout) { NSPasteboard.general.string(forType: .string) == text }
   }
 
   /// Returns the sRGB color that a screenshot of `element` shows at the screen point `point`.

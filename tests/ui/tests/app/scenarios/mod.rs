@@ -37,6 +37,7 @@ scenarios! {
     canvas_action => "canvas-action": |_| canvas_action::MainView::new(),
     canvas_input => "canvas-input": |_| canvas_input::MainView::new(),
     chart => "chart": |_| chart::MainView::new(),
+    clipboard => "clipboard": |_| clipboard::MainView::new(),
     color_panel => "color-panel": |_| color_panel::MainView::new(),
     context_menu => "context-menu": |_| context_menu::MainView::new(),
     controls => "controls": |_| controls::MainView::new(),

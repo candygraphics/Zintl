@@ -12,6 +12,7 @@ unsafe extern "C" {
     fn NSBeep();
 }
 use super::callback;
+use super::pasteboard::Pasteboard;
 use super::view::{AsView, ViewActor, ViewRef};
 
 /// How a [`DatePicker`] shows its date.
@@ -78,15 +79,9 @@ unsafe extern "C" fn accessibility_value_description(picker: Id, _: zpd_objc::Se
 /// Sets the picker to an ISO 8601 date on the pasteboard and reports it like a user change.
 unsafe extern "C" fn paste(picker: Id, _: zpd_objc::Sel, _: Id) {
     zpd_objc::abort_on_unwind(|| {
-        // SAFETY: AppKit sends `paste:` to the live picker on the main thread; the pasteboard
-        // and its string are autoreleased.
+        // SAFETY: AppKit sends `paste:` to the live picker on the main thread.
         unsafe {
-            let pasteboard = zpd_objc::msg_send!(zpd_objc::class!("NSPasteboard"), zpd_objc::sel!("generalPasteboard"), () => Id);
-            let kind = native::nsstring("public.utf8-plain-text");
-            let text = zpd_objc::msg_send!(pasteboard, zpd_objc::sel!("stringForType:"), ((kind.as_ptr()): Id) => Id);
-            let parsed = (!text.is_null())
-                .then(|| DatePicker::parse_iso(&native::rust_string(text)))
-                .flatten();
+            let parsed = Pasteboard::string().and_then(|text| DatePicker::parse_iso(&text));
             let Some((year, month, day)) = parsed else {
                 NSBeep();
                 return;

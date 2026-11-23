@@ -19,6 +19,7 @@ use zpd_appkit::ui::{
 mod app;
 mod attachment;
 mod canvas;
+mod clipboard;
 mod layout;
 mod native;
 #[cfg(feature = "wgpu")]
@@ -27,6 +28,7 @@ mod wgpu;
 use app::Message;
 pub use app::run_composer;
 use attachment::Attachment;
+use clipboard::SystemClipboard;
 use native::NativeNode;
 
 use crate::convert::{Native, Shared};
@@ -1101,7 +1103,11 @@ impl RenderBackend<RenderNode> for AppKitBackend {
     type NodeId = NodeId;
 
     fn create_context<'a>(&'a self, store_context: StoreContext<'a>) -> Context<'a> {
-        Context::new(store_context, Some(self.main_tasks.shared_sender()))
+        Context::new(
+            store_context,
+            Some(self.main_tasks.shared_sender()),
+            &SystemClipboard,
+        )
     }
 
     fn root(&self) -> Self::NodeId {
