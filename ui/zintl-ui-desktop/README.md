@@ -346,8 +346,9 @@ Window::new("Notes")
     ]))
 ```
 
-`TextEditor::focus_on(trigger)` moves keyboard focus to the editor each time
-the `Trigger` fires, for example after creating a note. Create it in
+`focus_on(trigger)` moves keyboard focus to a `TextEditor`, `TextField`,
+`IntegerField`, `NumberField`, or `ToolbarItem::search` each time the
+`Trigger` fires, for example after creating a note. Create it in
 `View::init` with `cx.trigger()` and fire it with `cx.fire(trigger, ())`.
 `ScrollView::scroll_to` takes a `Trigger<ViewId>` fired with a view ID.
 

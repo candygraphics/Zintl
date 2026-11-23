@@ -124,6 +124,8 @@ pub enum ViewKind {
         text: Option<String>,
         /// Text shown while the field is empty.
         placeholder: Option<String>,
+        /// Each increase makes the field take keyboard focus.
+        focus: u64,
     },
     SearchField {
         value: String,
@@ -200,10 +202,12 @@ pub enum ViewKind {
 impl ViewKind {
     /// Returns whether a view that rendered `old`, or is new, should now take keyboard focus.
     ///
-    /// Text fields and editors take focus each time their focus request count increases.
+    /// Text, number fields, and editors take focus each time their focus request count increases.
     pub fn requests_focus(old: Option<&Self>, new: &Self) -> bool {
         let focus = |kind: &Self| match kind {
-            Self::TextField { focus, .. } | Self::TextEditor { focus, .. } => *focus,
+            Self::TextField { focus, .. }
+            | Self::TextEditor { focus, .. }
+            | Self::NumberField { focus, .. } => *focus,
             _ => 0,
         };
         focus(new) > old.map_or(0, focus)

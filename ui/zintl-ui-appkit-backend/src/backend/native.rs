@@ -315,11 +315,12 @@ impl NativeNode {
         }
     }
 
-    /// Moves keyboard focus to a text field or editor that is in a window.
+    /// Moves keyboard focus to a text field, number field, or editor that is in a window.
     pub(super) fn focus(&self) -> Result<(), UiError> {
         match self {
             Self::TextField(field) => field.focus(),
             Self::TextEditor(editor) => editor.focus(),
+            Self::NumberField(field) => field.focus(),
             _ => Ok(()),
         }
     }
@@ -566,6 +567,7 @@ impl NativeNode {
                     format,
                     text,
                     placeholder,
+                    ..
                 },
             ) => {
                 if !matches!(old, Some(ViewKind::NumberField { placeholder: old, .. }) if old == placeholder)

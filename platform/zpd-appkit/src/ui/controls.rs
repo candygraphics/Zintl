@@ -651,6 +651,19 @@ impl NumberField {
     pub fn accessibility_view(&self) -> ViewRef<'_> {
         ViewRef::from_actor(&self.field)
     }
+    /// Makes the text field the first responder of its window, if it is in one.
+    pub fn focus(&self) -> Result<(), UiError> {
+        self.field.with(|field| {
+            // SAFETY: The live field and its window, which may be nil, accept the message.
+            unsafe {
+                let window = zpd_objc::msg_send!(field, zpd_objc::sel!("window"), () => Id);
+                if !window.is_null() {
+                    zpd_objc::msg_send!(window, zpd_objc::sel!("makeFirstResponder:"), ((field): Id) => bool);
+                }
+            }
+        })?;
+        Ok(())
+    }
     /// Returns the height of the taller of the text field and stepper, with no fixed width.
     ///
     /// The container is a plain `NSView`, which has no intrinsic size of its own.

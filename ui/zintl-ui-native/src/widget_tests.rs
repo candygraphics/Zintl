@@ -924,6 +924,7 @@ fn number_field_clamps_entered_values() {
                 },
                 text: None,
                 placeholder: None,
+                focus: 0,
             },
             ..
         }
@@ -3373,6 +3374,37 @@ fn focus_trigger_counts_fires_and_starts_at_zero() {
     // An equal value fires again.
     app.fire(focus, ());
     assert_eq!(requests(&app), 2);
+}
+
+#[test]
+fn integer_and_number_fields_request_focus_on_each_fire() {
+    // Verifies number fields start without a focus request and add one each time their trigger fires.
+    let (mut app, focus) = WithStores::mount(
+        |cx| cx.trigger(),
+        |focus| {
+            VStack::new(list![
+                IntegerField::optional().focus_on(focus),
+                NumberField::new().focus_on(focus),
+            ])
+        },
+    );
+    let requests = |app: &Harness| {
+        app.tree()
+            .children
+            .iter()
+            .map(|child| match &child.value {
+                RenderNode::View {
+                    kind: ViewKind::NumberField { focus, .. },
+                    ..
+                } => *focus,
+                _ => panic!("expected a number field"),
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(requests(&app), [0, 0]);
+
+    app.fire(focus, ());
+    assert_eq!(requests(&app), [1, 1]);
 }
 
 #[test]
