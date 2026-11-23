@@ -1420,6 +1420,36 @@ fn standard_edit_menu_ends_with_a_find_submenu() {
 }
 
 #[test]
+fn on_find_replaces_the_text_finder_for_find_only() {
+    // Verifies `on_find` turns Find… into an app item with the same title and ⌘F, leaving the other Find items standard.
+    let finds = Calls::default();
+    let find = finds.clone();
+    let mut app = Harness::new(list![
+        MainMenu::standard().on_find(find.action()),
+        Window::new("Demo").size(Size::new(200.0, 200.0)),
+    ]);
+    let roots = app.roots();
+    let RenderNode::MainMenu(commands) = &roots[0].value else {
+        panic!("the main menu renders as a root node");
+    };
+    let submenu = commands.menus[1]
+        .items
+        .last()
+        .and_then(|item| item.submenu.as_ref())
+        .expect("the Edit menu ends with the Find submenu");
+    let item = &submenu.items[0];
+    assert_eq!(item.title, "Find…");
+    assert_eq!(item.role, None);
+    assert_eq!(item.key, Some(ShortcutKey::Character("f".into())));
+    assert!(item.enabled);
+    assert_eq!(submenu.items[2].role, Some(CommandRole::FindNext));
+
+    let id = item.id.clone().expect("the app's Find… reports selection");
+    assert!(app.dispatch(&[0], Event::MenuItemSelected { id }));
+    assert_eq!(finds.count(), 1);
+}
+
+#[test]
 fn sidebar_search_updates_its_query_store() {
     // Verifies a searchable sidebar renders its query and writes native edits back.
     let (mut app, query) = WithStores::mount(

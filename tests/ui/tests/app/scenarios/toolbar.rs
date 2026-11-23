@@ -1,3 +1,4 @@
+use zintl_ui_desktop::menu::MainMenu;
 use zintl_ui_desktop::*;
 
 /// A toolbar whose Remove button is enabled only while there are items, plus a search field
@@ -33,7 +34,7 @@ impl View for MainView {
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
         let (count, removes, query) = (self.count, self.removes, self.query);
         let search_focus = self.search_focus;
-        Window::new("Zintl Toolbar UI Test").size(Size::new(560.0, 260.0))
+        let window = Window::new("Zintl Toolbar UI Test").size(Size::new(560.0, 260.0))
             .id("main-window")
             .toolbar(Toolbar::new([
                 ToolbarItem::button("add", "Add", "plus")
@@ -64,6 +65,13 @@ impl View for MainView {
                         .on_click(move |cx| cx.fire(search_focus, ())),
                 ])
                 .spacing(10.0),
-            )
+            );
+        list![
+            // ⌘F focuses the toolbar search field instead of showing a find bar.
+            MainMenu::standard()
+                .app_name("Zintl Toolbar")
+                .on_find(move |cx| cx.fire(search_focus, ())),
+            window,
+        ]
     }
 }

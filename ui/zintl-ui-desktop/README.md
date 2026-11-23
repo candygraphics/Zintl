@@ -315,8 +315,13 @@ list![
 
 The standard Edit menu ends with a Find submenu (Find…, Find and Replace…,
 Find Next, Find Previous, Use Selection for Find) that drives the focused text
-view's find bar. `StandardAction::Bold`, `Italic`, and `Underline` apply font
-traits to the selection of a rich text view; put them in your own Format menu.
+view's find bar. An app without document text to search can handle Find…
+(⌘F) itself with `MainMenu::on_find`, for example to focus a toolbar search
+field; the item keeps its title, position, and shortcut, and the other Find
+items still act on the focused text view.
+
+`StandardAction::Bold`, `Italic`, and `Underline` apply font traits to the
+selection of a rich text view; put them in your own Format menu.
 
 Standard titles are resolved through a `MenuLocalizer`. Each `StandardText`
 has a stable catalog key (`StandardText::key`, such as `menu.edit.copy`).
