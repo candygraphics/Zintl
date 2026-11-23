@@ -5,14 +5,16 @@ use zintl_ui::renderer::RenderBackend;
 use zintl_ui::view::StoreContext;
 
 use crate::tree::{MainTasks, NodeTree};
-use crate::{Context, NodeId, RenderNode};
+use crate::{Context, MemoryClipboard, NodeId, RenderNode};
 
 /// Retains the rendered tree for tests and platforms without a native backend.
 ///
-/// Main-thread tasks queue until [`HeadlessBackend::connect_main_tasks`] runs.
+/// Main-thread tasks queue until [`HeadlessBackend::connect_main_tasks`] runs,
+/// and the clipboard is kept in memory.
 pub struct HeadlessBackend {
     tree: NodeTree<()>,
     main_tasks: MainTasks,
+    clipboard: MemoryClipboard,
 }
 
 impl Default for HeadlessBackend {
@@ -26,7 +28,13 @@ impl HeadlessBackend {
         Self {
             tree: NodeTree::new(),
             main_tasks: MainTasks::new(),
+            clipboard: MemoryClipboard::default(),
         }
+    }
+
+    /// Returns the clipboard views read and write through [`Context::clipboard`].
+    pub fn clipboard(&self) -> &MemoryClipboard {
+        &self.clipboard
     }
 
     /// Forwards queued and future main-thread tasks to `sender`.
@@ -60,7 +68,11 @@ impl RenderBackend<RenderNode> for HeadlessBackend {
     type NodeId = NodeId;
 
     fn create_context<'a>(&'a self, store_context: StoreContext<'a>) -> Context<'a> {
-        Context::new(store_context, Some(self.main_tasks.shared_sender()))
+        Context::new(
+            store_context,
+            Some(self.main_tasks.shared_sender()),
+            &self.clipboard,
+        )
     }
 
     fn root(&self) -> NodeId {

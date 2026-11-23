@@ -157,6 +157,8 @@ unsafe extern "C" {
     pub fn zpd_winui3_app_dispatcher(context: *const AppContext) -> *mut DispatcherQueue;
     pub fn zpd_winui3_last_error() -> StringRef;
     pub fn zpd_winui3_application_exit() -> i32;
+    pub fn zpd_winui3_clipboard_set_text(text: StringRef) -> i32;
+    pub fn zpd_winui3_clipboard_get_text(data: *const c_void, receive: StringFn) -> i32;
     pub fn zpd_winui3_dispatcher_clone(dispatcher: *const DispatcherQueue) -> *mut DispatcherQueue;
     pub fn zpd_winui3_dispatcher_release(dispatcher: *mut DispatcherQueue);
     pub fn zpd_winui3_dispatcher_try_enqueue(

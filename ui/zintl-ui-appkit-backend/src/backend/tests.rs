@@ -292,6 +292,7 @@ fn number_fields_measure_their_height() {
         },
         text: None,
         placeholder: None,
+        editable: true,
         focus: 0,
         accessory: None,
     };
@@ -321,6 +322,7 @@ fn focus_requests_follow_increases_only() {
         },
         text: None,
         placeholder: None,
+        editable: true,
         focus,
         accessory: None,
     };

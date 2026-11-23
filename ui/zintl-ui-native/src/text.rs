@@ -33,6 +33,15 @@ impl Text {
         self
     }
 
+    /// Lets the user select the text and copy it with `true`; it still looks like plain text.
+    ///
+    /// In a table, the first click selects the row and a click on the
+    /// selected row's text selects the text.
+    pub fn selectable(mut self, selectable: bool) -> Self {
+        self.label = self.label.selectable(selectable);
+        self
+    }
+
     /// Shows at most `lines` lines and truncates the rest with an ellipsis.
     ///
     /// A limited label no longer reserves its text's width, so give it one

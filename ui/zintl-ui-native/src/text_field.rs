@@ -89,7 +89,7 @@ impl FieldAccessory {
     }
 }
 
-/// An editable text field, or with [`crate::Text`] a static label.
+/// An editable or read-only text field, or with [`crate::Text`] a static label.
 ///
 /// It edits one line of plain text, or a few lines with
 /// [`TextField::multiline`]. For document text that scrolls and keeps
@@ -177,10 +177,15 @@ impl TextField {
         self.layout.content_size = content;
     }
 
+    /// Returns whether this is the borderless label behind [`crate::Text`].
+    fn is_label(&self) -> bool {
+        !self.bordered
+    }
+
     /// Re-estimates a label's size after its style changes.
     fn restyle(mut self, update: impl FnOnce(&mut TextStyle)) -> Self {
         update(&mut self.style);
-        if !self.editable {
+        if self.is_label() {
             self.resize_label();
         }
         self
@@ -243,6 +248,24 @@ impl TextField {
         self
     }
 
+    /// Makes the field read-only with `false`.
+    ///
+    /// It keeps its border and background, and its text can still be selected
+    /// and copied. It shows `value` or the bound Store, and never runs
+    /// `on_change` or `on_commit`. Unlike `enabled(false)`, it is not dimmed.
+    /// As with other read-only text on macOS, Tab reaches it only while
+    /// keyboard navigation is turned on in System Settings.
+    pub fn editable(mut self, editable: bool) -> Self {
+        self.editable = editable;
+        self
+    }
+
+    /// Lets the user select and copy a label's text, for [`crate::Text::selectable`].
+    pub(crate) fn selectable(mut self, selectable: bool) -> Self {
+        self.selectable = selectable;
+        self
+    }
+
     /// Takes keyboard focus each time `trigger` fires, for example after "New Item".
     ///
     /// A field created in the same update as the fire takes focus once it is shown.
@@ -276,7 +299,7 @@ impl NativeView for TextField {
             .unwrap_or_else(|| self.value.clone());
         // A label given a width wraps to it, so its size is estimated again.
         let mut sized = self.clone();
-        if let (false, Some(width)) = (self.editable, self.modifiers.layout().width) {
+        if let (true, Some(width)) = (self.is_label(), self.modifiers.layout().width) {
             sized.layout.width = width;
             sized.resize_label();
         }
@@ -301,6 +324,10 @@ impl NativeView for TextField {
             accessibility: Default::default(),
         });
         let element = FieldAccessory::route(&self.accessory, element);
+        // A read-only field reports no edits.
+        if !self.editable {
+            return element;
+        }
         let element = ChangeRoute::new(self.binding, self.action.clone()).route(
             element,
             EventKind::TextChanged,

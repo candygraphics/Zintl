@@ -5,21 +5,36 @@ use zintl_ui::element::IntoElement;
 use zintl_ui::store::{Store, Trigger};
 use zintl_ui::view::{Context as ContextTrait, StoreContext, StoreWatcher};
 
-use crate::{Announcement, AnnouncementPriority, Announcements, MainTaskSender};
+use crate::{
+    Announcement, AnnouncementPriority, Announcements, Clipboard, ClipboardAccess, MainTaskSender,
+};
 
 /// Gives views access to Stores and to the platform main thread.
 pub struct Context<'a> {
     store_context: StoreContext<'a>,
     perform_main: Option<Arc<MainTaskSender>>,
+    clipboard: &'a dyn ClipboardAccess,
 }
 
 impl<'a> Context<'a> {
     #[doc(hidden)]
-    pub fn new(store_context: StoreContext<'a>, perform_main: Option<Arc<MainTaskSender>>) -> Self {
+    pub fn new(
+        store_context: StoreContext<'a>,
+        perform_main: Option<Arc<MainTaskSender>>,
+        clipboard: &'a dyn ClipboardAccess,
+    ) -> Self {
         Self {
             store_context,
             perform_main,
+            clipboard,
         }
+    }
+
+    /// Reads and writes plain text on the system clipboard.
+    ///
+    /// The test harness keeps its own clipboard, so tests leave the user's alone.
+    pub fn clipboard(&self) -> Clipboard<'a> {
+        Clipboard::new(self.clipboard)
     }
 
     /// Queues a task for execution on the platform main thread.

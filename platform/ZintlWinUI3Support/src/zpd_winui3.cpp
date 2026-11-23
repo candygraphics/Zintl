@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 #include <commctrl.h>
@@ -19,6 +20,7 @@
 #include <winrt/Microsoft.UI.Xaml.Hosting.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
 #include <winrt/Microsoft.UI.Xaml.XamlTypeInfo.h>
+#include <winrt/Windows.ApplicationModel.DataTransfer.h>
 #include <winrt/Windows.System.h>
 
 using namespace zpd;
@@ -539,6 +541,31 @@ zpd_winui3_string zpd_winui3_last_error() {
 
 int32_t zpd_winui3_application_exit() {
   return status([] { Application::Current().Exit(); });
+}
+
+int32_t zpd_winui3_clipboard_set_text(zpd_winui3_string text) {
+  return status([&] {
+    using namespace winrt::Windows::ApplicationModel::DataTransfer;
+    DataPackage package;
+    package.SetText(string_from(text));
+    Clipboard::SetContent(package);
+  });
+}
+
+int32_t zpd_winui3_clipboard_get_text(const void* data, zpd_winui3_string_fn receive) {
+  return status([&] {
+    // The WinRT read is asynchronous, so the Win32 clipboard is read directly.
+    if (!IsClipboardFormatAvailable(CF_UNICODETEXT) || !OpenClipboard(nullptr)) return;
+    std::optional<hstring> text;
+    if (HANDLE handle = GetClipboardData(CF_UNICODETEXT)) {
+      if (auto chars = static_cast<wchar_t const*>(GlobalLock(handle))) {
+        text = hstring{chars};
+        GlobalUnlock(handle);
+      }
+    }
+    CloseClipboard();
+    if (text) with_utf8(*text, [&](zpd_winui3_string utf8) { receive(data, utf8); });
+  });
 }
 
 zpd_winui3_window* zpd_winui3_window_create_styled(int32_t style) {
