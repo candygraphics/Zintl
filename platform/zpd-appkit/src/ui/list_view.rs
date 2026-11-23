@@ -67,6 +67,30 @@ struct ListState {
     ready: Cell<bool>,
     /// The scroll view Actor, whose event route receives selection changes.
     actor: ActorRef,
+    summary: RefCell<Option<Summary>>,
+}
+
+/// A row below the table rows, outside the table so it cannot be selected or sorted.
+struct Summary {
+    /// An opaque bar along the bottom of the scroll view; rows scroll above it.
+    bar: Strong,
+    /// The separator along the bar's top edge.
+    line: Strong,
+    /// One layout view per column, holding that column's cell.
+    cells: Vec<Strong>,
+    /// The cell wrappers' Actors under the scroll view, so cell views' events reach the window.
+    actors: Vec<ActorRef>,
+    height: f64,
+}
+
+/// `NSEdgeInsets`.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct EdgeInsets {
+    top: f64,
+    left: f64,
+    bottom: f64,
+    right: f64,
 }
 
 static LIST_STATE: RcIvar<ListState> = RcIvar::new(c"_zpdListState");
@@ -106,6 +130,86 @@ impl ListState {
             // SAFETY: Row cells are live layout views; header cells are excluded
             // because they lack the callback ivar.
             unsafe { view::release_layout_callback(cell) };
+        }
+    }
+
+    /// Places each summary cell under its column and keeps the rows above the bar.
+    fn place_summary(&self) {
+        let summary = self.summary.borrow();
+        let Some(summary) = summary.as_ref() else {
+            return;
+        };
+        let Ok(scroll) = self.actor.with(|scroll| scroll) else {
+            return;
+        };
+        // SAFETY: The scroll view, its table, the bar, and the cell wrappers are live on the main thread.
+        unsafe {
+            let table = zpd_objc::msg_send!(scroll, zpd_objc::sel!("documentView"), () => Id);
+            let bounds = zpd_objc::msg_send!(scroll, zpd_objc::sel!("bounds"), () => native::Rect);
+            // The separator line takes the top point of the bar.
+            let height = summary.height + 1.0;
+            // The scroll view may be flipped; either way the bar keeps to the bottom edge.
+            let flipped = zpd_objc::msg_send!(scroll, zpd_objc::sel!("isFlipped"), () => bool);
+            let (y, top_margin) = if flipped {
+                (bounds.size.height - height, native::NS_VIEW_MIN_Y_MARGIN)
+            } else {
+                (0.0, native::NS_VIEW_MAX_Y_MARGIN)
+            };
+            let bar = native::Rect {
+                origin: native::Point { x: 0.0, y },
+                size: native::Size {
+                    width: bounds.size.width,
+                    height,
+                },
+            };
+            zpd_objc::msg_send!(summary.bar.as_ptr(), zpd_objc::sel!("setFrame:"), ((bar): native::Rect) => ());
+            zpd_objc::msg_send!(summary.bar.as_ptr(), zpd_objc::sel!("setAutoresizingMask:"), ((native::NS_VIEW_WIDTH_SIZABLE | top_margin): u64) => ());
+            let mut insets =
+                zpd_objc::msg_send!(scroll, zpd_objc::sel!("contentInsets"), () => EdgeInsets);
+            if insets.bottom != height {
+                insets.bottom = height;
+                zpd_objc::msg_send!(scroll, zpd_objc::sel!("setContentInsets:"), ((insets): EdgeInsets) => ());
+                let scroller = EdgeInsets {
+                    bottom: height,
+                    ..EdgeInsets::default()
+                };
+                zpd_objc::msg_send!(scroll, zpd_objc::sel!("setScrollerInsets:"), ((scroller): EdgeInsets) => ());
+            }
+            let spacing =
+                zpd_objc::msg_send!(table, zpd_objc::sel!("intercellSpacing"), () => native::Size);
+            let content =
+                zpd_objc::msg_send!(summary.bar.as_ptr(), zpd_objc::sel!("contentView"), () => Id);
+            let flipped = zpd_objc::msg_send!(content, zpd_objc::sel!("isFlipped"), () => bool);
+            let (line_y, cell_y) = if flipped {
+                (0.0, 1.0)
+            } else {
+                (summary.height, 0.0)
+            };
+            let line = native::Rect {
+                origin: native::Point { x: 0.0, y: line_y },
+                size: native::Size {
+                    width: bounds.size.width,
+                    height: 1.0,
+                },
+            };
+            zpd_objc::msg_send!(summary.line.as_ptr(), zpd_objc::sel!("setFrame:"), ((line): native::Rect) => ());
+            for (index, cell) in summary.cells.iter().enumerate() {
+                let column = zpd_objc::msg_send!(table, zpd_objc::sel!("rectOfColumn:"), ((index as i64): i64) => native::Rect);
+                let column = zpd_objc::msg_send!(table, zpd_objc::sel!("convertRect:toView:"), ((column): native::Rect, (content): Id) => native::Rect);
+                // Cells sit inside their column like row cells, which start half the spacing in, rounded down.
+                let frame = native::Rect {
+                    origin: native::Point {
+                        x: column.origin.x + (spacing.width / 2.0).floor(),
+                        y: cell_y,
+                    },
+                    size: native::Size {
+                        width: (column.size.width - spacing.width).max(0.0),
+                        height: summary.height,
+                    },
+                };
+                zpd_objc::msg_send!(cell.as_ptr(), zpd_objc::sel!("setFrame:"), ((frame): native::Rect) => ());
+                zpd_objc::msg_send!(cell.as_ptr(), zpd_objc::sel!("setNeedsLayout:"), ((true): bool) => ());
+            }
         }
     }
 
@@ -151,6 +255,10 @@ unsafe extern "C" fn is_group(object: Id, _: zpd_objc::Sel, _: Id, row: i64) -> 
 
 unsafe extern "C" fn should_select(object: Id, _: zpd_objc::Sel, _: Id, row: i64) -> bool {
     ListState::with(object, |state| state.entry(row, |entry| entry.id.is_some()))
+}
+
+unsafe extern "C" fn column_resized(object: Id, _: zpd_objc::Sel, _: Id) {
+    ListState::with(object, |state| state.place_summary());
 }
 
 unsafe extern "C" fn selection_changed(object: Id, _: zpd_objc::Sel, notification: Id) {
@@ -341,6 +449,7 @@ fn delegate_class() -> zpd_objc::Class {
                 "tableView:isGroupRow:": "B@:@q" => is_group,
                 "tableView:shouldSelectRow:": "B@:@q" => should_select,
                 "tableViewSelectionDidChange:": "v@:@" => selection_changed,
+                "tableViewColumnDidResize:": "v@:@" => column_resized,
                 "tableView:sortDescriptorsDidChange:": "v@:@@" => sort_changed,
                 "menuNeedsUpdate:": "v@:@" => menu_needs_update,
                 "dealloc": "v@:" => dealloc,
@@ -375,6 +484,7 @@ impl ListView {
             entries: RefCell::new(Vec::new()),
             ready: Cell::new(true),
             actor: view.actor().clone(),
+            summary: RefCell::new(None),
         });
         let delegate = native::alloc_init(delegate_class());
         // SAFETY: The registered delegate class declares the `_zpdListState` ivar.
@@ -713,6 +823,133 @@ impl ListView {
             }
         })?;
         Ok(())
+    }
+
+    /// Shows `cells`, one per column, in a row below the table rows; an empty slice removes it.
+    ///
+    /// The row stays at the bottom while the rows scroll, cannot be selected,
+    /// and keeps its cells under their columns when columns resize.
+    pub fn set_summary(&self, cells: &[ViewRef<'_>]) -> Result<(), UiError> {
+        let old = self.state.summary.borrow_mut().take();
+        let scroll = self.view.as_view();
+        let (bar, line) = match old {
+            Some(old) => {
+                for cell in &old.cells {
+                    // SAFETY: Summary cells are live layout views created below.
+                    unsafe { view::release_layout_callback(cell.as_ptr()) };
+                }
+                for actor in old.actors {
+                    actor.remove();
+                }
+                (old.bar, old.line)
+            }
+            None => Self::summary_bar(),
+        };
+        if cells.is_empty() {
+            scroll.with(|scroll| {
+                // SAFETY: The bar and the live scroll view are on the main thread; insets go by value.
+                unsafe {
+                    zpd_objc::msg_send!(bar.as_ptr(), zpd_objc::sel!("removeFromSuperview"), () => ());
+                    zpd_objc::msg_send!(scroll, zpd_objc::sel!("setContentInsets:"), ((EdgeInsets::default()): EdgeInsets) => ());
+                    zpd_objc::msg_send!(scroll, zpd_objc::sel!("setScrollerInsets:"), ((EdgeInsets::default()): EdgeInsets) => ());
+                    zpd_objc::msg_send!(scroll, zpd_objc::sel!("setAutomaticallyAdjustsContentInsets:"), ((true): bool) => ());
+                }
+            })?;
+            return Ok(());
+        }
+        let tree = self.table.tree_handle().ok_or(UiError::Closed)?;
+        let content = bar.as_ptr();
+        // SAFETY: The bar is a live NSBox.
+        let content =
+            unsafe { zpd_objc::msg_send!(content, zpd_objc::sel!("contentView"), () => Id) };
+        let mut wrappers = Vec::with_capacity(cells.len());
+        let mut actors = Vec::with_capacity(cells.len());
+        for cell in cells {
+            let wrapper = view::new_layout_view(Rect::new(0.0, 0.0, 0.0, 0.0))?;
+            let actor = tree.insert_child(self.view.actor(), wrapper.clone())?;
+            cell.remove_from_superview()?;
+            ViewRef::from_actor(&actor).add_subview(cell)?;
+            // SAFETY: The bar's live content view retains the wrapper.
+            unsafe {
+                zpd_objc::msg_send!(content, zpd_objc::sel!("addSubview:"), ((wrapper.as_ptr()): Id) => ());
+            }
+            wrappers.push(wrapper);
+            actors.push(actor);
+        }
+        scroll.with(|scroll| {
+            // SAFETY: The live scroll view retains the bar above its clip view; insets are set by hand
+            // from now on, keeping the current top inset.
+            unsafe {
+                if zpd_objc::msg_send!(bar.as_ptr(), zpd_objc::sel!("superview"), () => Id) != scroll {
+                    zpd_objc::msg_send!(scroll, zpd_objc::sel!("setAutomaticallyAdjustsContentInsets:"), ((false): bool) => ());
+                    zpd_objc::msg_send!(scroll, zpd_objc::sel!("addSubview:"), ((bar.as_ptr()): Id) => ());
+                }
+            }
+        })?;
+        *self.state.summary.borrow_mut() = Some(Summary {
+            bar,
+            line,
+            cells: wrappers,
+            actors,
+            height: 0.0,
+        });
+        Ok(())
+    }
+
+    /// Creates the opaque bar and the separator line along its top edge.
+    fn summary_bar() -> (Strong, Strong) {
+        let bar = native::alloc_init(zpd_objc::class!("NSBox"));
+        let line = native::alloc_init(zpd_objc::class!("NSBox"));
+        // SAFETY: The new box is configured on the main thread; NSColor returns an autoreleased color.
+        unsafe {
+            let box_ = bar.as_ptr();
+            // NSBoxCustom draws only its fill and border.
+            zpd_objc::msg_send!(box_, zpd_objc::sel!("setBoxType:"), ((4_u64): u64) => ());
+            zpd_objc::msg_send!(box_, zpd_objc::sel!("setTitlePosition:"), ((0_u64): u64) => ());
+            zpd_objc::msg_send!(box_, zpd_objc::sel!("setBorderWidth:"), ((0.0): f64) => ());
+            let margins = native::Size {
+                width: 0.0,
+                height: 0.0,
+            };
+            zpd_objc::msg_send!(box_, zpd_objc::sel!("setContentViewMargins:"), ((margins): native::Size) => ());
+            let fill = zpd_objc::msg_send!(zpd_objc::class!("NSColor"), zpd_objc::sel!("windowBackgroundColor"), () => Id);
+            zpd_objc::msg_send!(box_, zpd_objc::sel!("setFillColor:"), ((fill): Id) => ());
+            // NSBoxSeparator draws a line like the one under the header.
+            zpd_objc::msg_send!(line.as_ptr(), zpd_objc::sel!("setBoxType:"), ((2_u64): u64) => ());
+            zpd_objc::msg_send!(line.as_ptr(), zpd_objc::sel!("setAutoresizingMask:"), ((native::NS_VIEW_WIDTH_SIZABLE): u64) => ());
+            let content = zpd_objc::msg_send!(box_, zpd_objc::sel!("contentView"), () => Id);
+            zpd_objc::msg_send!(content, zpd_objc::sel!("addSubview:"), ((line.as_ptr()): Id) => ());
+        }
+        (bar, line)
+    }
+
+    /// Runs `callback` with the cell bounds whenever summary cell `index` lays out.
+    pub fn set_summary_layout_handler(
+        &self,
+        index: usize,
+        callback: impl FnMut(Rect, f64) + 'static,
+    ) -> Result<(), UiError> {
+        let summary = self.state.summary.borrow();
+        let cell = summary
+            .as_ref()
+            .and_then(|summary| summary.cells.get(index))
+            .ok_or(UiError::InvalidHierarchy)?;
+        // SAFETY: Summary cells are live layout views created by `set_summary`.
+        unsafe { view::set_layout_callback_on(cell.as_ptr(), callback) };
+        Ok(())
+    }
+
+    /// Returns whether a summary row is shown.
+    pub fn has_summary(&self) -> bool {
+        self.state.summary.borrow().is_some()
+    }
+
+    /// Sets the summary row's height and places its cells under their columns.
+    pub fn set_summary_height(&self, height: f64) {
+        if let Some(summary) = self.state.summary.borrow_mut().as_mut() {
+            summary.height = height;
+        }
+        self.state.place_summary();
     }
 
     /// Returns the number of cells in each row.

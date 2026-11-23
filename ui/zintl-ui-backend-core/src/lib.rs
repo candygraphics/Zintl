@@ -179,6 +179,10 @@ pub enum ViewKind {
         /// Whether columns wider than the table shrink to fit its width.
         fit_columns: bool,
         striped: bool,
+        /// Whether the last children, one per column, form a row that stays below the rows.
+        ///
+        /// It cannot be selected and is not part of `rows`, so sorting leaves it in place.
+        summary: bool,
     },
     /// A view drawn by its canvas handler.
     Canvas2D {

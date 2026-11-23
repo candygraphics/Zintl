@@ -70,6 +70,7 @@ scenarios! {
     split_view => "split-view": |_| split_view::MainView::new(),
     store_sender => "store-sender": |_| store_sender::MainView::new(),
     table => "table": |_| table::MainView::new(),
+    table_summary => "table-summary": |_| table_summary::MainView::new(),
     tabs => "tabs": |_| tabs::MainView::new(),
     text_commit => "text-commit": |_| text_commit::MainView::new(),
     text_editor => "text-editor": |_| text_editor::MainView::new(),

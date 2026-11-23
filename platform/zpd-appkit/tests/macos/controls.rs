@@ -533,6 +533,40 @@ fn main() {
         assert!(indicator(1).is_null());
     }
 
+    // Verifies a summary row sits in a bar at the bottom, keeps rows above it, and lines up with the columns.
+    let cells = [0, 1, 2, 3].map(|_| View::new(&application, Rect::new(0.0, 0.0, 10.0, 10.0)).unwrap());
+    table
+        .set_entries(&[ListEntry::Row("a".into())], &[cells[0].as_view(), cells[1].as_view()])
+        .unwrap();
+    table.set_summary(&[cells[2].as_view(), cells[3].as_view()]).unwrap();
+    assert!(table.has_summary());
+    table.set_summary_height(24.0);
+    table.as_view().layout_subtree_if_needed().unwrap();
+    // SAFETY: The table's scroll view, its bar, and the summary cell wrappers are live.
+    unsafe {
+        let scroll = Checks::native(&table);
+        let insets = zpd_objc::msg_send!(scroll, zpd_objc::sel!("contentInsets"), () => [f64; 4]);
+        assert_eq!(insets[2], 25.0, "{insets:?}");
+        let window_frame = |view: Id| {
+            let bounds = zpd_objc::msg_send!(view, zpd_objc::sel!("bounds"), () => NsRect);
+            zpd_objc::msg_send!(view, zpd_objc::sel!("convertRect:toView:"), ((bounds): NsRect, (zpd_objc::NIL): Id) => NsRect)
+        };
+        let wrapper = |view: &View| zpd_objc::msg_send!(Checks::native(view), zpd_objc::sel!("superview"), () => Id);
+        let bar = zpd_objc::msg_send!(zpd_objc::msg_send!(wrapper(&cells[2]), zpd_objc::sel!("superview"), () => Id), zpd_objc::sel!("superview"), () => Id);
+        let (scroll_frame, bar_frame) = (window_frame(scroll), window_frame(bar));
+        // Window coordinates grow upward, so the bar's bottom is the scroll view's bottom.
+        assert_eq!(bar_frame.y, scroll_frame.y, "{bar_frame:?} {scroll_frame:?}");
+        assert_eq!(bar_frame.height, 25.0);
+        let (name, length) = (window_frame(wrapper(&cells[2])), window_frame(wrapper(&cells[3])));
+        let (row_name, row_length) = (window_frame(wrapper(&cells[0])), window_frame(wrapper(&cells[1])));
+        assert_eq!((name.x, name.width), (row_name.x, row_name.width), "{name:?} {row_name:?}");
+        assert_eq!((length.x, length.width), (row_length.x, row_length.width));
+        assert_eq!(length.height, 24.0);
+    }
+    // Removing it restores the insets.
+    table.set_summary(&[]).unwrap();
+    assert!(!table.has_summary());
+
     // Verifies rich runs round-trip, and the paragraph action restyles undoably and validates its items.
     let rich = TextEditor::new(&application).unwrap();
     content.add_subview(&rich).unwrap();

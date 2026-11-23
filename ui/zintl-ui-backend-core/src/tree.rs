@@ -560,6 +560,7 @@ mod tests {
                 sort: None,
                 fit_columns: false,
                 striped: false,
+                summary: false,
             })
         };
         let mut tree = NodeTree::<()>::new();

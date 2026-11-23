@@ -107,6 +107,7 @@ pub struct Table<K: 'static = String, I = ByItemKey> {
     sort: Option<Store<Option<SortOrder>>>,
     fit_columns: bool,
     empty_content: Option<ElementFactory<RenderNode>>,
+    summary: Option<ListFactory<RenderNode>>,
     item_id: I,
     layout: LayoutStyle,
     modifiers: ViewModifiers,
@@ -129,6 +130,7 @@ impl<K: 'static> Table<K> {
             sort: None,
             fit_columns: false,
             empty_content: None,
+            summary: None,
             item_id: ByItemKey,
             layout: LayoutStyle::fill(Size::new(0.0, 0.0)),
             modifiers: ViewModifiers::default(),
@@ -154,10 +156,20 @@ impl<K: 'static, I> Table<K, I> {
             sort: self.sort,
             fit_columns: self.fit_columns,
             empty_content: self.empty_content,
+            summary: self.summary,
             item_id: ItemIdFn::new(item_id),
             layout: self.layout,
             modifiers: self.modifiers,
         }
+    }
+
+    /// Shows `cells`, one per column, in a row that stays below the rows, such as totals.
+    ///
+    /// The row cannot be selected, is not sorted, and stays visible while the
+    /// rows scroll. Its cells follow the columns' widths and alignment.
+    pub fn summary_row(mut self, cells: ListFactory<RenderNode>) -> Self {
+        self.summary = Some(cells);
+        self
     }
 
     /// Shrinks columns proportionally whenever they are wider than the table, so none is hidden.
@@ -237,8 +249,8 @@ impl<K: 'static, I> Table<K, I> {
         self
     }
 
-    /// Returns the cells of `row`, padded with empty cells or cut to the column count.
-    fn cells(&self, row: &TableRow<K>) -> impl Iterator<Item = ElementFactory<RenderNode>> {
+    /// Returns `cells` padded with empty cells or cut to the column count.
+    fn padded(&self, cells: &ListFactory<RenderNode>) -> ListFactory<RenderNode> {
         // Each cell needs exactly one native view, so blanks are empty containers.
         let blank = || {
             ElementFactory::new(crate::Container::new(
@@ -246,8 +258,14 @@ impl<K: 'static, I> Table<K, I> {
                 Vec::new(),
             ))
         };
-        let mut cells = row.cells.clone();
+        let mut cells = cells.clone();
         cells.resize_with(self.columns.len().max(1), blank);
+        cells
+    }
+
+    /// Returns the cells of `row`, padded with empty cells or cut to the column count.
+    fn cells(&self, row: &TableRow<K>) -> impl Iterator<Item = ElementFactory<RenderNode>> {
+        let mut cells = self.padded(&row.cells);
         // The table shows the menu of the clicked row's first cell, so it carries the row's menu.
         if let Some(menu) = row.menu.clone() {
             let first = cells.remove(0);
@@ -304,6 +322,14 @@ impl<K: Clone + PartialEq + 'static, I: ItemIdSource<K>> Table<K, I> {
                     .map(|(column, cell)| cell.key(format!("{id}/{column}")).into_element())
                     .collect::<Vec<_>>()
             })
+            // Summary cells follow the rows, keyed apart from any row.
+            .chain(self.summary.iter().flat_map(|summary| {
+                self.padded(summary)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(column, cell)| cell.key(format!("\0summary/{column}")).into_element())
+                    .collect::<Vec<_>>()
+            }))
             .collect::<Vec<_>>();
         let selected = self.selection.and_then(|store| {
             let key = cx.get(store).as_ref()?;
@@ -327,6 +353,7 @@ impl<K: Clone + PartialEq + 'static, I: ItemIdSource<K>> Table<K, I> {
                 sort: self.sort.and_then(|store| cx.get(store).clone()),
                 fit_columns: self.fit_columns,
                 striped: self.striped,
+                summary: self.summary.is_some(),
             },
             layout,
             // The ID names the table itself, not a container around it.

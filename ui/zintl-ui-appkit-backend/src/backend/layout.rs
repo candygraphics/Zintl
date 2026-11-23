@@ -96,6 +96,11 @@ impl LayoutNative for NativeNode {
                     let row = &mut heights[index / columns];
                     *row = row.max(height.ceil() as f64);
                 }
+                // The summary row's cells come last, after every row.
+                if list.has_summary() {
+                    let summary = heights.pop().unwrap_or(1.0);
+                    list.set_summary_height(summary);
+                }
                 list.set_row_heights(&heights).map_err(AppError::Ui)?;
             }
             _ => {}

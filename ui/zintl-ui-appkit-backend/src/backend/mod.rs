@@ -676,7 +676,7 @@ impl AppKitBackend {
                 Ok(())
             }
             NativeNode::List(list, rows) => {
-                let (entries, selected, columns) = match self.kind(id) {
+                let (entries, selected, columns, summary) = match self.kind(id) {
                     RenderNode::View {
                         kind:
                             ViewKind::List {
@@ -695,6 +695,7 @@ impl AppKitBackend {
                             .collect::<Vec<_>>(),
                         selected,
                         Vec::new(),
+                        false,
                     ),
                     RenderNode::View {
                         kind:
@@ -702,6 +703,7 @@ impl AppKitBackend {
                                 rows,
                                 selected,
                                 columns,
+                                summary,
                                 ..
                             },
                         ..
@@ -709,6 +711,7 @@ impl AppKitBackend {
                         rows.into_iter().map(ListEntry::Row).collect(),
                         selected,
                         columns,
+                        summary,
                     ),
                     _ => return Err(AppError::InvalidTree),
                 };
@@ -721,7 +724,15 @@ impl AppKitBackend {
                     .iter()
                     .map(|(_, native)| native.as_view())
                     .collect::<Vec<_>>();
-                list.set_entries(&entries, &views)?;
+                // The summary row's cells come last, one per column.
+                let summary_cells = if summary {
+                    columns.len().max(1).min(views.len())
+                } else {
+                    0
+                };
+                let (row_views, summary_views) = views.split_at(views.len() - summary_cells);
+                list.set_entries(&entries, row_views)?;
+                list.set_summary(summary_views)?;
                 list.select(selected.as_deref())?;
                 // Text cells that keep the leading alignment follow their column's alignment.
                 if !columns.is_empty() {
@@ -746,12 +757,16 @@ impl AppKitBackend {
                     let layout = Rc::new(RefCell::new(HostLayout::default()));
                     let callback_layout = layout.clone();
                     let errors = rows.errors.clone();
-                    list.set_row_layout_handler(index, move |bounds, _| {
+                    let handler = move |bounds: zpd_appkit::geometry::Rect, _| {
                         let size = Size::new(bounds.width as f32, bounds.height as f32);
                         if let Err(error) = callback_layout.borrow().layout(size, 0.0) {
                             errors.record(error);
                         }
-                    })?;
+                    };
+                    match index.checked_sub(row_views.len()) {
+                        Some(column) => list.set_summary_layout_handler(column, handler)?,
+                        None => list.set_row_layout_handler(index, handler)?,
+                    }
                     layouts.push(layout);
                     self.attach_contents(*row_id, native)?;
                 }

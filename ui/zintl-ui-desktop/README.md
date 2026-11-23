@@ -217,6 +217,19 @@ that no row has shows nothing selected. `on_select` runs after the bound Store
 is updated, for user changes only. On Windows the
 rows are shown in a scroll view without selection for now.
 
+`Table::summary_row` shows a row below the rows, such as totals, with one cell
+per column. It stays visible while the rows scroll, cannot be selected, is not
+sorted, and its cells follow the columns' widths and alignment (macOS only for
+now):
+
+```rust,ignore
+Table::new(columns, rows).summary_row(list![
+    Text::new("Total"),
+    Text::new(format_amount(totals.budget)).id("total-budget"),
+    Text::new(format_amount(totals.spent)).id("total-spent"),
+])
+```
+
 ## Split views
 
 `SplitView` places two panes on either side of a divider. Dragging the

@@ -2657,6 +2657,54 @@ fn table_lays_out_cells_by_row_and_writes_the_selection() {
     assert_eq!(app.get(selected), Some("b"));
 }
 
+#[test]
+fn table_summary_row_follows_the_rows_without_a_row_key() {
+    // Verifies summary cells come after the row cells, padded to the column count, and are not one of the rows.
+    let tree = Harness::new(
+        Table::new(
+            [
+                TableColumn::new("Name"),
+                TableColumn::new("Budget"),
+                TableColumn::new("Spent"),
+            ],
+            [TableRow::new(
+                "a",
+                list![Text::new("Food"), Text::new("100"), Text::new("80")],
+            )],
+        )
+        .summary_row(list![
+            Text::new("Total"),
+            Text::new("100").id("total-budget")
+        ]),
+    )
+    .tree();
+    assert!(matches!(
+        &tree.value,
+        RenderNode::View {
+            kind: ViewKind::Table { rows, summary: true, .. },
+            ..
+        } if rows == &["a"]
+    ));
+    assert_eq!(tree.children.len(), 6);
+    assert!(matches!(
+        &tree.children[4].value,
+        RenderNode::View { id: Some(id), .. } if id == "total-budget"
+    ));
+    // Without a summary row, the table has only row cells.
+    let plain = Harness::new(Table::new(
+        [TableColumn::new("Name")],
+        [TableRow::new("a", list![Text::new("Food")])],
+    ))
+    .tree();
+    assert!(matches!(
+        &plain.value,
+        RenderNode::View {
+            kind: ViewKind::Table { summary: false, .. },
+            ..
+        }
+    ));
+}
+
 /// A row key of the app's own type, as lists, tables, and sidebars select by.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct FolderId(u32);
