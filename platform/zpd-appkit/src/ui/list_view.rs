@@ -363,6 +363,34 @@ unsafe extern "C" fn table_key_down(object: Id, _: zpd_objc::Sel, event: Id) {
     }
 }
 
+/// Lets a click on selectable text in a selected row select the text.
+///
+/// `NSTableView` does this for editable text only, and keeps clicks on other
+/// text for row selection, so the first click still selects the row.
+unsafe extern "C" fn validate_first_responder(
+    object: Id,
+    selector: zpd_objc::Sel,
+    responder: Id,
+    event: Id,
+) -> bool {
+    // SAFETY: AppKit passes the live table, a live proposed responder, and an event or nil.
+    unsafe {
+        if zpd_objc::msg_send_super!(object, zpd_objc::class!("NSTableView"), selector, ((responder): Id, (event): Id) => bool)
+        {
+            return true;
+        }
+        let selectable_text = zpd_objc::msg_send!(responder, zpd_objc::sel!("isKindOfClass:"), ((zpd_objc::class!("NSTextField")): zpd_objc::Class) => bool)
+            && zpd_objc::msg_send!(responder, zpd_objc::sel!("isSelectable"), () => bool);
+        if !selectable_text {
+            return false;
+        }
+        let row =
+            zpd_objc::msg_send!(object, zpd_objc::sel!("rowForView:"), ((responder): Id) => i64);
+        row >= 0
+            && zpd_objc::msg_send!(object, zpd_objc::sel!("isRowSelected:"), ((row): i64) => bool)
+    }
+}
+
 /// An `NSTableView` that reports row activation and keys for rows.
 fn table_class() -> zpd_objc::Class {
     static CLASS: OnceLock<usize> = OnceLock::new();
@@ -372,6 +400,7 @@ fn table_class() -> zpd_objc::Class {
             methods {
                 "keyDown:": "v@:@" => table_key_down,
                 "zpdActivateClickedRow:": "v@:@" => activate_clicked_row,
+                "validateProposedFirstResponder:forEvent:": "B@:@@" => validate_first_responder,
             }
         }) as usize
     }) as zpd_objc::Class

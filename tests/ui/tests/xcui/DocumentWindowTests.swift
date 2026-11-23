@@ -53,4 +53,21 @@ final class DocumentWindowTests: ZintlUITestCase {
     XCTAssertTrue(waitForValue(note, ""))
     XCTAssertEqual(edits.value as? String, "Edits: 2")
   }
+
+  /// Verifies ⌘Z steps the app's history while selectable text has a selection, leaving typed text alone.
+  func testUndoGoesToTheAppWhileTextIsSelected() throws {
+    try launch(scenario: "document")
+
+    let edits = app.staticTexts["edits"]
+    app.buttons["edit-button"].click()
+    XCTAssertTrue(waitForValue(edits, "Edits: 1"))
+    let note = app.textFields["note-field"]
+    note.click()
+    note.typeText("draft")
+
+    app.staticTexts["reference"].doubleClick()
+    app.typeKey("z", modifierFlags: .command)
+    XCTAssertTrue(waitForValue(edits, "Edits: 0"))
+    XCTAssertEqual(note.value as? String, "draft")
+  }
 }

@@ -243,6 +243,12 @@ impl TextField {
         self
     }
 
+    /// Lets the user select and copy a label's text, for [`crate::Text::selectable`].
+    pub(crate) fn selectable(mut self, selectable: bool) -> Self {
+        self.selectable = selectable;
+        self
+    }
+
     /// Takes keyboard focus each time `trigger` fires, for example after "New Item".
     ///
     /// A field created in the same update as the fire takes focus once it is shown.

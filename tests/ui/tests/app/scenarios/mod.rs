@@ -66,6 +66,7 @@ scenarios! {
     pickers => "pickers": |_| pickers::MainView::new(),
     popover => "popover": |_| popover::MainView::new(),
     scroll_status => "scroll-status": |_| scroll_status::MainView::default(),
+    selectable_text => "selectable-text": |_| selectable_text::MainView::new(),
     sidebar_features => "sidebar-features": |_| sidebar_features::MainView::new(),
     sliders => "sliders": |_| sliders::MainView::new(),
     split_view => "split-view": |_| split_view::MainView::new(),

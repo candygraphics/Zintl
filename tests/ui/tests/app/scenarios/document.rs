@@ -1,6 +1,6 @@
 use zintl_ui_desktop::*;
 
-/// A window with an undoable edit count that asks before closing.
+/// A window with an undoable edit count that asks before closing, a text field, and selectable text.
 pub struct MainView {
     done: Store<u32>,
     undone: Store<u32>,
@@ -72,6 +72,9 @@ impl View for MainView {
                     .id("note-field")
                     .placeholder("Note")
                     .bind(self.note),
+                Text::new("Reference 1234")
+                    .selectable(true)
+                    .id("reference"),
             ])
             .spacing(12.0),
         )

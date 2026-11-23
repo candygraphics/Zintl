@@ -3664,3 +3664,27 @@ fn actions_write_and_read_the_clipboard() {
     assert!(app.dispatch(&[0, 1], Event::Activated));
     assert_eq!(app.get(pasted).as_deref(), Some("5,678"));
 }
+
+#[test]
+fn selectable_text_stays_a_label() {
+    // Verifies selectable text is a non-editable label that allows selection, and plain text does not.
+    let flags = |text: Text| match Harness::new(text).tree().value {
+        RenderNode::View {
+            kind:
+                ViewKind::TextField {
+                    editable,
+                    selectable,
+                    bordered,
+                    ..
+                },
+            ..
+        } => (editable, selectable, bordered),
+        other => panic!("expected a label, got {other:?}"),
+    };
+
+    assert_eq!(
+        flags(Text::new("1,234").selectable(true)),
+        (false, true, false)
+    );
+    assert_eq!(flags(Text::new("1,234")), (false, false, false));
+}
