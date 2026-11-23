@@ -285,6 +285,12 @@ fn main() {
     assert!(height.is_some_and(|height| height >= 20.0), "{height:?}");
     assert_eq!(width, None);
 
+    // Verifies a number field reports its text field's height, though its container is a plain view.
+    let number = NumberField::new(&application).unwrap();
+    let (width, number_height) = number.intrinsic_content_size().unwrap();
+    assert!(number_height >= height, "{number_height:?} < {height:?}");
+    assert_eq!(width, None);
+
     // Verifies a wrapping label needs more lines at a narrower width.
     let long = "A long sentence that cannot fit on one line of a narrow pane and has to wrap.";
     let wrapping = TextField::label_with_string(&application, long).unwrap();

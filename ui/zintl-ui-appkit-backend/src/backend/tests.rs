@@ -279,6 +279,23 @@ fn single_line_text_fields_measure_their_height() {
 }
 
 #[test]
+fn number_fields_measure_their_height() {
+    // Verifies number fields take their text field's height in any stack alignment, keeping a flexible width.
+    let number = ViewKind::NumberField {
+        value: 0.0,
+        format: zintl_ui_backend_core::NumberFormat {
+            minimum: 0.0,
+            maximum: 100.0,
+            step: 1.0,
+            fraction_digits: 0,
+        },
+        text: None,
+        placeholder: None,
+    };
+    assert_eq!(NativeNode::measured_axes(&number), (false, true));
+}
+
+#[test]
 fn focus_requests_follow_increases_only() {
     // Verifies a field takes focus when created with a request or when the count rises, not otherwise.
     let editor = |focus| ViewKind::TextEditor {

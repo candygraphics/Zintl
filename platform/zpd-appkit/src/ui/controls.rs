@@ -651,6 +651,18 @@ impl NumberField {
     pub fn accessibility_view(&self) -> ViewRef<'_> {
         ViewRef::from_actor(&self.field)
     }
+    /// Returns the height of the taller of the text field and stepper, with no fixed width.
+    ///
+    /// The container is a plain `NSView`, which has no intrinsic size of its own.
+    pub fn intrinsic_content_size(&self) -> Result<(Option<f64>, Option<f64>), UiError> {
+        let (_, field) = ViewRef::from_actor(&self.field).intrinsic_content_size()?;
+        let (_, stepper) = ViewRef::from_actor(&self.stepper).intrinsic_content_size()?;
+        let height = match (field, stepper) {
+            (Some(field), Some(stepper)) => Some(field.max(stepper)),
+            (field, stepper) => field.or(stepper),
+        };
+        Ok((None, height))
+    }
     /// Shows `text` over both the field and its stepper.
     pub fn set_tool_tip(&self, text: Option<&str>) -> Result<(), UiError> {
         for control in [&self.field, &self.stepper] {

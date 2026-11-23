@@ -89,4 +89,16 @@ final class IntegerFieldTests: ZintlUITestCase {
     assertLabel("count-value", "Count: 1")
     XCTAssertTrue(waitForValue(count, "1"))
   }
+
+  /// Verifies an optional field with a suffix in a centered row is as tall as one in a column.
+  func testFieldInCenteredRowKeepsItsHeight() throws {
+    try launch(scenario: "integer-field")
+
+    let column = app.textFields["count"]
+    let row = app.textFields["row-count"]
+    XCTAssertTrue(row.waitToExist(timeout: 2))
+    XCTAssertGreaterThanOrEqual(row.frame.height, 20)
+    XCTAssertEqual(row.frame.height, column.frame.height, accuracy: 1)
+    XCTAssertTrue(row.isHittable)
+  }
 }

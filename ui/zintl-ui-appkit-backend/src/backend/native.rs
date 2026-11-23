@@ -169,7 +169,10 @@ impl NativeNode {
         if !measure_width && !measure_height {
             return Ok(declared);
         }
-        let (width, height) = self.as_view().intrinsic_content_size()?;
+        let (width, height) = match self {
+            Self::NumberField(field) => field.intrinsic_content_size()?,
+            _ => self.as_view().intrinsic_content_size()?,
+        };
         let raise = |declared: f32, measure: bool, size: Option<f64>| match (measure, size) {
             (true, Some(size)) => declared.max(size.ceil() as f32),
             _ => declared,
@@ -200,7 +203,8 @@ impl NativeNode {
                 multiline: false, ..
             }
             | ViewKind::SearchField { .. }
-            | ViewKind::ComboBox { .. } => (false, true),
+            | ViewKind::ComboBox { .. }
+            | ViewKind::NumberField { .. } => (false, true),
             _ => (false, false),
         }
     }
