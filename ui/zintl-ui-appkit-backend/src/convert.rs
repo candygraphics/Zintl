@@ -34,6 +34,18 @@ macro_rules! same_variants {
     };
 }
 
+impl Native for core::FieldAccessory {
+    type Output = ui::FieldAccessory;
+
+    fn native(&self) -> ui::FieldAccessory {
+        ui::FieldAccessory {
+            system_image: self.system_image.clone(),
+            label: self.label.clone(),
+            identifier: self.id.clone(),
+        }
+    }
+}
+
 same_variants!(core::WindowStyle => ui::WindowStyle { Normal, Panel });
 same_variants!(core::TitleBar => ui::TitleBar { Standard, Overlay, Hidden });
 same_variants!(core::PopoverEdge => ui::PopoverEdge { Leading, Trailing, Top, Bottom });
@@ -724,6 +736,7 @@ impl Shared for zpd_appkit::actor::WindowEventKind {
             Native::Undo => Shared::Undo,
             Native::Redo => Shared::Redo,
             Native::ButtonClicked => Shared::Activated,
+            Native::AccessoryClicked => Shared::AccessoryActivated,
             Native::TextChanged { value } => Shared::TextChanged { value },
             Native::TextCommitted { value } => Shared::TextCommitted { value },
             Native::RichTextChanged { runs } => Shared::RichTextChanged {

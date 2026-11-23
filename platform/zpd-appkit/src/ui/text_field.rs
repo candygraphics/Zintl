@@ -5,6 +5,7 @@ use crate::runloop::Application;
 use zpd_objc::Strong;
 
 use super::callback;
+use super::field_accessory::{AccessorySlot, FieldAccessory};
 use super::view::{AsView, ViewActor, ViewRef};
 use super::{Color, UiError};
 
@@ -80,6 +81,7 @@ impl TextAlignment {
 
 pub struct TextField {
     view: ViewActor,
+    accessory: AccessorySlot,
 }
 impl TextField {
     pub fn with_string(application: &Application, value: &str) -> Result<Self, UiError> {
@@ -139,7 +141,10 @@ impl TextField {
                 })
             })??;
         }
-        Ok(Self { view })
+        Ok(Self {
+            view,
+            accessory: AccessorySlot::default(),
+        })
     }
     pub fn set_string_value(&self, value: &str) -> Result<(), UiError> {
         let value = native::nsstring(value);
@@ -231,6 +236,13 @@ impl TextField {
         })
     }
     /// Makes the field the first responder of its window; does nothing outside a window.
+    /// Shows `accessory` inside the field's trailing edge, or removes it for `None`.
+    ///
+    /// Clicks are reported as [`WindowEventKind::AccessoryClicked`].
+    pub fn set_accessory(&self, accessory: Option<&FieldAccessory>) -> Result<(), UiError> {
+        let actor = self.view.actor();
+        self.accessory.set(actor, actor, accessory)
+    }
     pub fn focus(&self) -> Result<(), UiError> {
         self.view.as_view().with(|field| {
             // SAFETY: The live field and its window, which may be nil, accept the message.

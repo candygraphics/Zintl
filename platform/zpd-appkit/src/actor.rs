@@ -66,6 +66,8 @@ pub enum WindowEventKind {
     /// Redo was chosen while the window's app history owns it.
     Redo,
     ButtonClicked,
+    /// The button inside a text or number field was clicked.
+    AccessoryClicked,
     TextChanged {
         value: String,
     },

@@ -272,6 +272,7 @@ fn single_line_text_fields_measure_their_height() {
         multiline,
         style: Default::default(),
         focus: 0,
+        accessory: None,
     };
     assert_eq!(NativeNode::measured_axes(&field(false)), (false, true));
     // Multiline fields keep their declared size.
@@ -292,6 +293,7 @@ fn number_fields_measure_their_height() {
         text: None,
         placeholder: None,
         focus: 0,
+        accessory: None,
     };
     assert_eq!(NativeNode::measured_axes(&number), (false, true));
 }
@@ -320,6 +322,7 @@ fn focus_requests_follow_increases_only() {
         text: None,
         placeholder: None,
         focus,
+        accessory: None,
     };
     assert!(ViewKind::requests_focus(Some(&number(0)), &number(1)));
     assert!(!ViewKind::requests_focus(Some(&number(1)), &number(1)));

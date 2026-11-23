@@ -9,6 +9,7 @@ use crate::{CalendarDate, CanvasEvent, CanvasId, Color, SortOrder};
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum EventKind {
     Activated,
+    AccessoryActivated,
     TextChanged,
     TextCommitted,
     RichTextChanged,
@@ -46,6 +47,8 @@ pub enum EventKind {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     Activated,
+    /// The button inside a text or number field was clicked.
+    AccessoryActivated,
     TextChanged {
         value: String,
     },
@@ -148,6 +151,7 @@ impl EventTrait for Event {
     fn kind(&self) -> Self::Kind {
         match self {
             Self::Activated => EventKind::Activated,
+            Self::AccessoryActivated => EventKind::AccessoryActivated,
             Self::TextChanged { .. } => EventKind::TextChanged,
             Self::TextCommitted { .. } => EventKind::TextCommitted,
             Self::RichTextChanged { .. } => EventKind::RichTextChanged,

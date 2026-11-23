@@ -105,6 +105,19 @@ warns), and SF Symbols through `system_image`. `Button::icon("gearshape", "Setti
 shows a symbol alone and takes its size; VoiceOver reads the second argument as
 its name. `Button::help()` is the round question mark button.
 
+`TextField`, `IntegerField`, and `NumberField` take a button inside their
+trailing edge with `accessory`, like a search field's clear button. It does
+not take keyboard focus or change the text, the text stops before it, and a
+popover on the field still anchors to the whole field:
+
+```rust,ignore
+TextField::new().bind(self.amount).accessory(
+    FieldAccessory::button("plus.forwardslash.minus", "Calculator") // SF Symbol, VoiceOver name
+        .id("amount-calculator")
+        .on_click(open_calculator),
+)
+```
+
 Builder methods that turn a state or feature on take a `bool`, such as
 `enabled(false)`, `multiline(true)`, or `accessibility_hidden(true)`, so a
 condition does not need an `if` around the builder. Layout instructions take

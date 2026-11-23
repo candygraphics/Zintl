@@ -406,9 +406,14 @@ impl NativeNode {
                     draws_background,
                     multiline,
                     style,
+                    accessory,
                     ..
                 },
             ) => {
+                if !matches!(old, Some(ViewKind::TextField { accessory: old, .. }) if old == accessory)
+                {
+                    field.set_accessory(accessory.as_ref().map(Native::native).as_ref())?;
+                }
                 // Typed text stays until the value changes, so unbound fields keep edits.
                 let changed =
                     !matches!(old, Some(ViewKind::TextField { value: old, .. }) if old == value);
@@ -567,9 +572,14 @@ impl NativeNode {
                     format,
                     text,
                     placeholder,
+                    accessory,
                     ..
                 },
             ) => {
+                if !matches!(old, Some(ViewKind::NumberField { accessory: old, .. }) if old == accessory)
+                {
+                    field.set_accessory(accessory.as_ref().map(Native::native).as_ref())?;
+                }
                 if !matches!(old, Some(ViewKind::NumberField { placeholder: old, .. }) if old == placeholder)
                 {
                     field.set_placeholder(placeholder.as_deref())?;

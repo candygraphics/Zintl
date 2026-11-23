@@ -32,10 +32,10 @@ pub use headless::HeadlessBackend;
 pub use model::{
     AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, CalendarDate,
     CommandItem, CommandMenu, CommandModifier, CommandRole, CommandSet, DatePickerStyle,
-    FileDialogConfig, FileDialogMode, ListSection, ListStyle, MenuRole, NumberFormat, PopoverEdge,
-    ScrollAlignment, ScrollAxes, ScrollTarget, ShortcutKey, Sidebar, SidebarItem, SidebarSearch,
-    SidebarSection, SortOrder, SystemColor, TableColumn, TextAlignment, TextColor, TextStyle,
-    TitleBar, Toolbar, ToolbarItem, WindowAppMenu, WindowStyle,
+    FieldAccessory, FileDialogConfig, FileDialogMode, ListSection, ListStyle, MenuRole,
+    NumberFormat, PopoverEdge, ScrollAlignment, ScrollAxes, ScrollTarget, ShortcutKey, Sidebar,
+    SidebarItem, SidebarSearch, SidebarSection, SortOrder, SystemColor, TableColumn, TextAlignment,
+    TextColor, TextStyle, TitleBar, Toolbar, ToolbarItem, WindowAppMenu, WindowStyle,
 };
 pub use signal::Signal;
 #[cfg(feature = "wgpu")]
@@ -85,6 +85,7 @@ pub enum ViewKind {
         style: TextStyle,
         /// Each increase makes the field take keyboard focus.
         focus: u64,
+        accessory: Option<FieldAccessory>,
     },
     /// A scrolling rich text editor that fills its parent.
     TextEditor {
@@ -126,6 +127,7 @@ pub enum ViewKind {
         placeholder: Option<String>,
         /// Each increase makes the field take keyboard focus.
         focus: u64,
+        accessory: Option<FieldAccessory>,
     },
     SearchField {
         value: String,

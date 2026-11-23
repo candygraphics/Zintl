@@ -437,6 +437,7 @@ pub struct NumberField {
     text: std::rc::Rc<std::cell::RefCell<Option<String>>>,
     /// Whether new text waits for editing to end instead of replacing typed text.
     holds_text: std::cell::Cell<bool>,
+    accessory: super::field_accessory::AccessorySlot,
 }
 impl NumberField {
     const STEPPER_WIDTH: f64 = 19.0;
@@ -550,6 +551,7 @@ impl NumberField {
             formatter: formatter_actor,
             text,
             holds_text: std::cell::Cell::new(false),
+            accessory: Default::default(),
         })
     }
 
@@ -650,6 +652,13 @@ impl NumberField {
     /// Returns the text field, which VoiceOver reads as the number.
     pub fn accessibility_view(&self) -> ViewRef<'_> {
         ViewRef::from_actor(&self.field)
+    }
+    /// Shows `accessory` inside the text field's trailing edge, before the stepper, or removes it for `None`.
+    ///
+    /// Clicks are reported as [`WindowEventKind::AccessoryClicked`].
+    pub fn set_accessory(&self, accessory: Option<&super::FieldAccessory>) -> Result<(), UiError> {
+        self.accessory
+            .set(&self.field, self.view.actor(), accessory)
     }
     /// Makes the text field the first responder of its window, if it is in one.
     pub fn focus(&self) -> Result<(), UiError> {

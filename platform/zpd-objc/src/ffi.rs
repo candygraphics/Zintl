@@ -40,6 +40,7 @@ unsafe extern "C" {
     pub fn ivar_getOffset(ivar: *mut c_void) -> isize;
     pub fn method_getImplementation(method: *mut c_void) -> Imp;
     pub fn object_getClass(object: Id) -> Class;
+    pub fn object_setClass(object: Id, class: Class) -> Class;
     pub fn objc_retain(object: Id) -> Id;
     pub fn objc_release(object: Id);
     pub fn objc_initWeak(location: *mut Id, object: Id) -> Id;

@@ -925,6 +925,7 @@ fn number_field_clamps_entered_values() {
                 text: None,
                 placeholder: None,
                 focus: 0,
+                accessory: None,
             },
             ..
         }
@@ -3435,6 +3436,54 @@ fn integer_and_number_fields_request_focus_on_each_fire() {
 
     app.fire(focus, ());
     assert_eq!(requests(&app), [1, 1]);
+}
+
+#[test]
+fn field_accessories_describe_their_button_and_route_clicks() {
+    // Verifies text and integer fields describe their accessory and run its action on a click without changing the value.
+    let clicks = Calls::default();
+    let (click, again) = (clicks.clone(), clicks.clone());
+    let (mut app, (text, count)) = WithStores::mount(
+        |cx| (cx.store(String::from("12")), cx.store(Some(3_i64))),
+        move |(text, count)| {
+            VStack::new(list![
+                TextField::new().bind(text).accessory(
+                    FieldAccessory::button("plus.forwardslash.minus", "Calculator")
+                        .id("amount-calculator")
+                        .on_click(click.action()),
+                ),
+                IntegerField::optional()
+                    .bind(count)
+                    .accessory(FieldAccessory::button("xmark", "Clear").on_click(again.action())),
+            ])
+        },
+    );
+    let tree = app.tree();
+    let accessory = |node: &RenderedNode| match &node.value {
+        RenderNode::View {
+            kind: ViewKind::TextField { accessory, .. } | ViewKind::NumberField { accessory, .. },
+            ..
+        } => accessory.clone(),
+        _ => panic!("expected a field"),
+    };
+    assert_eq!(
+        accessory(&tree.children[0]),
+        Some(zintl_ui_backend_core::FieldAccessory {
+            system_image: "plus.forwardslash.minus".into(),
+            label: "Calculator".into(),
+            id: Some("amount-calculator".into()),
+        })
+    );
+    assert_eq!(
+        accessory(&tree.children[1]).map(|a| a.label),
+        Some("Clear".into())
+    );
+
+    assert!(app.dispatch(&[0, 0], Event::AccessoryActivated));
+    assert!(app.dispatch(&[0, 1], Event::AccessoryActivated));
+    assert_eq!(clicks.count(), 2);
+    assert_eq!(app.get(text), "12");
+    assert_eq!(app.get(count), Some(3));
 }
 
 #[test]

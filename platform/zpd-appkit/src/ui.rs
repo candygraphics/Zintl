@@ -8,6 +8,7 @@ mod controls;
 mod date_picker;
 mod dialogs;
 mod error;
+mod field_accessory;
 mod layout;
 mod list_view;
 mod menu;
@@ -51,6 +52,7 @@ pub use dialogs::{
     FileDialogConfig, FileDialogMode, FileDialogSheet,
 };
 pub use error::UiError;
+pub use field_accessory::FieldAccessory;
 pub use layout::{Dimension, LayoutConstraint, XAxisAnchor, YAxisAnchor};
 pub use list_view::{ListEntry, ListStyle, ListView, TableColumn};
 pub use menu::ContextMenu;

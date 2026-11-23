@@ -392,6 +392,13 @@ impl<'view> ViewRef<'view> {
             zpd_objc::msg_send!(view, zpd_objc::sel!("setAccessibilityIdentifier:"), ((identifier.as_ref().map_or(zpd_objc::NIL, Strong::as_ptr)): zpd_objc::Id) => ());
         })
     }
+    /// Hides the view and its subviews with `true`.
+    pub fn set_hidden(self, hidden: bool) -> Result<(), UiError> {
+        // SAFETY: The live view accepts a BOOL.
+        self.with(|view| unsafe {
+            zpd_objc::msg_send!(view, zpd_objc::sel!("setHidden:"), ((hidden): bool) => ());
+        })
+    }
     /// Shows `text` when the pointer rests on the view; `None` removes it.
     pub fn set_tool_tip(self, text: Option<&str>) -> Result<(), UiError> {
         let text = text.map(native::nsstring);
