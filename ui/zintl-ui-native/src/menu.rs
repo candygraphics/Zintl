@@ -722,6 +722,8 @@ pub struct MainMenu {
     menus: Vec<StandardMenu>,
     extensions: Vec<(StandardMenu, MenuItem)>,
     custom: Vec<Menu>,
+    /// Runs for Edit › Find › Find… instead of showing the text finder.
+    find: Option<Rc<MenuAction>>,
 }
 
 impl MainMenu {
@@ -745,6 +747,7 @@ impl MainMenu {
             ],
             extensions: Vec::new(),
             custom: Vec::new(),
+            find: None,
         }
     }
 
@@ -780,6 +783,16 @@ impl MainMenu {
         self
     }
 
+    /// Runs `action` for Edit › Find › Find… (⌘F) instead of showing the focused text view's find bar.
+    ///
+    /// Use it to move focus to an app-level search, such as a toolbar search
+    /// field. The item keeps its title, position, and shortcut; the other Find
+    /// items still act on the focused text view.
+    pub fn on_find(mut self, action: impl for<'a> Fn(&mut Context<'a>) + 'static) -> Self {
+        self.find = Some(Rc::new(action));
+        self
+    }
+
     /// Adds a custom menu before the Window menu.
     pub fn menu(mut self, menu: Menu) -> Self {
         self.custom.push(menu);
@@ -809,6 +822,24 @@ impl MainMenu {
             .filter(|(target, _)| *target == menu)
             .map(|(_, item)| item.clone())
             .collect()
+    }
+
+    /// Returns the Find… item: the app's action when set, otherwise the text finder.
+    fn find_item(&self) -> MenuItem {
+        let item = MenuItem::standard(StandardAction::Find);
+        match &self.find {
+            // Without a standard action, selection runs the app's action.
+            Some(find) => item.update(|kind| {
+                if let MenuItemKind::Action {
+                    standard, action, ..
+                } = kind
+                {
+                    *standard = None;
+                    *action = Some(find.clone());
+                }
+            }),
+            None => item,
+        }
     }
 
     /// Builds one standard menu, placing extensions where macOS apps expect them.
@@ -859,7 +890,7 @@ impl MainMenu {
                     MenuItem::submenu(Menu::with_title(
                         MenuText::Standard(StandardText::FindMenu),
                         [
-                            MenuItem::standard(Action::Find),
+                            self.find_item(),
                             MenuItem::standard(Action::FindAndReplace),
                             MenuItem::standard(Action::FindNext),
                             MenuItem::standard(Action::FindPrevious),

@@ -13,14 +13,14 @@ pub use zintl_ui_layout::{Axis, CrossAxisAlignment, MainAxisDistribution, Size};
 pub use zintl_ui_native::graphics::{AttributedText, Font, FontWeight};
 pub use zintl_ui_native::{
     Attach, BarChart, Button, ButtonRole, ButtonStyle, ByItemKey, CalendarDate, ChartBar, Color,
-    ColorWell, ComboBox, Context, Control, DatePicker, DatePickerStyle, DisclosureGroup, Grid,
-    GridRow, HStack, IntegerField, ItemIdFn, ItemIdSource, ItemKey, Layout, List, ListFactory,
-    ListRow, ListSection, ListStyle, NumberField, OptionalDatePicker, PaletteColor, Picker,
-    PickerStyle, Point, ProgressIndicator, Rect, RenderNode, ScrollAlignment, ScrollAxes,
-    ScrollStatus, ScrollView, SearchField, Separator, Sidebar, SidebarItem, SidebarSection, Slider,
-    SortOrder, Spacer, SplitView, SystemColor, Tab, TabView, Table, TableColumn, TableRow, Text,
-    TextAlignment, TextColor, TextEditor, TextField, TitleBar, Toggle, ToggleStyle, Toolbar,
-    ToolbarItem, UndoHandler, VStack, ViewId, Window, ZStack, graphics, list,
+    ColorWell, ComboBox, Context, Control, DatePicker, DatePickerStyle, DisclosureGroup,
+    FieldAccessory, Grid, GridRow, HStack, IntegerField, ItemIdFn, ItemIdSource, ItemKey, Layout,
+    List, ListFactory, ListRow, ListSection, ListStyle, NumberField, OptionalDatePicker,
+    PaletteColor, Picker, PickerStyle, Point, ProgressIndicator, Rect, RenderNode, ScrollAlignment,
+    ScrollAxes, ScrollStatus, ScrollView, SearchField, Separator, Sidebar, SidebarItem,
+    SidebarSection, Slider, SortOrder, Spacer, SplitView, SystemColor, Tab, TabView, Table,
+    TableColumn, TableRow, Text, TextAlignment, TextColor, TextEditor, TextField, TitleBar, Toggle,
+    ToggleStyle, Toolbar, ToolbarItem, UndoHandler, VStack, ViewId, Window, ZStack, graphics, list,
 };
 
 /// Menus, their items, and keyboard shortcuts.

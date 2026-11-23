@@ -504,6 +504,18 @@ pub struct FileDialogConfig {
     pub directory: Option<String>,
 }
 
+/// A button inside the trailing edge of a text or number field.
+///
+/// Clicks arrive as [`crate::Event::AccessoryActivated`] on the field.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FieldAccessory {
+    /// The SF Symbol name.
+    pub system_image: String,
+    /// The accessibility label and tooltip.
+    pub label: String,
+    pub id: Option<String>,
+}
+
 /// Numeric bounds and formatting for a number field.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NumberFormat {

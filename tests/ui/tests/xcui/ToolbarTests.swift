@@ -85,4 +85,28 @@ final class ToolbarTests: ZintlUITestCase {
     assertLabel("query-value", "Query: abc")
     XCTAssertTrue(waitForValue(search, "abc"))
   }
+
+  /// Verifies ⌘F runs the app's Find action, which focuses the toolbar search field.
+  func testCommandFFocusesTheSearchField() throws {
+    try launch(scenario: "toolbar")
+
+    let search = app.toolbars.searchFields["toolbar-search"]
+    XCTAssertTrue(search.waitToExist(timeout: 2))
+    app.typeKey("f", modifierFlags: .command)
+    XCTAssertTrue(waitUntil { (search.value(forKey: "hasKeyboardFocus") as? Bool) == true })
+    app.typeText("abc")
+    assertLabel("query-value", "Query: abc")
+  }
+
+  /// Verifies Edit > Find > Find… keeps its title and runs the app's Find action.
+  func testFindMenuItemFocusesTheSearchField() throws {
+    try launch(scenario: "toolbar")
+
+    let search = app.toolbars.searchFields["toolbar-search"]
+    XCTAssertTrue(search.waitToExist(timeout: 2))
+    app.menuBars.menuBarItems["Edit"].click()
+    app.menuItems["Find"].click()
+    app.menuItems["Find…"].click()
+    XCTAssertTrue(waitUntil { (search.value(forKey: "hasKeyboardFocus") as? Bool) == true })
+  }
 }

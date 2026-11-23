@@ -1,11 +1,13 @@
 use zintl_ui_desktop::*;
 
 /// An integer field with thousands separators, a button that sets a value above 2^53,
-/// a button that copies the Store as a click would read it, and an optional field.
+/// a button that copies the Store as a click would read it, an optional field with a button
+/// that focuses it, and an optional field in a centered row.
 pub struct MainView {
     quantity: Store<i64>,
     copied: Store<Option<i64>>,
     count: Store<Option<i64>>,
+    focus_count: Trigger,
 }
 
 impl MainView {
@@ -14,6 +16,7 @@ impl MainView {
             quantity: Store::default(),
             copied: Store::default(),
             count: Store::default(),
+            focus_count: Trigger::default(),
         }
     }
 }
@@ -25,11 +28,13 @@ impl View for MainView {
         self.quantity = cx.store(3);
         self.copied = cx.store(None);
         self.count = cx.store(Some(7));
+        self.focus_count = cx.trigger();
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
-        let (quantity, copied, count) = (self.quantity, self.copied, self.count);
-        Window::new("Zintl Integer Field UI Test").size(Size::new(420.0, 380.0))
+        let (quantity, copied, count, focus_count) =
+            (self.quantity, self.copied, self.count, self.focus_count);
+        Window::new("Zintl Integer Field UI Test").size(Size::new(420.0, 480.0))
             .id("main-window")
             .content(
                 VStack::new(list![
@@ -59,12 +64,28 @@ impl View for MainView {
                         .range(0..=100)
                         .placeholder("None")
                         .bind(count)
+                        .focus_on(focus_count)
                         .id("count")
                         .minimum_size(Size::new(220.0, 22.0)),
+                    Button::new("Focus count")
+                        .id("focus-count")
+                        .on_click(move |cx| cx.fire(focus_count, ())),
                     cx.watch(count, |count| {
                         let count = count.map_or("None".to_owned(), |value| value.to_string());
                         Text::new(format!("Count: {count}")).id("count-value")
                     }),
+                    // A default (centered) row; the field declares only a width, so its height comes from AppKit.
+                    HStack::new(list![
+                        IntegerField::optional()
+                            .placeholder("None")
+                            .suffix(" pcs")
+                            .bind(count)
+                            .id("row-count")
+                            .minimum_size(Size::new(160.0, 0.0)),
+                        Button::icon("plus.forwardslash.minus", "Calculator")
+                            .style(ButtonStyle::Borderless),
+                    ])
+                    .spacing(4.0),
                 ])
                 .spacing(10.0),
             )

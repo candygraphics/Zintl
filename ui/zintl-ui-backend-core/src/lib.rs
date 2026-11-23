@@ -32,10 +32,10 @@ pub use headless::HeadlessBackend;
 pub use model::{
     AlertButton, AlertButtonRole, AlertConfig, AlertStyle, BezelStyle, ButtonType, CalendarDate,
     CommandItem, CommandMenu, CommandModifier, CommandRole, CommandSet, DatePickerStyle,
-    FileDialogConfig, FileDialogMode, ListSection, ListStyle, MenuRole, NumberFormat, PopoverEdge,
-    ScrollAlignment, ScrollAxes, ScrollTarget, ShortcutKey, Sidebar, SidebarItem, SidebarSearch,
-    SidebarSection, SortOrder, SystemColor, TableColumn, TextAlignment, TextColor, TextStyle,
-    TitleBar, Toolbar, ToolbarItem, WindowAppMenu, WindowStyle,
+    FieldAccessory, FileDialogConfig, FileDialogMode, ListSection, ListStyle, MenuRole,
+    NumberFormat, PopoverEdge, ScrollAlignment, ScrollAxes, ScrollTarget, ShortcutKey, Sidebar,
+    SidebarItem, SidebarSearch, SidebarSection, SortOrder, SystemColor, TableColumn, TextAlignment,
+    TextColor, TextStyle, TitleBar, Toolbar, ToolbarItem, WindowAppMenu, WindowStyle,
 };
 pub use signal::Signal;
 #[cfg(feature = "wgpu")]
@@ -85,6 +85,7 @@ pub enum ViewKind {
         style: TextStyle,
         /// Each increase makes the field take keyboard focus.
         focus: u64,
+        accessory: Option<FieldAccessory>,
     },
     /// A scrolling rich text editor that fills its parent.
     TextEditor {
@@ -124,6 +125,9 @@ pub enum ViewKind {
         text: Option<String>,
         /// Text shown while the field is empty.
         placeholder: Option<String>,
+        /// Each increase makes the field take keyboard focus.
+        focus: u64,
+        accessory: Option<FieldAccessory>,
     },
     SearchField {
         value: String,
@@ -175,6 +179,10 @@ pub enum ViewKind {
         /// Whether columns wider than the table shrink to fit its width.
         fit_columns: bool,
         striped: bool,
+        /// Whether the last children, one per column, form a row that stays below the rows.
+        ///
+        /// It cannot be selected and is not part of `rows`, so sorting leaves it in place.
+        summary: bool,
     },
     /// A view drawn by its canvas handler.
     Canvas2D {
@@ -200,10 +208,12 @@ pub enum ViewKind {
 impl ViewKind {
     /// Returns whether a view that rendered `old`, or is new, should now take keyboard focus.
     ///
-    /// Text fields and editors take focus each time their focus request count increases.
+    /// Text, number fields, and editors take focus each time their focus request count increases.
     pub fn requests_focus(old: Option<&Self>, new: &Self) -> bool {
         let focus = |kind: &Self| match kind {
-            Self::TextField { focus, .. } | Self::TextEditor { focus, .. } => *focus,
+            Self::TextField { focus, .. }
+            | Self::TextEditor { focus, .. }
+            | Self::NumberField { focus, .. } => *focus,
             _ => 0,
         };
         focus(new) > old.map_or(0, focus)

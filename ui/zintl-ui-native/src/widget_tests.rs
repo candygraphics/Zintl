@@ -924,6 +924,8 @@ fn number_field_clamps_entered_values() {
                 },
                 text: None,
                 placeholder: None,
+                focus: 0,
+                accessory: None,
             },
             ..
         }
@@ -1416,6 +1418,36 @@ fn standard_edit_menu_ends_with_a_find_submenu() {
             ),
         ]
     );
+}
+
+#[test]
+fn on_find_replaces_the_text_finder_for_find_only() {
+    // Verifies `on_find` turns Find… into an app item with the same title and ⌘F, leaving the other Find items standard.
+    let finds = Calls::default();
+    let find = finds.clone();
+    let mut app = Harness::new(list![
+        MainMenu::standard().on_find(find.action()),
+        Window::new("Demo").size(Size::new(200.0, 200.0)),
+    ]);
+    let roots = app.roots();
+    let RenderNode::MainMenu(commands) = &roots[0].value else {
+        panic!("the main menu renders as a root node");
+    };
+    let submenu = commands.menus[1]
+        .items
+        .last()
+        .and_then(|item| item.submenu.as_ref())
+        .expect("the Edit menu ends with the Find submenu");
+    let item = &submenu.items[0];
+    assert_eq!(item.title, "Find…");
+    assert_eq!(item.role, None);
+    assert_eq!(item.key, Some(ShortcutKey::Character("f".into())));
+    assert!(item.enabled);
+    assert_eq!(submenu.items[2].role, Some(CommandRole::FindNext));
+
+    let id = item.id.clone().expect("the app's Find… reports selection");
+    assert!(app.dispatch(&[0], Event::MenuItemSelected { id }));
+    assert_eq!(finds.count(), 1);
 }
 
 #[test]
@@ -2625,6 +2657,54 @@ fn table_lays_out_cells_by_row_and_writes_the_selection() {
     assert_eq!(app.get(selected), Some("b"));
 }
 
+#[test]
+fn table_summary_row_follows_the_rows_without_a_row_key() {
+    // Verifies summary cells come after the row cells, padded to the column count, and are not one of the rows.
+    let tree = Harness::new(
+        Table::new(
+            [
+                TableColumn::new("Name"),
+                TableColumn::new("Budget"),
+                TableColumn::new("Spent"),
+            ],
+            [TableRow::new(
+                "a",
+                list![Text::new("Food"), Text::new("100"), Text::new("80")],
+            )],
+        )
+        .summary_row(list![
+            Text::new("Total"),
+            Text::new("100").id("total-budget")
+        ]),
+    )
+    .tree();
+    assert!(matches!(
+        &tree.value,
+        RenderNode::View {
+            kind: ViewKind::Table { rows, summary: true, .. },
+            ..
+        } if rows == &["a"]
+    ));
+    assert_eq!(tree.children.len(), 6);
+    assert!(matches!(
+        &tree.children[4].value,
+        RenderNode::View { id: Some(id), .. } if id == "total-budget"
+    ));
+    // Without a summary row, the table has only row cells.
+    let plain = Harness::new(Table::new(
+        [TableColumn::new("Name")],
+        [TableRow::new("a", list![Text::new("Food")])],
+    ))
+    .tree();
+    assert!(matches!(
+        &plain.value,
+        RenderNode::View {
+            kind: ViewKind::Table { summary: false, .. },
+            ..
+        }
+    ));
+}
+
 /// A row key of the app's own type, as lists, tables, and sidebars select by.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct FolderId(u32);
@@ -3373,6 +3453,85 @@ fn focus_trigger_counts_fires_and_starts_at_zero() {
     // An equal value fires again.
     app.fire(focus, ());
     assert_eq!(requests(&app), 2);
+}
+
+#[test]
+fn integer_and_number_fields_request_focus_on_each_fire() {
+    // Verifies number fields start without a focus request and add one each time their trigger fires.
+    let (mut app, focus) = WithStores::mount(
+        |cx| cx.trigger(),
+        |focus| {
+            VStack::new(list![
+                IntegerField::optional().focus_on(focus),
+                NumberField::new().focus_on(focus),
+            ])
+        },
+    );
+    let requests = |app: &Harness| {
+        app.tree()
+            .children
+            .iter()
+            .map(|child| match &child.value {
+                RenderNode::View {
+                    kind: ViewKind::NumberField { focus, .. },
+                    ..
+                } => *focus,
+                _ => panic!("expected a number field"),
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(requests(&app), [0, 0]);
+
+    app.fire(focus, ());
+    assert_eq!(requests(&app), [1, 1]);
+}
+
+#[test]
+fn field_accessories_describe_their_button_and_route_clicks() {
+    // Verifies text and integer fields describe their accessory and run its action on a click without changing the value.
+    let clicks = Calls::default();
+    let (click, again) = (clicks.clone(), clicks.clone());
+    let (mut app, (text, count)) = WithStores::mount(
+        |cx| (cx.store(String::from("12")), cx.store(Some(3_i64))),
+        move |(text, count)| {
+            VStack::new(list![
+                TextField::new().bind(text).accessory(
+                    FieldAccessory::button("plus.forwardslash.minus", "Calculator")
+                        .id("amount-calculator")
+                        .on_click(click.action()),
+                ),
+                IntegerField::optional()
+                    .bind(count)
+                    .accessory(FieldAccessory::button("xmark", "Clear").on_click(again.action())),
+            ])
+        },
+    );
+    let tree = app.tree();
+    let accessory = |node: &RenderedNode| match &node.value {
+        RenderNode::View {
+            kind: ViewKind::TextField { accessory, .. } | ViewKind::NumberField { accessory, .. },
+            ..
+        } => accessory.clone(),
+        _ => panic!("expected a field"),
+    };
+    assert_eq!(
+        accessory(&tree.children[0]),
+        Some(zintl_ui_backend_core::FieldAccessory {
+            system_image: "plus.forwardslash.minus".into(),
+            label: "Calculator".into(),
+            id: Some("amount-calculator".into()),
+        })
+    );
+    assert_eq!(
+        accessory(&tree.children[1]).map(|a| a.label),
+        Some("Clear".into())
+    );
+
+    assert!(app.dispatch(&[0, 0], Event::AccessoryActivated));
+    assert!(app.dispatch(&[0, 1], Event::AccessoryActivated));
+    assert_eq!(clicks.count(), 2);
+    assert_eq!(app.get(text), "12");
+    assert_eq!(app.get(count), Some(3));
 }
 
 #[test]

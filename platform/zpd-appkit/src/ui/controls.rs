@@ -437,6 +437,7 @@ pub struct NumberField {
     text: std::rc::Rc<std::cell::RefCell<Option<String>>>,
     /// Whether new text waits for editing to end instead of replacing typed text.
     holds_text: std::cell::Cell<bool>,
+    accessory: super::field_accessory::AccessorySlot,
 }
 impl NumberField {
     const STEPPER_WIDTH: f64 = 19.0;
@@ -550,6 +551,7 @@ impl NumberField {
             formatter: formatter_actor,
             text,
             holds_text: std::cell::Cell::new(false),
+            accessory: Default::default(),
         })
     }
 
@@ -650,6 +652,38 @@ impl NumberField {
     /// Returns the text field, which VoiceOver reads as the number.
     pub fn accessibility_view(&self) -> ViewRef<'_> {
         ViewRef::from_actor(&self.field)
+    }
+    /// Shows `accessory` inside the text field's trailing edge, before the stepper, or removes it for `None`.
+    ///
+    /// Clicks are reported as [`WindowEventKind::AccessoryClicked`].
+    pub fn set_accessory(&self, accessory: Option<&super::FieldAccessory>) -> Result<(), UiError> {
+        self.accessory
+            .set(&self.field, self.view.actor(), accessory)
+    }
+    /// Makes the text field the first responder of its window, if it is in one.
+    pub fn focus(&self) -> Result<(), UiError> {
+        self.field.with(|field| {
+            // SAFETY: The live field and its window, which may be nil, accept the message.
+            unsafe {
+                let window = zpd_objc::msg_send!(field, zpd_objc::sel!("window"), () => Id);
+                if !window.is_null() {
+                    zpd_objc::msg_send!(window, zpd_objc::sel!("makeFirstResponder:"), ((field): Id) => bool);
+                }
+            }
+        })?;
+        Ok(())
+    }
+    /// Returns the height of the taller of the text field and stepper, with no fixed width.
+    ///
+    /// The container is a plain `NSView`, which has no intrinsic size of its own.
+    pub fn intrinsic_content_size(&self) -> Result<(Option<f64>, Option<f64>), UiError> {
+        let (_, field) = ViewRef::from_actor(&self.field).intrinsic_content_size()?;
+        let (_, stepper) = ViewRef::from_actor(&self.stepper).intrinsic_content_size()?;
+        let height = match (field, stepper) {
+            (Some(field), Some(stepper)) => Some(field.max(stepper)),
+            (field, stepper) => field.or(stepper),
+        };
+        Ok((None, height))
     }
     /// Shows `text` over both the field and its stepper.
     pub fn set_tool_tip(&self, text: Option<&str>) -> Result<(), UiError> {

@@ -105,6 +105,19 @@ warns), and SF Symbols through `system_image`. `Button::icon("gearshape", "Setti
 shows a symbol alone and takes its size; VoiceOver reads the second argument as
 its name. `Button::help()` is the round question mark button.
 
+`TextField`, `IntegerField`, and `NumberField` take a button inside their
+trailing edge with `accessory`, like a search field's clear button. It does
+not take keyboard focus or change the text, the text stops before it, and a
+popover on the field still anchors to the whole field:
+
+```rust,ignore
+TextField::new().bind(self.amount).accessory(
+    FieldAccessory::button("plus.forwardslash.minus", "Calculator") // SF Symbol, VoiceOver name
+        .id("amount-calculator")
+        .on_click(open_calculator),
+)
+```
+
 Builder methods that turn a state or feature on take a `bool`, such as
 `enabled(false)`, `multiline(true)`, or `accessibility_hidden(true)`, so a
 condition does not need an `if` around the builder. Layout instructions take
@@ -203,6 +216,19 @@ keeps its state when the row moves. String literal keys infer
 that no row has shows nothing selected. `on_select` runs after the bound Store
 is updated, for user changes only. On Windows the
 rows are shown in a scroll view without selection for now.
+
+`Table::summary_row` shows a row below the rows, such as totals, with one cell
+per column. It stays visible while the rows scroll, cannot be selected, is not
+sorted, and its cells follow the columns' widths and alignment (macOS only for
+now):
+
+```rust,ignore
+Table::new(columns, rows).summary_row(list![
+    Text::new("Total"),
+    Text::new(format_amount(totals.budget)).id("total-budget"),
+    Text::new(format_amount(totals.spent)).id("total-spent"),
+])
+```
 
 ## Split views
 
@@ -315,8 +341,13 @@ list![
 
 The standard Edit menu ends with a Find submenu (Find…, Find and Replace…,
 Find Next, Find Previous, Use Selection for Find) that drives the focused text
-view's find bar. `StandardAction::Bold`, `Italic`, and `Underline` apply font
-traits to the selection of a rich text view; put them in your own Format menu.
+view's find bar. An app without document text to search can handle Find…
+(⌘F) itself with `MainMenu::on_find`, for example to focus a toolbar search
+field; the item keeps its title, position, and shortcut, and the other Find
+items still act on the focused text view.
+
+`StandardAction::Bold`, `Italic`, and `Underline` apply font traits to the
+selection of a rich text view; put them in your own Format menu.
 
 Standard titles are resolved through a `MenuLocalizer`. Each `StandardText`
 has a stable catalog key (`StandardText::key`, such as `menu.edit.copy`).
@@ -346,8 +377,9 @@ Window::new("Notes")
     ]))
 ```
 
-`TextEditor::focus_on(trigger)` moves keyboard focus to the editor each time
-the `Trigger` fires, for example after creating a note. Create it in
+`focus_on(trigger)` moves keyboard focus to a `TextEditor`, `TextField`,
+`IntegerField`, `NumberField`, or `ToolbarItem::search` each time the
+`Trigger` fires, for example after creating a note. Create it in
 `View::init` with `cx.trigger()` and fire it with `cx.fire(trigger, ())`.
 `ScrollView::scroll_to` takes a `Trigger<ViewId>` fired with a view ID.
 

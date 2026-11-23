@@ -4,15 +4,15 @@ use std::ops::RangeInclusive;
 use std::rc::Rc;
 
 use zintl_ui::element::IntoElement;
-use zintl_ui::store::Store;
+use zintl_ui::store::{Store, Trigger};
 use zintl_ui::view::View;
 use zintl_ui_backend_core::{CalendarDate, DatePickerStyle, ViewKind};
 use zintl_ui_layout::{LayoutStyle, Size};
 
 use crate::modifiers;
 use crate::{
-    Attach, Change, Color, Context, Control, Element, Event, EventKind, NativeView, RenderNode,
-    TextEstimate, ViewModifiers,
+    Attach, Change, Color, Context, Control, Element, Event, EventKind, FieldAccessory, NativeView,
+    RenderNode, TextEstimate, ViewModifiers,
 };
 
 native_view!(
@@ -522,6 +522,8 @@ pub struct NumberField {
     suffix: String,
     store: Option<Store<f64>>,
     action: Option<Rc<Change<f64>>>,
+    focus: Option<Trigger>,
+    accessory: Option<FieldAccessory>,
     layout: LayoutStyle,
     modifiers: ViewModifiers,
 }
@@ -539,6 +541,8 @@ impl NumberField {
             suffix: String::new(),
             store: None,
             action: None,
+            focus: None,
+            accessory: None,
             layout: LayoutStyle::leaf(Size::new(100.0, 22.0)),
             modifiers: ViewModifiers::default(),
         }
@@ -584,6 +588,20 @@ impl NumberField {
     /// Appends `suffix`, such as `" m"`, to the shown text; typed text may omit it.
     pub fn suffix(mut self, suffix: impl Into<String>) -> Self {
         self.suffix = suffix.into();
+        self
+    }
+
+    /// Takes keyboard focus each time `trigger` fires, for example after "New Item".
+    ///
+    /// A field created in the same update as the fire takes focus once it is shown.
+    pub fn focus_on(mut self, trigger: Trigger) -> Self {
+        self.focus = Some(trigger);
+        self
+    }
+
+    /// Shows `accessory` inside the text field's trailing edge, before the stepper.
+    pub fn accessory(mut self, accessory: FieldAccessory) -> Self {
+        self.accessory = Some(accessory);
         self
     }
 
@@ -646,6 +664,8 @@ impl NativeView for NumberField {
                 },
                 text: self.formats_text().then(|| self.format(value)),
                 placeholder: None,
+                focus: self.focus.map_or(0, |trigger| cx.revision(trigger.store())),
+                accessory: FieldAccessory::native(&self.accessory),
             },
             layout: self.layout,
             id: None,
@@ -654,6 +674,7 @@ impl NativeView for NumberField {
             help: None,
             accessibility: Default::default(),
         });
+        let element = FieldAccessory::route(&self.accessory, element);
         let binding = || ChangeRoute::new(self.store, self.action.clone());
         let (minimum, maximum) = (self.minimum, self.maximum);
         let element = binding().route(element, EventKind::ValueChanged, move |event| match event {
@@ -735,6 +756,8 @@ pub struct IntegerField<T: IntegerValue = i64> {
     placeholder: Option<String>,
     store: Option<Store<T>>,
     action: Option<Rc<Change<T>>>,
+    focus: Option<Trigger>,
+    accessory: Option<FieldAccessory>,
     layout: LayoutStyle,
     modifiers: ViewModifiers,
 }
@@ -770,6 +793,8 @@ impl<T: IntegerValue> IntegerField<T> {
             placeholder: None,
             store: None,
             action: None,
+            focus: None,
+            accessory: None,
             layout: LayoutStyle::leaf(Size::new(100.0, 22.0)),
             modifiers: ViewModifiers::default(),
         }
@@ -801,6 +826,20 @@ impl<T: IntegerValue> IntegerField<T> {
     /// Appends `suffix`, such as `" pcs"`, to the shown text; typed text may omit it.
     pub fn suffix(mut self, suffix: impl Into<String>) -> Self {
         self.suffix = suffix.into();
+        self
+    }
+
+    /// Takes keyboard focus each time `trigger` fires, for example after "New Item".
+    ///
+    /// A field created in the same update as the fire takes focus once it is shown.
+    pub fn focus_on(mut self, trigger: Trigger) -> Self {
+        self.focus = Some(trigger);
+        self
+    }
+
+    /// Shows `accessory` inside the text field's trailing edge, before the stepper.
+    pub fn accessory(mut self, accessory: FieldAccessory) -> Self {
+        self.accessory = Some(accessory);
         self
     }
 
@@ -899,6 +938,8 @@ impl<T: IntegerValue> NativeView for IntegerField<T> {
                 },
                 text: Some(self.format(value)),
                 placeholder: self.placeholder.clone(),
+                focus: self.focus.map_or(0, |trigger| cx.revision(trigger.store())),
+                accessory: FieldAccessory::native(&self.accessory),
             },
             layout: self.layout,
             id: None,
@@ -907,6 +948,7 @@ impl<T: IntegerValue> NativeView for IntegerField<T> {
             help: None,
             accessibility: Default::default(),
         });
+        let element = FieldAccessory::route(&self.accessory, element);
         let binding = || ChangeRoute::new(self.store, self.action.clone());
         let field = self.clone();
         let element = binding().route(element, EventKind::ValueChanged, move |event| match event {

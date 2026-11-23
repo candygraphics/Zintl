@@ -8,10 +8,86 @@ use zintl_ui_layout::{LayoutDimension, LayoutStyle, Size};
 use crate::modifiers;
 use crate::{
     Change, ChangeRoute, Context, Element, Event, EventKind, NativeView, RenderNode, TextEstimate,
-    ViewModifiers,
+    ViewId, ViewModifiers,
 };
 
 type CommitAction = dyn for<'a> Fn(&mut Context<'a>, &str);
+type ClickAction = dyn for<'a> Fn(&mut Context<'a>);
+
+/// A button inside the trailing edge of a [`TextField`], [`crate::IntegerField`], or
+/// [`crate::NumberField`], like a search field's clear button.
+///
+/// It does not take keyboard focus or change the field's text, and a
+/// popover on the field still anchors to the whole field.
+///
+/// ```ignore
+/// TextField::new().accessory(
+///     FieldAccessory::button("plus.forwardslash.minus", "Calculator")
+///         .id("amount-calculator")
+///         .on_click(open_calculator),
+/// )
+/// ```
+#[derive(Clone)]
+pub struct FieldAccessory {
+    system_image: String,
+    label: String,
+    id: Option<ViewId>,
+    action: Option<Rc<ClickAction>>,
+}
+
+impl FieldAccessory {
+    /// A button showing the SF Symbol `system_image`, named `label` for accessibility and its tooltip.
+    pub fn button(system_image: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            system_image: system_image.into(),
+            label: label.into(),
+            id: None,
+            action: None,
+        }
+    }
+
+    /// Names the button for accessibility and UI tests.
+    pub fn id(mut self, id: impl Into<ViewId>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    pub fn on_click(mut self, action: impl for<'a> Fn(&mut Context<'a>) + 'static) -> Self {
+        self.action = Some(Rc::new(action));
+        self
+    }
+
+    /// Describes the button for the backend.
+    pub(crate) fn native(
+        accessory: &Option<Self>,
+    ) -> Option<zintl_ui_backend_core::FieldAccessory> {
+        accessory
+            .as_ref()
+            .map(|accessory| zintl_ui_backend_core::FieldAccessory {
+                system_image: accessory.system_image.clone(),
+                label: accessory.label.clone(),
+                id: accessory.id.as_ref().map(|id| id.as_str().to_owned()),
+            })
+    }
+
+    /// Runs the click action for accessory clicks on the field's `element`.
+    pub(crate) fn route(
+        accessory: &Option<Self>,
+        element: Element<RenderNode>,
+    ) -> Element<RenderNode> {
+        let Some(action) = accessory
+            .as_ref()
+            .and_then(|accessory| accessory.action.clone())
+        else {
+            return element;
+        };
+        element.on_event(EventKind::AccessoryActivated, move |cx, event| {
+            if event == Event::AccessoryActivated {
+                action(cx);
+            }
+        })
+    }
+}
 
 /// An editable text field, or with [`crate::Text`] a static label.
 ///
@@ -32,6 +108,7 @@ pub struct TextField {
     multiline: bool,
     style: TextStyle,
     focus: Option<Trigger>,
+    accessory: Option<FieldAccessory>,
     layout: LayoutStyle,
     modifiers: ViewModifiers,
 }
@@ -51,6 +128,7 @@ impl TextField {
             multiline: false,
             style: TextStyle::default(),
             focus: None,
+            accessory: None,
             layout: LayoutStyle::leaf(Size::new(160.0, 28.0)),
             modifiers: ViewModifiers::default(),
         }
@@ -172,6 +250,12 @@ impl TextField {
         self.focus = Some(trigger);
         self
     }
+
+    /// Shows `accessory` inside the field's trailing edge; the text stops before it.
+    pub fn accessory(mut self, accessory: FieldAccessory) -> Self {
+        self.accessory = Some(accessory);
+        self
+    }
 }
 
 impl Default for TextField {
@@ -207,6 +291,7 @@ impl NativeView for TextField {
                 multiline: sized.multiline,
                 style: self.style.clone(),
                 focus: self.focus.map_or(0, |trigger| cx.revision(trigger.store())),
+                accessory: FieldAccessory::native(&self.accessory),
             },
             layout: sized.layout,
             id: None,
@@ -215,6 +300,7 @@ impl NativeView for TextField {
             help: None,
             accessibility: Default::default(),
         });
+        let element = FieldAccessory::route(&self.accessory, element);
         let element = ChangeRoute::new(self.binding, self.action.clone()).route(
             element,
             EventKind::TextChanged,

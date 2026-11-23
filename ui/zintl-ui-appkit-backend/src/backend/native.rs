@@ -169,7 +169,10 @@ impl NativeNode {
         if !measure_width && !measure_height {
             return Ok(declared);
         }
-        let (width, height) = self.as_view().intrinsic_content_size()?;
+        let (width, height) = match self {
+            Self::NumberField(field) => field.intrinsic_content_size()?,
+            _ => self.as_view().intrinsic_content_size()?,
+        };
         let raise = |declared: f32, measure: bool, size: Option<f64>| match (measure, size) {
             (true, Some(size)) => declared.max(size.ceil() as f32),
             _ => declared,
@@ -200,7 +203,8 @@ impl NativeNode {
                 multiline: false, ..
             }
             | ViewKind::SearchField { .. }
-            | ViewKind::ComboBox { .. } => (false, true),
+            | ViewKind::ComboBox { .. }
+            | ViewKind::NumberField { .. } => (false, true),
             _ => (false, false),
         }
     }
@@ -311,11 +315,12 @@ impl NativeNode {
         }
     }
 
-    /// Moves keyboard focus to a text field or editor that is in a window.
+    /// Moves keyboard focus to a text field, number field, or editor that is in a window.
     pub(super) fn focus(&self) -> Result<(), UiError> {
         match self {
             Self::TextField(field) => field.focus(),
             Self::TextEditor(editor) => editor.focus(),
+            Self::NumberField(field) => field.focus(),
             _ => Ok(()),
         }
     }
@@ -401,9 +406,14 @@ impl NativeNode {
                     draws_background,
                     multiline,
                     style,
+                    accessory,
                     ..
                 },
             ) => {
+                if !matches!(old, Some(ViewKind::TextField { accessory: old, .. }) if old == accessory)
+                {
+                    field.set_accessory(accessory.as_ref().map(Native::native).as_ref())?;
+                }
                 // Typed text stays until the value changes, so unbound fields keep edits.
                 let changed =
                     !matches!(old, Some(ViewKind::TextField { value: old, .. }) if old == value);
@@ -562,8 +572,14 @@ impl NativeNode {
                     format,
                     text,
                     placeholder,
+                    accessory,
+                    ..
                 },
             ) => {
+                if !matches!(old, Some(ViewKind::NumberField { accessory: old, .. }) if old == accessory)
+                {
+                    field.set_accessory(accessory.as_ref().map(Native::native).as_ref())?;
+                }
                 if !matches!(old, Some(ViewKind::NumberField { placeholder: old, .. }) if old == placeholder)
                 {
                     field.set_placeholder(placeholder.as_deref())?;

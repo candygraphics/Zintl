@@ -89,4 +89,29 @@ final class IntegerFieldTests: ZintlUITestCase {
     assertLabel("count-value", "Count: 1")
     XCTAssertTrue(waitForValue(count, "1"))
   }
+
+  /// Verifies an optional field with a suffix in a centered row is as tall as one in a column.
+  func testFieldInCenteredRowKeepsItsHeight() throws {
+    try launch(scenario: "integer-field")
+
+    let column = app.textFields["count"]
+    let row = app.textFields["row-count"]
+    XCTAssertTrue(row.waitToExist(timeout: 2))
+    XCTAssertGreaterThanOrEqual(row.frame.height, 20)
+    XCTAssertEqual(row.frame.height, column.frame.height, accuracy: 1)
+    XCTAssertTrue(row.isHittable)
+  }
+
+  /// Verifies a focus request moves typing from another field to the integer field.
+  func testFocusRequestMovesTyping() throws {
+    try launch(scenario: "integer-field")
+
+    XCTAssertTrue(field.waitToExist(timeout: 2))
+    field.click()
+    app.buttons["focus-count"].click()
+    // The focused field selects its text, so typing replaces it.
+    app.typeText("42")
+    assertLabel("count-value", "Count: 42")
+    assertLabel("integer-value", "Integer: 3")
+  }
 }

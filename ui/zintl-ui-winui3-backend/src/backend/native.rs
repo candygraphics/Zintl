@@ -851,6 +851,7 @@ impl NativeNode {
                 format,
                 text,
                 placeholder,
+                ..
             } => {
                 if !matches!(old, Some(ViewKind::NumberField { placeholder: old, .. }) if old == placeholder)
                 {

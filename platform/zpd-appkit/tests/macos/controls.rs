@@ -8,7 +8,7 @@ use zpd_appkit::graphics::Font;
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
     AlertButton, AlertButtonRole, AlertConfig, AlertSheet, AsView, Button, ButtonType, Color,
-    DatePicker, DatePickerStyle,
+    DatePicker, DatePickerStyle, FieldAccessory,
     ColorWell, ListEntry, ListStyle, ListView, CommandItem, CommandMenu, CommandRole, CommandSet, ContextMenu, MenuRole,
     NumberField, NumberFormat, PopUpButton, Popover, ScrollView, SegmentedControl, Sidebar,
     SidebarItem, SidebarSearch, SidebarSection, Slider, Switch, SystemColor, TabView, TextAlignment, TextColor,
@@ -18,6 +18,16 @@ use zpd_appkit::ui::{
 use zpd_objc::Id;
 
 struct Checks;
+
+/// An `NSRect` passed to and returned from AppKit.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+struct NsRect {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
 
 impl Checks {
     /// Sends a control's action to its target, as a user interaction would.
@@ -230,6 +240,71 @@ fn main() {
     assert_eq!(take(), vec![WindowEventKind::SelectionChanged { index: 1 }]);
     assert_eq!(segmented.selected().unwrap(), Some(1));
 
+    // Verifies a field accessory is a button inside the field that reports clicks and narrows the text area.
+    let text_width = |field: Id| {
+        let bounds = NsRect {
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 22.0,
+        };
+        // SAFETY: The field is a live NSTextField whose cell computes its text area.
+        unsafe {
+            let cell = zpd_objc::msg_send!(field, zpd_objc::sel!("cell"), () => Id);
+            zpd_objc::msg_send!(cell, zpd_objc::sel!("drawingRectForBounds:"), ((bounds): NsRect) => NsRect).width
+        }
+    };
+    let accessory = FieldAccessory {
+        system_image: "plus.forwardslash.minus".into(),
+        label: "Calculator".into(),
+        identifier: Some("amount-calculator".into()),
+    };
+    let field = TextField::with_string(&application, "").unwrap();
+    field.as_view().set_frame(Rect::new(0.0, 0.0, 200.0, 22.0)).unwrap();
+    content.add_subview(&field).unwrap();
+    let field_native = Checks::native(&field);
+    let plain_width = text_width(field_native);
+    field.set_accessory(Some(&accessory)).unwrap();
+    assert!(text_width(field_native) <= plain_width - 20.0);
+    // SAFETY: The accessory is the field's only subview while it is not being edited.
+    let button = unsafe {
+        let subviews = zpd_objc::msg_send!(field_native, zpd_objc::sel!("subviews"), () => Id);
+        zpd_objc::msg_send!(subviews, zpd_objc::sel!("lastObject"), () => Id)
+    };
+    // SAFETY: The button is live.
+    let (identifier, refuses_focus, frame) = unsafe {
+        (
+            rust_string(zpd_objc::msg_send!(button, zpd_objc::sel!("accessibilityIdentifier"), () => Id)),
+            zpd_objc::msg_send!(button, zpd_objc::sel!("refusesFirstResponder"), () => bool),
+            zpd_objc::msg_send!(button, zpd_objc::sel!("frame"), () => NsRect),
+        )
+    };
+    assert_eq!(identifier, "amount-calculator");
+    assert!(refuses_focus);
+    assert!(frame.x + frame.width <= 200.0 && frame.x >= 170.0);
+    Checks::send_action(button);
+    assert_eq!(take(), vec![WindowEventKind::AccessoryClicked]);
+    // The field editor used while typing stops before the button too.
+    field.focus().unwrap();
+    // SAFETY: The focused field has a live field editor.
+    let editor = unsafe {
+        let editor = zpd_objc::msg_send!(field_native, zpd_objc::sel!("currentEditor"), () => Id);
+        assert!(!editor.is_null());
+        zpd_objc::msg_send!(editor, zpd_objc::sel!("frame"), () => NsRect)
+    };
+    assert!(editor.x + editor.width <= frame.x, "{editor:?} {frame:?}");
+    // SAFETY: The field is in a live window; ending editing keeps later checks independent.
+    unsafe {
+        let window = zpd_objc::msg_send!(field_native, zpd_objc::sel!("window"), () => Id);
+        zpd_objc::msg_send!(window, zpd_objc::sel!("makeFirstResponder:"), ((zpd_objc::NIL): Id) => bool);
+    }
+    take();
+    // Removing the accessory hides the button and restores the text area.
+    field.set_accessory(None).unwrap();
+    assert_eq!(text_width(field_native), plain_width);
+    // SAFETY: The button is live.
+    assert!(unsafe { zpd_objc::msg_send!(button, zpd_objc::sel!("isHidden"), () => bool) });
+
     // Verifies stepper changes update the formatted field and report the value.
     let number = NumberField::new(&application).unwrap();
     number
@@ -259,6 +334,17 @@ fn main() {
     let shown =
         unsafe { rust_string(zpd_objc::msg_send!(field, zpd_objc::sel!("stringValue"), () => Id)) };
     assert_eq!(shown, "6");
+    // Verifies a number field's accessory sits inside its text field, before the stepper, and reports clicks from the field.
+    let plain_width = text_width(field);
+    number.set_accessory(Some(&accessory)).unwrap();
+    assert!(text_width(field) <= plain_width - 20.0);
+    // SAFETY: The accessory is the text field's only subview while it is not being edited.
+    let button = unsafe {
+        let subviews = zpd_objc::msg_send!(field, zpd_objc::sel!("subviews"), () => Id);
+        zpd_objc::msg_send!(subviews, zpd_objc::sel!("lastObject"), () => Id)
+    };
+    Checks::send_action(button);
+    assert_eq!(take(), vec![WindowEventKind::AccessoryClicked]);
 
     // Verifies dates round-trip through a date picker around month ends, leap days, and year boundaries.
     let picker = DatePicker::new(&application).unwrap();
@@ -283,6 +369,12 @@ fn main() {
     let field = TextField::with_string(&application, "").unwrap();
     let (width, height) = field.as_view().intrinsic_content_size().unwrap();
     assert!(height.is_some_and(|height| height >= 20.0), "{height:?}");
+    assert_eq!(width, None);
+
+    // Verifies a number field reports its text field's height, though its container is a plain view.
+    let number = NumberField::new(&application).unwrap();
+    let (width, number_height) = number.intrinsic_content_size().unwrap();
+    assert!(number_height >= height, "{number_height:?} < {height:?}");
     assert_eq!(width, None);
 
     // Verifies a wrapping label needs more lines at a narrower width.
@@ -440,6 +532,40 @@ fn main() {
         assert!(!indicator(0).is_null());
         assert!(indicator(1).is_null());
     }
+
+    // Verifies a summary row sits in a bar at the bottom, keeps rows above it, and lines up with the columns.
+    let cells = [0, 1, 2, 3].map(|_| View::new(&application, Rect::new(0.0, 0.0, 10.0, 10.0)).unwrap());
+    table
+        .set_entries(&[ListEntry::Row("a".into())], &[cells[0].as_view(), cells[1].as_view()])
+        .unwrap();
+    table.set_summary(&[cells[2].as_view(), cells[3].as_view()]).unwrap();
+    assert!(table.has_summary());
+    table.set_summary_height(24.0);
+    table.as_view().layout_subtree_if_needed().unwrap();
+    // SAFETY: The table's scroll view, its bar, and the summary cell wrappers are live.
+    unsafe {
+        let scroll = Checks::native(&table);
+        let insets = zpd_objc::msg_send!(scroll, zpd_objc::sel!("contentInsets"), () => [f64; 4]);
+        assert_eq!(insets[2], 25.0, "{insets:?}");
+        let window_frame = |view: Id| {
+            let bounds = zpd_objc::msg_send!(view, zpd_objc::sel!("bounds"), () => NsRect);
+            zpd_objc::msg_send!(view, zpd_objc::sel!("convertRect:toView:"), ((bounds): NsRect, (zpd_objc::NIL): Id) => NsRect)
+        };
+        let wrapper = |view: &View| zpd_objc::msg_send!(Checks::native(view), zpd_objc::sel!("superview"), () => Id);
+        let bar = zpd_objc::msg_send!(zpd_objc::msg_send!(wrapper(&cells[2]), zpd_objc::sel!("superview"), () => Id), zpd_objc::sel!("superview"), () => Id);
+        let (scroll_frame, bar_frame) = (window_frame(scroll), window_frame(bar));
+        // Window coordinates grow upward, so the bar's bottom is the scroll view's bottom.
+        assert_eq!(bar_frame.y, scroll_frame.y, "{bar_frame:?} {scroll_frame:?}");
+        assert_eq!(bar_frame.height, 25.0);
+        let (name, length) = (window_frame(wrapper(&cells[2])), window_frame(wrapper(&cells[3])));
+        let (row_name, row_length) = (window_frame(wrapper(&cells[0])), window_frame(wrapper(&cells[1])));
+        assert_eq!((name.x, name.width), (row_name.x, row_name.width), "{name:?} {row_name:?}");
+        assert_eq!((length.x, length.width), (row_length.x, row_length.width));
+        assert_eq!(length.height, 24.0);
+    }
+    // Removing it restores the insets.
+    table.set_summary(&[]).unwrap();
+    assert!(!table.has_summary());
 
     // Verifies rich runs round-trip, and the paragraph action restyles undoably and validates its items.
     let rich = TextEditor::new(&application).unwrap();

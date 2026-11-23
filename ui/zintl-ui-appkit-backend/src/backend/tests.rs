@@ -272,10 +272,30 @@ fn single_line_text_fields_measure_their_height() {
         multiline,
         style: Default::default(),
         focus: 0,
+        accessory: None,
     };
     assert_eq!(NativeNode::measured_axes(&field(false)), (false, true));
     // Multiline fields keep their declared size.
     assert_eq!(NativeNode::measured_axes(&field(true)), (false, false));
+}
+
+#[test]
+fn number_fields_measure_their_height() {
+    // Verifies number fields take their text field's height in any stack alignment, keeping a flexible width.
+    let number = ViewKind::NumberField {
+        value: 0.0,
+        format: zintl_ui_backend_core::NumberFormat {
+            minimum: 0.0,
+            maximum: 100.0,
+            step: 1.0,
+            fraction_digits: 0,
+        },
+        text: None,
+        placeholder: None,
+        focus: 0,
+        accessory: None,
+    };
+    assert_eq!(NativeNode::measured_axes(&number), (false, true));
 }
 
 #[test]
@@ -290,4 +310,20 @@ fn focus_requests_follow_increases_only() {
     assert!(ViewKind::requests_focus(Some(&editor(1)), &editor(2)));
     // Re-rendering with the same count keeps focus where the user moved it.
     assert!(!ViewKind::requests_focus(Some(&editor(2)), &editor(2)));
+    // Number fields follow the same rule.
+    let number = |focus| ViewKind::NumberField {
+        value: 0.0,
+        format: zintl_ui_backend_core::NumberFormat {
+            minimum: 0.0,
+            maximum: 100.0,
+            step: 1.0,
+            fraction_digits: 0,
+        },
+        text: None,
+        placeholder: None,
+        focus,
+        accessory: None,
+    };
+    assert!(ViewKind::requests_focus(Some(&number(0)), &number(1)));
+    assert!(!ViewKind::requests_focus(Some(&number(1)), &number(1)));
 }
