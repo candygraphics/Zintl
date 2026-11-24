@@ -6,7 +6,7 @@ use zpd_appkit::geometry::Rect;
 use zpd_appkit::runloop::Application;
 use zpd_appkit::ui::{
     AccessibilityAnnouncement, AccessibilityAttributes, AccessibilityNotification,
-    AccessibilityRole, AnnouncementPriority, AsView, Button, ListView, NumberField, Slider,
+    AccessibilityRole, AnnouncementPriority, AsView, Button, FieldAccessory, ListView, NumberField, Slider,
     TextEditor, TextField, View, ViewRef,
 };
 use zpd_objc::Id;
@@ -254,6 +254,54 @@ fn main() {
         checks.native(number.accessibility_view(), "number"),
         "NSTextField"
     ));
+
+    // Verifies a field accessory is reachable only as a child of the field's cell, which it
+    // reports as its parent, so the tree stays a tree while the field is idle and edited.
+    let accessory = FieldAccessory {
+        system_image: "plus.forwardslash.minus".into(),
+        label: "Calculator".into(),
+        identifier: Some("calculator".into()),
+    };
+    let amount = TextField::with_string(&application, "").unwrap();
+    amount.as_view().set_frame(Rect::new(0.0, 200.0, 200.0, 22.0)).unwrap();
+    content.add_subview(&amount).unwrap();
+    amount.set_accessory(Some(&accessory)).unwrap();
+    let count = NumberField::new(&application).unwrap();
+    count.as_view().set_frame(Rect::new(0.0, 240.0, 200.0, 22.0)).unwrap();
+    content.add_subview(&count).unwrap();
+    count.set_accessory(Some(&accessory)).unwrap();
+    let amount_field = checks.native(amount.as_view(), "amount");
+    let count_container = checks.native(count.as_view(), "count");
+    let count_field = checks.native(count.accessibility_view(), "count-field");
+    // SAFETY: The views and their cells are live; accessibility arrays are autoreleased.
+    let lists = |element: Id, child: Id| unsafe {
+        let children = zpd_objc::msg_send!(element, zpd_objc::sel!("accessibilityChildren"), () => Id);
+        !children.is_null()
+            && zpd_objc::msg_send!(children, zpd_objc::sel!("containsObject:"), ((child): Id) => bool)
+    };
+    for editing in [false, true] {
+        if editing {
+            amount.focus().unwrap();
+        }
+        for (field, outer) in [(amount_field, checks.content), (count_field, count_container)] {
+            // SAFETY: The field holds its accessory button, found by identifier.
+            let button = unsafe { Checks::find(field, "calculator") };
+            assert!(!button.is_null());
+            let (field_cell, button_cell) = (Checks::cell(field), Checks::cell(button));
+            assert!(lists(field_cell, button_cell), "editing: {editing}");
+            // SAFETY: The button cell is live; its parent is a live element.
+            let parent = unsafe { zpd_objc::msg_send!(button_cell, zpd_objc::sel!("accessibilityParent"), () => Id) };
+            assert_eq!(parent, field_cell, "editing: {editing}");
+            for element in [field, outer] {
+                assert!(!lists(element, button) && !lists(element, button_cell), "editing: {editing}");
+            }
+        }
+    }
+    // SAFETY: The field is in a live window; ending editing keeps later checks independent.
+    unsafe {
+        let window = zpd_objc::msg_send!(amount_field, zpd_objc::sel!("window"), () => Id);
+        zpd_objc::msg_send!(window, zpd_objc::sel!("makeFirstResponder:"), ((zpd_objc::NIL): Id) => bool);
+    }
 
     // Verifies posting an announcement does not need a focused element.
     AccessibilityAnnouncement::post("Saved", AnnouncementPriority::High);

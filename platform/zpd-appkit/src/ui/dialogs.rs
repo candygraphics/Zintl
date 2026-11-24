@@ -69,6 +69,8 @@ impl AlertSheet {
             for button in &config.buttons {
                 let title = native::nsstring(&button.title);
                 let native_button = zpd_objc::msg_send!(alert.as_ptr(), zpd_objc::sel!("addButtonWithTitle:"), ((title.as_ptr()): Id) => Id);
+                // Return and Escape confirm or cancel an input method's text before answering.
+                super::Button::use_key_class(native_button);
                 match button.role {
                     AlertButtonRole::Normal => {}
                     AlertButtonRole::Cancel => {

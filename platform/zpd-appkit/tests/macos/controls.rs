@@ -305,6 +305,56 @@ fn main() {
     // SAFETY: The button is live.
     assert!(unsafe { zpd_objc::msg_send!(button, zpd_objc::sel!("isHidden"), () => bool) });
 
+    // Verifies Return and Escape confirm or cancel an input method's unconfirmed text instead of
+    // clicking the default or cancel button, and click them once no text is unconfirmed.
+    let memo = TextField::with_string(&application, "").unwrap();
+    memo.as_view().set_frame(Rect::new(0.0, 60.0, 200.0, 22.0)).unwrap();
+    content.add_subview(&memo).unwrap();
+    let save = Button::with_title(&application, "Save").unwrap();
+    save.set_key_equivalent("\r").unwrap();
+    content.add_subview(&save).unwrap();
+    let cancel = Button::with_title(&application, "Cancel").unwrap();
+    cancel.set_key_equivalent("\u{1b}").unwrap();
+    content.add_subview(&cancel).unwrap();
+    let memo_native = Checks::native(&memo);
+    memo.focus().unwrap();
+    take();
+    // SAFETY: The focused field has a live field editor in a live window; the events and
+    // strings are autoreleased.
+    unsafe {
+        let window = zpd_objc::msg_send!(memo_native, zpd_objc::sel!("window"), () => Id);
+        let editor = zpd_objc::msg_send!(memo_native, zpd_objc::sel!("currentEditor"), () => Id);
+        assert!(!editor.is_null());
+        let key = |characters: &str, code: u16| {
+            let characters = ns_string(characters);
+            let number = zpd_objc::msg_send!(window, zpd_objc::sel!("windowNumber"), () => isize);
+            let origin = [0.0_f64, 0.0];
+            zpd_objc::msg_send!(zpd_objc::class!("NSEvent"), zpd_objc::sel!("keyEventWithType:location:modifierFlags:timestamp:windowNumber:context:characters:charactersIgnoringModifiers:isARepeat:keyCode:"), ((10_u64): u64, (origin): [f64; 2], (0_u64): u64, (0.0): f64, (number): isize, (zpd_objc::NIL): Id, (characters): Id, (characters): Id, (false): bool, (code): u16) => Id)
+        };
+        let press = |event: Id| zpd_objc::msg_send!(window, zpd_objc::sel!("performKeyEquivalent:"), ((event): Id) => bool);
+        let (enter, escape) = (key("\r", 36), key("\u{1b}", 53));
+        let marked = ns_string("かいもの");
+        let not_found = [i64::MAX as u64, 0];
+        zpd_objc::msg_send!(editor, zpd_objc::sel!("setMarkedText:selectedRange:replacementRange:"), ((marked): Id, (empty_range(4)): [u64; 2], (not_found): [u64; 2]) => ());
+        assert!(zpd_objc::msg_send!(editor, zpd_objc::sel!("hasMarkedText"), () => bool));
+        assert!(!press(enter));
+        assert!(!press(escape));
+        assert!(take().is_empty());
+        // Confirming the text leaves it in the field, and the next Return clicks the button.
+        zpd_objc::msg_send!(editor, zpd_objc::sel!("unmarkText"), () => ());
+        let text = zpd_objc::msg_send!(editor, zpd_objc::sel!("string"), () => Id);
+        assert_eq!(rust_string(text), "かいもの");
+        assert_eq!(take(), vec![WindowEventKind::TextChanged { value: "かいもの".into() }]);
+        assert!(press(enter));
+        assert_eq!(take(), vec![WindowEventKind::ButtonClicked]);
+        assert!(press(escape));
+        assert_eq!(take(), vec![WindowEventKind::ButtonClicked]);
+        zpd_objc::msg_send!(window, zpd_objc::sel!("makeFirstResponder:"), ((zpd_objc::NIL): Id) => bool);
+    }
+    save.set_key_equivalent("").unwrap();
+    cancel.set_key_equivalent("").unwrap();
+    take();
+
     // Verifies stepper changes update the formatted field and report the value.
     let number = NumberField::new(&application).unwrap();
     number
@@ -618,7 +668,23 @@ fn main() {
         assert_eq!((length.x, length.width), (row_length.x, row_length.width));
         assert_eq!(length.height, 24.0);
     }
+    // Verifies re-rendering with the same cells keeps their wrappers and leaves the cells usable.
+    // SAFETY: The summary cell is a live view inside its wrapper.
+    let wrapper = |view: &View| unsafe { zpd_objc::msg_send!(Checks::native(view), zpd_objc::sel!("superview"), () => Id) };
+    let before = [wrapper(&cells[2]), wrapper(&cells[3])];
+    table
+        .set_entries(&[ListEntry::Row("a".into())], &[cells[0].as_view(), cells[1].as_view()])
+        .unwrap();
+    table.set_summary(&[cells[2].as_view(), cells[3].as_view()]).unwrap();
+    assert_eq!([wrapper(&cells[2]), wrapper(&cells[3])], before);
+    // Verifies swapping in a new cell keeps the reused one alive in a new wrapper.
+    let extra = View::new(&application, Rect::new(0.0, 0.0, 10.0, 10.0)).unwrap();
+    table.set_summary(&[cells[2].as_view(), extra.as_view()]).unwrap();
+    assert_ne!(wrapper(&cells[2]), before[0]);
     // Removing it restores the insets.
+    table.set_summary(&[]).unwrap();
+    assert!(!table.has_summary());
+    // Verifies a table without a summary row leaves the insets alone on later updates.
     table.set_summary(&[]).unwrap();
     assert!(!table.has_summary());
 
@@ -960,6 +1026,32 @@ fn main() {
         None,
     )
     .unwrap();
+    // Verifies alert buttons also leave Return and Escape to an input method.
+    /// Counts the buttons under `view` that use the input-method-aware class.
+    ///
+    /// # Safety
+    /// `view` must be a live NSView.
+    unsafe fn key_buttons(view: Id) -> usize {
+        // SAFETY: Guaranteed by the caller; subviews of live views are live.
+        unsafe {
+            let class = zpd_objc::ffi::object_getClass(view);
+            let name = std::ffi::CStr::from_ptr(zpd_objc::ffi::class_getName(class));
+            let own = usize::from(name.to_bytes().starts_with(b"ZpdKey_"));
+            let subviews = zpd_objc::msg_send!(view, zpd_objc::sel!("subviews"), () => Id);
+            let count = zpd_objc::msg_send!(subviews, zpd_objc::sel!("count"), () => u64);
+            own + (0..count)
+                .map(|index| key_buttons(zpd_objc::msg_send!(subviews, zpd_objc::sel!("objectAtIndex:"), ((index): u64) => Id)))
+                .sum::<usize>()
+        }
+    }
+    // SAFETY: The main window is live and its attached sheet is the alert's live window.
+    unsafe {
+        let main = zpd_objc::msg_send!(memo_native, zpd_objc::sel!("window"), () => Id);
+        let sheet = zpd_objc::msg_send!(main, zpd_objc::sel!("attachedSheet"), () => Id);
+        assert!(!sheet.is_null());
+        let sheet_content = zpd_objc::msg_send!(sheet, zpd_objc::sel!("contentView"), () => Id);
+        assert_eq!(key_buttons(sheet_content), 2);
+    }
     alert.dismiss();
     drop(alert);
     assert_eq!(

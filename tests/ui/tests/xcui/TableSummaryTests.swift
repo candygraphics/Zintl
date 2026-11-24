@@ -35,6 +35,38 @@ final class TableSummaryTests: ZintlUITestCase {
     assertLabel("selections", "Selections: 1")
   }
 
+  /// Verifies selecting rows swaps the detail pane while the summary row keeps working.
+  func testSelectingARowShowsItsDetails() throws {
+    try launch(scenario: "table-summary")
+
+    XCTAssertTrue(app.staticTexts["detail-placeholder"].waitToExist(timeout: 2))
+    app.staticTexts["name-2"].click()
+    assertLabel("detail-title", "Row 2")
+    XCTAssertTrue(app.textFields["detail-note"].exists)
+    app.staticTexts["name-3"].click()
+    assertLabel("detail-title", "Row 3")
+    assertLabel("total-budget", "4650")
+    assertLabel("total-spent", "3255")
+    XCTAssertEqual(
+      app.staticTexts["total-budget"].frame.minX, app.staticTexts["budget-1"].frame.minX,
+      accuracy: 1)
+  }
+
+  /// Verifies new totals reach the summary cells, with and without a selection.
+  func testChangingTheTotalsUpdatesTheSummary() throws {
+    try launch(scenario: "table-summary")
+
+    let raise = app.buttons["raise-budget"]
+    XCTAssertTrue(raise.waitToExist(timeout: 2))
+    raise.click()
+    assertLabel("total-budget", "4750")
+    app.staticTexts["name-1"].click()
+    assertLabel("detail-title", "Row 1")
+    raise.click()
+    assertLabel("total-budget", "4850")
+    assertLabel("detail-title", "Row 1")
+  }
+
   /// Verifies the last row scrolls above the summary instead of under it, and sorting leaves the summary in place.
   func testRowsScrollAboveTheSummary() throws {
     try launch(scenario: "table-summary")

@@ -39,6 +39,8 @@ unsafe extern "C" {
     pub fn class_getInstanceVariable(cls: Class, name: *const c_char) -> *mut c_void;
     pub fn ivar_getOffset(ivar: *mut c_void) -> isize;
     pub fn method_getImplementation(method: *mut c_void) -> Imp;
+    pub fn class_getName(cls: Class) -> *const c_char;
+    pub fn class_getSuperclass(cls: Class) -> Class;
     pub fn object_getClass(object: Id) -> Class;
     pub fn object_setClass(object: Id, class: Class) -> Class;
     pub fn objc_retain(object: Id) -> Id;

@@ -1,13 +1,15 @@
-use zintl_ui_desktop::dialog::{Popover, PopoverEdge};
+use zintl_ui_desktop::dialog::{Alert, AlertButton, Popover, PopoverEdge};
 use zintl_ui_desktop::*;
 
 /// Fields with a calculator button inside them: a text field whose button opens a popover
 /// anchored to the field, an integer field, and a grid comparing widths with and without one.
+/// A button presents an alert sheet, so focus returns to a field when the sheet closes.
 pub struct MainView {
     amount: Store<String>,
     count: Store<Option<i64>>,
     clicks: Store<u32>,
     shown: Store<bool>,
+    confirm: Store<bool>,
 }
 
 impl MainView {
@@ -17,6 +19,7 @@ impl MainView {
             count: Store::default(),
             clicks: Store::default(),
             shown: Store::default(),
+            confirm: Store::default(),
         }
     }
 }
@@ -29,10 +32,12 @@ impl View for MainView {
         self.count = cx.store(Some(5));
         self.clicks = cx.store(0);
         self.shown = cx.store(false);
+        self.confirm = cx.store(false);
     }
 
     fn render(&self, cx: &mut Context<'_>) -> impl IntoElement<Output = RenderNode> {
-        let (amount, count, clicks, shown) = (self.amount, self.count, self.clicks, self.shown);
+        let (amount, count, clicks, shown, confirm) =
+            (self.amount, self.count, self.clicks, self.shown, self.confirm);
         let calculator = |id: &str| {
             FieldAccessory::button("plus.forwardslash.minus", "Calculator")
                 .id(id.to_owned())
@@ -41,6 +46,12 @@ impl View for MainView {
         Window::new("Zintl Field Accessory UI Test")
             .size(Size::new(460.0, 360.0))
             .id("main-window")
+            .alert(
+                Alert::new("Delete the amount?")
+                    .button(AlertButton::new("Delete").role(ButtonRole::Destructive))
+                    .button(AlertButton::new("Cancel").role(ButtonRole::Cancel))
+                    .bind_presented(confirm),
+            )
             .content(
                 VStack::new(list![
                     TextField::new()
@@ -85,6 +96,9 @@ impl View for MainView {
                         Text::new(format!("Count: {count}")).id("count-value")
                     }),
                     cx.watch(clicks, |clicks| Text::new(format!("Clicks: {clicks}")).id("clicks")),
+                    Button::new("Delete")
+                        .id("delete")
+                        .on_click(move |cx| cx.update(confirm, |shown| *shown = true)),
                 ])
                 .spacing(10.0),
             )

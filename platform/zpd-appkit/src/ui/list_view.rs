@@ -93,6 +93,32 @@ struct EdgeInsets {
     right: f64,
 }
 
+impl Summary {
+    /// Returns whether `cells` are this row's cells, each still in its wrapper.
+    fn holds(&self, cells: &[ViewRef<'_>]) -> bool {
+        cells.len() == self.actors.len()
+            && cells.iter().zip(&self.actors).all(|(cell, actor)| {
+                cell.is_subview_of(ViewRef::from_actor(actor))
+                    .unwrap_or(false)
+            })
+    }
+
+    /// Removes the cell wrappers and, with their Actors, any cells still inside them.
+    fn remove_wrappers(&self) {
+        for cell in &self.cells {
+            // SAFETY: Summary wrappers are live layout views; the bar's content view
+            // releases each one it removes.
+            unsafe {
+                view::release_layout_callback(cell.as_ptr());
+                zpd_objc::msg_send!(cell.as_ptr(), zpd_objc::sel!("removeFromSuperview"), () => ());
+            }
+        }
+        for actor in &self.actors {
+            actor.remove();
+        }
+    }
+}
+
 static LIST_STATE: RcIvar<ListState> = RcIvar::new(c"_zpdListState");
 
 impl ListState {
@@ -860,25 +886,23 @@ impl ListView {
     /// and keeps its cells under their columns when columns resize.
     pub fn set_summary(&self, cells: &[ViewRef<'_>]) -> Result<(), UiError> {
         let old = self.state.summary.borrow_mut().take();
+        // Re-rendering passes the same cells again; keep their wrappers.
+        if let Some(summary) = &old
+            && summary.holds(cells)
+        {
+            *self.state.summary.borrow_mut() = old;
+            return Ok(());
+        }
         let scroll = self.view.as_view();
-        let (bar, line) = match old {
-            Some(old) => {
-                for cell in &old.cells {
-                    // SAFETY: Summary cells are live layout views created below.
-                    unsafe { view::release_layout_callback(cell.as_ptr()) };
-                }
-                for actor in old.actors {
-                    actor.remove();
-                }
-                (old.bar, old.line)
-            }
-            None => Self::summary_bar(),
-        };
         if cells.is_empty() {
+            let Some(old) = old else {
+                return Ok(());
+            };
+            old.remove_wrappers();
             scroll.with(|scroll| {
                 // SAFETY: The bar and the live scroll view are on the main thread; insets go by value.
                 unsafe {
-                    zpd_objc::msg_send!(bar.as_ptr(), zpd_objc::sel!("removeFromSuperview"), () => ());
+                    zpd_objc::msg_send!(old.bar.as_ptr(), zpd_objc::sel!("removeFromSuperview"), () => ());
                     zpd_objc::msg_send!(scroll, zpd_objc::sel!("setContentInsets:"), ((EdgeInsets::default()): EdgeInsets) => ());
                     zpd_objc::msg_send!(scroll, zpd_objc::sel!("setScrollerInsets:"), ((EdgeInsets::default()): EdgeInsets) => ());
                     zpd_objc::msg_send!(scroll, zpd_objc::sel!("setAutomaticallyAdjustsContentInsets:"), ((true): bool) => ());
@@ -886,6 +910,13 @@ impl ListView {
             })?;
             return Ok(());
         }
+        let (bar, line, height) = match &old {
+            Some(old) => (old.bar.clone(), old.line.clone(), old.height),
+            None => {
+                let (bar, line) = Self::summary_bar();
+                (bar, line, 0.0)
+            }
+        };
         let tree = self.table.tree_handle().ok_or(UiError::Closed)?;
         let content = bar.as_ptr();
         // SAFETY: The bar is a live NSBox.
@@ -905,6 +936,11 @@ impl ListView {
             wrappers.push(wrapper);
             actors.push(actor);
         }
+        // Cells kept from the old row moved into the new wrappers above, so removing the
+        // old wrappers' Actors no longer removes them.
+        if let Some(old) = old {
+            old.remove_wrappers();
+        }
         scroll.with(|scroll| {
             // SAFETY: The live scroll view retains the bar above its clip view; insets are set by hand
             // from now on, keeping the current top inset.
@@ -920,7 +956,7 @@ impl ListView {
             line,
             cells: wrappers,
             actors,
-            height: 0.0,
+            height,
         });
         Ok(())
     }
