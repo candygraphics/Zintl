@@ -35,42 +35,28 @@ unsafe extern "C" fn drawing_rect(this: Id, _: Sel, bounds: native::Rect) -> nat
     rect
 }
 
-/// Returns the field's accessibility children followed by its visible accessory button.
+/// Returns the field cell's accessibility children followed by its visible accessory button,
+/// like a search field lists its buttons.
 ///
 /// AppKit does not list a text field's subviews, so VoiceOver could not reach the button.
+/// Only the cell lists it, so the field view and containers around it never reach it twice.
 unsafe extern "C" fn accessibility_children(this: Id, _: Sel) -> Id {
-    // SAFETY: `this` is a live NSTextField whose class was swapped to this subclass; the arrays
-    // are autoreleased and only read here.
+    // SAFETY: `this` is a live NSTextFieldCell whose class was swapped to this subclass; its
+    // control view is nil or live, and the arrays are autoreleased and only read here.
     unsafe {
-        let inherited = zpd_objc::msg_send_super!(this, zpd_objc::class!("NSTextField"), zpd_objc::sel!("accessibilityChildren"), () => Id);
+        let inherited = zpd_objc::msg_send_super!(this, zpd_objc::class!("NSTextFieldCell"), zpd_objc::sel!("accessibilityChildren"), () => Id);
         let children = zpd_objc::msg_send!(zpd_objc::class!("NSMutableArray"), zpd_objc::sel!("array"), () => Id);
         if !inherited.is_null() {
             zpd_objc::msg_send!(children, zpd_objc::sel!("addObjectsFromArray:"), ((inherited): Id) => ());
         }
-        let subviews = zpd_objc::msg_send!(this, zpd_objc::sel!("subviews"), () => Id);
-        let count = zpd_objc::msg_send!(subviews, zpd_objc::sel!("count"), () => u64);
-        for index in 0..count {
-            let view = zpd_objc::msg_send!(subviews, zpd_objc::sel!("objectAtIndex:"), ((index): u64) => Id);
-            let button = zpd_objc::msg_send!(view, zpd_objc::sel!("isKindOfClass:"), ((zpd_objc::class!("NSButton")): zpd_objc::Class) => bool);
-            let hidden = zpd_objc::msg_send!(view, zpd_objc::sel!("isHidden"), () => bool);
-            if button && !hidden {
-                zpd_objc::msg_send!(children, zpd_objc::sel!("addObject:"), ((view): Id) => ());
-            }
+        let field = zpd_objc::msg_send!(this, zpd_objc::sel!("controlView"), () => Id);
+        if let Some(button) = AccessorySlot::visible_button(field) {
+            // The button view is ignored; its cell is the element that VoiceOver reads.
+            let cell = zpd_objc::msg_send!(button, zpd_objc::sel!("cell"), () => Id);
+            zpd_objc::msg_send!(children, zpd_objc::sel!("addObject:"), ((cell): Id) => ());
         }
         children
     }
-}
-
-/// An `NSTextField` subclass without ivars, so a field can switch to it.
-fn accessory_field_class() -> zpd_objc::Class {
-    static CLASS: OnceLock<usize> = OnceLock::new();
-    *CLASS.get_or_init(|| {
-        zpd_objc::decl!(ZpdAccessoryTextField: [zpd_objc::class!("NSTextField")] {
-            methods {
-                "accessibilityChildren": "@@:" => accessibility_children,
-            }
-        }) as usize
-    }) as zpd_objc::Class
 }
 
 /// Switches `object` between `standard` and its ivar-free subclass `accessory`.
@@ -103,6 +89,7 @@ fn accessory_cell_class() -> zpd_objc::Class {
         zpd_objc::decl!(ZpdAccessoryTextFieldCell: [zpd_objc::class!("NSTextFieldCell")] {
             methods {
                 "drawingRectForBounds:": "{CGRect={CGPoint=dd}{CGSize=dd}}@:{CGRect={CGPoint=dd}{CGSize=dd}}" => drawing_rect,
+                "accessibilityChildren": "@@:" => accessibility_children,
             }
         }) as usize
     }) as zpd_objc::Class
@@ -115,6 +102,27 @@ pub(crate) struct AccessorySlot {
 }
 
 impl AccessorySlot {
+    /// Returns the visible accessory button of `field`, if it has one.
+    ///
+    /// # Safety
+    /// `field` must be nil or a live NSView.
+    unsafe fn visible_button(field: Id) -> Option<Id> {
+        if field.is_null() {
+            return None;
+        }
+        // SAFETY: Guaranteed by the caller; subviews of a live view are live.
+        unsafe {
+            let subviews = zpd_objc::msg_send!(field, zpd_objc::sel!("subviews"), () => Id);
+            let count = zpd_objc::msg_send!(subviews, zpd_objc::sel!("count"), () => u64);
+            (0..count)
+                .map(|index| zpd_objc::msg_send!(subviews, zpd_objc::sel!("objectAtIndex:"), ((index): u64) => Id))
+                .find(|view| {
+                    zpd_objc::msg_send!(*view, zpd_objc::sel!("isKindOfClass:"), ((zpd_objc::class!("NSButton")): zpd_objc::Class) => bool)
+                        && !zpd_objc::msg_send!(*view, zpd_objc::sel!("isHidden"), () => bool)
+                })
+        }
+    }
+
     /// Shows `accessory` inside `field`, or hides it for `None`.
     ///
     /// Clicks are reported as [`WindowEventKind::AccessoryClicked`] from `owner`.
@@ -154,20 +162,14 @@ impl AccessorySlot {
         Ok(())
     }
 
-    /// Switches the field and its cell between the standard classes and subclasses that
-    /// leave room for the button and list it for accessibility.
+    /// Switches the field's cell between the standard class and a subclass that leaves room
+    /// for the button and lists it for accessibility.
     fn inset_text(field: &ActorRef, inset: bool) -> Result<(), UiError> {
         field.with(|field| {
-            // SAFETY: The live field and its cell switch only between a standard class and its
-            // ivar-free subclass, which keeps their object layout.
+            // SAFETY: The live field's cell switches only between a standard class and its
+            // ivar-free subclass, which keeps its object layout.
             unsafe {
                 let cell = zpd_objc::msg_send!(field, zpd_objc::sel!("cell"), () => Id);
-                switch_class(
-                    field,
-                    zpd_objc::class!("NSTextField"),
-                    accessory_field_class(),
-                    inset,
-                );
                 switch_class(
                     cell,
                     zpd_objc::class!("NSTextFieldCell"),
@@ -212,10 +214,14 @@ impl AccessorySlot {
             zpd_objc::msg_send!(button, zpd_objc::sel!("setAutoresizingMask:"), ((native::NS_VIEW_MIN_X_MARGIN | native::NS_VIEW_HEIGHT_SIZABLE): u64) => ());
         }
         field.with(|field| {
-            // SAFETY: The live field retains the button as a subview.
+            // SAFETY: The live field retains the button as a subview; both cells are live.
             unsafe {
                 zpd_objc::msg_send!(field, zpd_objc::sel!("setAutoresizesSubviews:"), ((true): bool) => ());
                 zpd_objc::msg_send!(field, zpd_objc::sel!("addSubview:"), ((native.as_ptr()): Id) => ());
+                // The field's cell lists the button's cell, so the button reports it as its parent.
+                let field_cell = zpd_objc::msg_send!(field, zpd_objc::sel!("cell"), () => Id);
+                let button_cell = zpd_objc::msg_send!(native.as_ptr(), zpd_objc::sel!("cell"), () => Id);
+                zpd_objc::msg_send!(button_cell, zpd_objc::sel!("setAccessibilityParent:"), ((field_cell): Id) => ());
             }
         })?;
         let tree = field.tree_handle().ok_or(UiError::Closed)?;
