@@ -618,7 +618,23 @@ fn main() {
         assert_eq!((length.x, length.width), (row_length.x, row_length.width));
         assert_eq!(length.height, 24.0);
     }
+    // Verifies re-rendering with the same cells keeps their wrappers and leaves the cells usable.
+    // SAFETY: The summary cell is a live view inside its wrapper.
+    let wrapper = |view: &View| unsafe { zpd_objc::msg_send!(Checks::native(view), zpd_objc::sel!("superview"), () => Id) };
+    let before = [wrapper(&cells[2]), wrapper(&cells[3])];
+    table
+        .set_entries(&[ListEntry::Row("a".into())], &[cells[0].as_view(), cells[1].as_view()])
+        .unwrap();
+    table.set_summary(&[cells[2].as_view(), cells[3].as_view()]).unwrap();
+    assert_eq!([wrapper(&cells[2]), wrapper(&cells[3])], before);
+    // Verifies swapping in a new cell keeps the reused one alive in a new wrapper.
+    let extra = View::new(&application, Rect::new(0.0, 0.0, 10.0, 10.0)).unwrap();
+    table.set_summary(&[cells[2].as_view(), extra.as_view()]).unwrap();
+    assert_ne!(wrapper(&cells[2]), before[0]);
     // Removing it restores the insets.
+    table.set_summary(&[]).unwrap();
+    assert!(!table.has_summary());
+    // Verifies a table without a summary row leaves the insets alone on later updates.
     table.set_summary(&[]).unwrap();
     assert!(!table.has_summary());
 
