@@ -1,10 +1,11 @@
 use std::cell::Cell;
 use std::rc::Rc;
+use std::sync::Mutex;
 
 use crate::actor::WindowEventKind;
 use crate::native;
 use crate::runloop::Application;
-use zpd_objc::Strong;
+use zpd_objc::{Id, Sel, Strong};
 
 use super::callback;
 use super::view::{AsView, ViewActor, ViewRef};
@@ -58,7 +59,7 @@ impl Button {
         let title = native::nsstring(title);
         // SAFETY: NSButton's title constructor returns an autoreleased live object, retained here.
         let native = unsafe {
-            let value = zpd_objc::msg_send!(zpd_objc::msg_send!(zpd_objc::class!("NSButton"), zpd_objc::sel!("alloc"), () => zpd_objc::Id), zpd_objc::sel!("init"), () => zpd_objc::Id);
+            let value = zpd_objc::msg_send!(zpd_objc::msg_send!(Self::key_class(zpd_objc::class!("NSButton")), zpd_objc::sel!("alloc"), () => zpd_objc::Id), zpd_objc::sel!("init"), () => zpd_objc::Id);
             let value = Strong::from_retained(value).ok_or(UiError::NativeCreationFailed)?;
             zpd_objc::msg_send!(value.as_ptr(), zpd_objc::sel!("setTitle:"), ((title.as_ptr()): zpd_objc::Id) => ());
             zpd_objc::msg_send!(value.as_ptr(), zpd_objc::sel!("setBezelStyle:"), ((BezelStyle::Push as u64): u64) => ());
@@ -111,6 +112,145 @@ impl Button {
             keeps_state,
             title_color: Cell::new(None),
         })
+    }
+    /// Returns a subclass of `base` without ivars whose key equivalent leaves Return and
+    /// Escape to an input method while it is composing text.
+    ///
+    /// Subclasses are created once per base class, so AppKit's own button subclasses, such
+    /// as the ones `NSAlert` creates, keep their behavior.
+    ///
+    /// # Safety
+    /// `base` must be `NSButton` or one of its subclasses.
+    pub(crate) unsafe fn key_class(base: zpd_objc::Class) -> zpd_objc::Class {
+        let mut classes = Self::key_classes()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some((_, class)) = classes
+            .iter()
+            .find(|(from, class)| *from == base as usize || *class == base as usize)
+        {
+            return *class as zpd_objc::Class;
+        }
+        // SAFETY: Guaranteed by the caller; the new class is named after its base, so names are
+        // unique, and it is registered once with only an override of an NSButton method.
+        let class = unsafe {
+            let name = std::ffi::CStr::from_ptr(zpd_objc::ffi::class_getName(base));
+            let name = std::ffi::CString::new(format!("ZpdKey_{}", name.to_string_lossy()))
+                .expect("class names have no NUL");
+            let class = zpd_objc::ffi::objc_allocateClassPair(base, name.as_ptr(), 0);
+            assert!(!class.is_null(), "failed to allocate a key button class");
+            let implementation = Self::perform_key_equivalent as *const ();
+            let added = zpd_objc::ffi::class_addMethod(
+                class,
+                zpd_objc::sel!("performKeyEquivalent:"),
+                std::mem::transmute::<*const (), zpd_objc::ffi::Imp>(implementation),
+                c"B@:@".as_ptr(),
+            );
+            assert!(added, "failed to add performKeyEquivalent:");
+            zpd_objc::ffi::objc_registerClassPair(class);
+            class
+        };
+        classes.push((base as usize, class as usize));
+        class
+    }
+
+    /// Pairs of a base class and its subclass from [`Button::key_class`].
+    fn key_classes() -> &'static Mutex<Vec<(usize, usize)>> {
+        static CLASSES: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::new());
+        &CLASSES
+    }
+
+    /// Returns the base class of the [`Button::key_class`] subclass that `object` is an instance of.
+    ///
+    /// # Safety
+    /// `object` must be a live instance of a [`Button::key_class`] subclass.
+    unsafe fn key_base(object: Id) -> zpd_objc::Class {
+        let classes = Self::key_classes()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        // SAFETY: Guaranteed by the caller; the chain ends at a root class whose superclass is nil.
+        let mut class = unsafe { zpd_objc::ffi::object_getClass(object) };
+        while !class.is_null() {
+            if let Some((base, _)) = classes.iter().find(|(_, key)| *key == class as usize) {
+                return *base as zpd_objc::Class;
+            }
+            // SAFETY: `class` is a live, registered class.
+            class = unsafe { zpd_objc::ffi::class_getSuperclass(class) };
+        }
+        zpd_objc::class!("NSButton")
+    }
+
+    /// Returns `NO` for Return, Enter, and Escape while the window's first responder has
+    /// unconfirmed text, so those keys confirm or cancel the conversion instead.
+    unsafe extern "C" fn perform_key_equivalent(this: Id, _: Sel, event: Id) -> bool {
+        zpd_objc::abort_on_unwind(|| {
+            // SAFETY: `this` is a live key button and `event` a live NSEvent; the window and its
+            // first responder are nil or live.
+            unsafe {
+                if Self::is_composition_key(event) && Self::window_is_composing(this) {
+                    return false;
+                }
+                let base = Self::key_base(this);
+                zpd_objc::msg_send_super!(this, base, zpd_objc::sel!("performKeyEquivalent:"), ((event): Id) => bool)
+            }
+        })
+    }
+
+    /// Returns whether `event` is a key an input method uses to confirm or cancel text.
+    ///
+    /// # Safety
+    /// `event` must be a live NSEvent.
+    unsafe fn is_composition_key(event: Id) -> bool {
+        // SAFETY: Guaranteed by the caller; non-key events return nil characters.
+        unsafe {
+            if zpd_objc::msg_send!(event, zpd_objc::sel!("type"), () => native::Integer)
+                != native::NS_EVENT_TYPE_KEY_DOWN
+            {
+                return false;
+            }
+            let characters =
+                zpd_objc::msg_send!(event, zpd_objc::sel!("charactersIgnoringModifiers"), () => Id);
+            !characters.is_null()
+                && matches!(
+                    native::rust_string(characters).as_str(),
+                    "\r" | "\u{3}" | "\u{1b}"
+                )
+        }
+    }
+
+    /// Returns whether the first responder of `view`'s window has unconfirmed (marked) text.
+    ///
+    /// # Safety
+    /// `view` must be a live NSView.
+    unsafe fn window_is_composing(view: Id) -> bool {
+        // SAFETY: Guaranteed by the caller; `hasMarkedText` is sent only to responders that
+        // implement it, such as the field editor.
+        unsafe {
+            let window = zpd_objc::msg_send!(view, zpd_objc::sel!("window"), () => Id);
+            if window.is_null() {
+                return false;
+            }
+            let responder = zpd_objc::msg_send!(window, zpd_objc::sel!("firstResponder"), () => Id);
+            !responder.is_null()
+                && zpd_objc::msg_send!(responder, zpd_objc::sel!("respondsToSelector:"), ((zpd_objc::sel!("hasMarkedText")): Sel) => bool)
+                && zpd_objc::msg_send!(responder, zpd_objc::sel!("hasMarkedText"), () => bool)
+        }
+    }
+
+    /// Switches `button`, such as one an `NSAlert` created, to its [`Button::key_class`].
+    ///
+    /// # Safety
+    /// `button` must be a live `NSButton`.
+    pub(crate) unsafe fn use_key_class(button: Id) {
+        // SAFETY: Guaranteed by the caller; the subclass adds no ivars, so the layout is kept.
+        // KVO subclasses are left alone, since KVO expects to own the object's class.
+        unsafe {
+            let current = zpd_objc::ffi::object_getClass(button);
+            let name = std::ffi::CStr::from_ptr(zpd_objc::ffi::class_getName(current));
+            if !name.to_bytes().starts_with(b"NSKVONotifying_") {
+                zpd_objc::ffi::object_setClass(button, Self::key_class(current));
+            }
+        }
     }
     /// Undoes the toggle of each click, leaving the state to [`Button::set_on`].
     pub fn set_keeps_state(&self, keeps: bool) {

@@ -11,6 +11,7 @@ pub type Boolean = i8;
 pub const NS_UTF8_STRING_ENCODING: u64 = 4;
 
 pub const NS_APPLICATION_ACTIVATION_POLICY_REGULAR: Integer = 0;
+pub const NS_EVENT_TYPE_KEY_DOWN: Integer = 10;
 pub const NS_EVENT_TYPE_APPLICATION_DEFINED: Integer = 15;
 
 pub const NS_EVENT_MODIFIER_FLAG_SHIFT: u64 = 1 << 17;
